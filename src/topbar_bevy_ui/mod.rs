@@ -290,7 +290,7 @@ fn spawn_topbar_ui(
             .insert(RenderLayers::layer(UI_LAYER))
             .insert(cgui::Text::new(label))
             .insert(TextFont {
-                font_size: 12.0,
+                font_size: FontSize::Px(12.0),
                 ..default()
             })
             .insert(TextColor(Color::srgba(0.92, 0.92, 0.92, 1.0)))
@@ -472,7 +472,7 @@ fn sync_topbar_popup(
             .insert(RenderLayers::layer(UI_LAYER))
             .insert(cgui::Text::new(label))
             .insert(TextFont {
-                font_size: 12.0,
+                font_size: FontSize::Px(12.0),
                 ..default()
             })
             .insert(TextColor(Color::srgba(0.92, 0.92, 0.92, 1.0)))

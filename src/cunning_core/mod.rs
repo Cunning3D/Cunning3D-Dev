@@ -10,6 +10,7 @@ pub mod scripting;
 pub mod traits;
 pub mod ui;
 pub mod ai_service;
+pub mod libs;
 
 // Prelude 方便其他模块引用核心功能
 pub mod prelude {

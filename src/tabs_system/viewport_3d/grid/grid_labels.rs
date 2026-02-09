@@ -109,7 +109,7 @@ pub fn update_grid_labels_system(
         {
             // Update existing
             t_text.0 = text;
-            t_font.font_size = 12.0;
+            t_font.font_size = FontSize::Px(12.0);
             t_color.0 = color;
 
             // Lying flat: Rotate -90 deg around X

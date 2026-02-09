@@ -130,22 +130,13 @@ impl DocumentStore {
     pub fn open(&mut self, path: &Path) -> Result<&Document, String> {
         if self.documents.contains_key(path) {
             self.set_active(path);
-            if let Some(doc) = self.documents.get(path) {
-                let _ = self.event_tx.send(IdeEvent::FileOpened {
-                    path: path.to_path_buf(),
-                    content: doc.content.clone(),
-                    version: doc.version,
-                });
-            }
             return Ok(self.documents.get(path).unwrap());
         }
         let content = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
         let doc = Document::new(path.to_path_buf(), content.clone());
-        let version = doc.version;
         self.documents.insert(path.to_path_buf(), doc);
         self.set_active(path);
         self.add_recent(path);
-        let _ = self.event_tx.send(IdeEvent::FileOpened { path: path.to_path_buf(), content, version });
         Ok(self.documents.get(path).unwrap())
     }
 

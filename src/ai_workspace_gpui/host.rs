@@ -711,24 +711,64 @@ impl AiWorkspaceHost {
             }
 
             UiToHost::IdeRevealInExplorer { path } => {
+                let is_dir = std::fs::metadata(&path).map(|m| m.is_dir()).unwrap_or(false);
                 #[cfg(target_os = "windows")]
                 {
                     use std::process::Command;
-                    let _ = Command::new("explorer")
-                        .arg("/select,")
-                        .arg(path)
-                        .spawn();
+                    if is_dir {
+                        let _ = Command::new("explorer").arg(path).spawn();
+                    } else {
+                        let _ = Command::new("explorer").arg("/select,").arg(path).spawn();
+                    }
+                }
+                #[cfg(target_os = "macos")]
+                {
+                    use std::process::Command;
+                    if is_dir {
+                        let _ = Command::new("open").arg(path).spawn();
+                    } else {
+                        let _ = Command::new("open").arg("-R").arg(path).spawn();
+                    }
+                }
+                #[cfg(all(unix, not(target_os = "macos")))]
+                {
+                    use std::process::Command;
+                    let open_path = if is_dir {
+                        path
+                    } else {
+                        path.parent().map(|p| p.to_path_buf()).unwrap_or(path)
+                    };
+                    let _ = Command::new("xdg-open").arg(open_path).spawn();
                 }
             }
             UiToHost::IdeRenamePath { from, to } => {
+                if !from.exists() {
+                    let _ = self.ui_tx.send(HostToUi::IdeEvent(IdeEvent::Error {
+                        message: format!("Path does not exist: {}", from.display()),
+                    }));
+                    return;
+                }
+                if to.exists() {
+                    let _ = self.ui_tx.send(HostToUi::IdeEvent(IdeEvent::Error {
+                        message: format!("Target already exists: {}", to.display()),
+                    }));
+                    return;
+                }
                 if let Err(e) = std::fs::rename(&from, &to) {
                     let _ = self.ui_tx.send(HostToUi::IdeEvent(IdeEvent::Error { message: e.to_string() }));
+                    return;
                 }
                 if let Some(root) = self.worktree.root_path().map(|p| p.to_path_buf()) {
                     self.worktree.set_root(root);
                 }
             }
             UiToHost::IdeDeletePath { path } => {
+                if !path.exists() {
+                    let _ = self.ui_tx.send(HostToUi::IdeEvent(IdeEvent::Error {
+                        message: format!("Path does not exist: {}", path.display()),
+                    }));
+                    return;
+                }
                 let res = if std::fs::metadata(&path).map(|m| m.is_dir()).unwrap_or(false) {
                     std::fs::remove_dir_all(&path)
                 } else {
@@ -736,6 +776,7 @@ impl AiWorkspaceHost {
                 };
                 if let Err(e) = res {
                     let _ = self.ui_tx.send(HostToUi::IdeEvent(IdeEvent::Error { message: e.to_string() }));
+                    return;
                 }
                 if let Some(root) = self.worktree.root_path().map(|p| p.to_path_buf()) {
                     self.worktree.set_root(root);
@@ -804,6 +845,22 @@ impl AiWorkspaceHost {
         for m in &mention_uris {
             if let Some(content) = self.expand_mention(m) {
                 context_parts.push(content);
+            }
+        }
+
+        let has_explicit_file_context = mention_uris.iter().any(|m| {
+            matches!(
+                m,
+                MentionUri::File { .. }
+                    | MentionUri::Selection { .. }
+                    | MentionUri::Symbol { .. }
+                    | MentionUri::Directory { .. }
+            )
+        });
+
+        if !has_explicit_file_context {
+            if let Some(ide_ctx) = self.collect_ide_context_pack(180, 20_000) {
+                context_parts.push(ide_ctx);
             }
         }
         
@@ -994,6 +1051,113 @@ impl AiWorkspaceHost {
         }
 
         self.save_sessions();
+    }
+
+    fn collect_ide_context_pack(&self, max_lines: usize, max_chars: usize) -> Option<String> {
+        fn push_bounded(dst: &mut String, s: &str, max_chars: usize) {
+            if dst.len() >= max_chars {
+                return;
+            }
+            let remaining = max_chars.saturating_sub(dst.len());
+            if s.len() <= remaining {
+                dst.push_str(s);
+            } else {
+                dst.push_str(&s[..remaining]);
+            }
+        }
+
+        fn excerpt_lines(content: &str, start_line: usize, end_line_inclusive: usize) -> String {
+            let lines: Vec<&str> = content.lines().collect();
+            if lines.is_empty() {
+                return String::new();
+            }
+            let start = start_line.min(lines.len().saturating_sub(1));
+            let end_excl = end_line_inclusive.saturating_add(1).min(lines.len());
+            if start >= end_excl {
+                return String::new();
+            }
+            lines[start..end_excl].join("\n")
+        }
+
+        let active_path = self
+            .documents
+            .active_path()
+            .map(|p| p.to_path_buf())
+            .or_else(|| self.ide_cursor.as_ref().map(|(p, _, _)| p.clone()));
+
+        let Some(active_path) = active_path else {
+            return None;
+        };
+
+        let open_files = self.documents.open_files();
+        let mut out = String::new();
+        push_bounded(&mut out, "[IDE Context]\n", max_chars);
+
+        if !open_files.is_empty() {
+            push_bounded(&mut out, "// Open IDE files (unsaved changes may exist):\n", max_chars);
+            for f in open_files.iter().take(20) {
+                push_bounded(&mut out, &format!("// - {}{}\n", f.path.display(), if f.is_dirty { " (dirty)" } else { "" }), max_chars);
+            }
+        }
+
+        let (cursor_line, cursor_col) = self
+            .ide_cursor
+            .as_ref()
+            .and_then(|(p, l, c)| (p == &active_path).then_some((*l as usize, *c as usize)))
+            .unwrap_or((0, 0));
+
+        let content = if let Some(doc) = self.documents.get(&active_path) {
+            doc.content.clone()
+        } else {
+            std::fs::read_to_string(&active_path).unwrap_or_default()
+        };
+
+        if !content.is_empty() {
+            let lines: Vec<&str> = content.lines().collect();
+            let total_lines = lines.len().max(1);
+            let half = max_lines / 2;
+            let start = cursor_line.saturating_sub(half);
+            let end = (start + max_lines).min(total_lines).saturating_sub(1);
+            let snippet = excerpt_lines(&content, start, end);
+            push_bounded(
+                &mut out,
+                &format!(
+                    "\n// @active_file: {}\n// @cursor: L{} C{}\n// @excerpt: L{}-L{}\n```\n{}\n```\n",
+                    active_path.display(),
+                    cursor_line.saturating_add(1),
+                    cursor_col.saturating_add(1),
+                    start.saturating_add(1),
+                    end.saturating_add(1),
+                    snippet
+                ),
+                max_chars,
+            );
+        }
+
+        if let Some((p, s, e)) = self.ide_selection.as_ref() {
+            if p == &active_path {
+                let sel = excerpt_lines(&content, *s as usize, *e as usize);
+                if !sel.is_empty() {
+                    push_bounded(
+                        &mut out,
+                        &format!(
+                            "\n// @selection: {}:L{}-L{}\n```\n{}\n```\n",
+                            active_path.display(),
+                            s.saturating_add(1),
+                            e.saturating_add(1),
+                            sel
+                        ),
+                        max_chars,
+                    );
+                }
+            }
+        }
+
+        if out.trim().is_empty() {
+            None
+        } else {
+            Some(out)
+        }
     }
 
     fn mention_from_snapshot(&self, m: MentionSnapshot) -> Option<MentionUri> {

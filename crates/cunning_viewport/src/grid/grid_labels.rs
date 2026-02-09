@@ -48,7 +48,7 @@ pub fn update_grid_labels_system(
     for (pos, text, color) in desired_labels {
         if let Some((_, mut t_text, mut t_font, mut t_color, mut t_trans, mut t_vis)) = iter.next() {
             t_text.0 = text;
-            t_font.font_size = 12.0;
+            t_font.font_size = FontSize::Px(12.0);
             t_color.0 = color;
             *t_trans = Transform::from_translation(pos).with_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)).with_scale(Vec3::splat(text_scale));
             *t_vis = Visibility::Inherited;

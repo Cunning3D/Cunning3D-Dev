@@ -356,7 +356,7 @@ fn sync_shelf_ui(
                 .spawn((
                     cgui::Text::new(format!("{:?}", t)),
                     TextFont {
-                        font_size: 11.0,
+                        font_size: FontSize::Px(11.0),
                         ..default()
                     },
                     TextColor(if sel {
@@ -399,7 +399,7 @@ fn sync_shelf_ui(
             .spawn((
                 cgui::Text::new("▼"),
                 TextFont {
-                    font_size: 10.0,
+                    font_size: FontSize::Px(10.0),
                     ..default()
                 },
                 TextColor(Color::srgba(0.88, 0.88, 0.88, 1.0)),
@@ -447,7 +447,7 @@ fn sync_shelf_ui(
                 .spawn((
                     cgui::Text::new(icon),
                     TextFont {
-                        font_size: 22.0,
+                        font_size: FontSize::Px(22.0),
                         ..default()
                     },
                     TextColor(Color::WHITE),
@@ -458,7 +458,7 @@ fn sync_shelf_ui(
                 .spawn((
                     cgui::Text::new(label),
                     TextFont {
-                        font_size: 10.0,
+                        font_size: FontSize::Px(10.0),
                         ..default()
                     },
                     TextColor(Color::srgba(0.72, 0.72, 0.72, 1.0)),
@@ -525,7 +525,7 @@ fn sync_shelf_ui(
             .spawn((
                 cgui::Text::new("+ New Shelf Set"),
                 TextFont {
-                    font_size: 11.0,
+                    font_size: FontSize::Px(11.0),
                     ..default()
                 },
                 TextColor(Color::srgba(0.92, 0.92, 0.92, 1.0)),
@@ -582,7 +582,7 @@ fn sync_shelf_ui(
                 .spawn((
                     cgui::Text::new(label),
                     TextFont {
-                        font_size: 11.0,
+                        font_size: FontSize::Px(11.0),
                         ..default()
                     },
                     TextColor(Color::srgba(0.88, 0.88, 0.88, 1.0)),

@@ -331,7 +331,7 @@ fn spawn_timeline_ui(commands: &mut Commands, cam_q: &Query<Entity, With<Timelin
             .insert(Text::new(label))
             .insert(TextColor(Color::srgba(0.7, 0.7, 0.7, 1.0)))
             .insert(TextFont {
-                font_size: 12.0,
+                font_size: FontSize::Px(12.0),
                 ..default()
             })
             .id();
@@ -376,7 +376,7 @@ fn spawn_field_entity(
         .insert(Text::new(format!("{:.0}", value)))
         .insert(TextColor(Color::WHITE))
         .insert(TextFont {
-            font_size: 12.0,
+            font_size: FontSize::Px(12.0),
             ..default()
         })
         .id();
@@ -664,7 +664,7 @@ fn update_timeline_track_decorations(
                 .insert(Text::new(format!("{f}")))
                 .insert(TextColor(Color::srgba(0.8, 0.8, 0.8, 0.8)))
                 .insert(TextFont {
-                    font_size: 10.0,
+                    font_size: FontSize::Px(10.0),
                     ..default()
                 })
                 .id();

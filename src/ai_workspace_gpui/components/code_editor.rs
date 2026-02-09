@@ -454,6 +454,8 @@ impl Render for CodeEditor {
             .track_focus(&self.focus_handle)
             .on_mouse_up(MouseButton::Left, cx.listener(Self::mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::mouse_up))
+            .on_action(cx.listener(Self::undo))
+            .on_action(cx.listener(Self::redo))
             .on_action(cx.listener(Self::line_up))
             .on_action(cx.listener(Self::line_down))
             .on_action(cx.listener(Self::page_up))

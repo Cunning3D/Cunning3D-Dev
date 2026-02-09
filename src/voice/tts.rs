@@ -18,12 +18,24 @@ impl VitsTtsEngine {
         let text_file = temp_dir.join("mari_tts_input.txt");
         let audio_file = temp_dir.join("mari_tts.mp3");
 
-        // Keep only alphanumeric, whitespace, and basic punctuation
+        // Keep alphanumeric (including CJK), whitespace, and common punctuation
         let clean: String = text
             .chars()
-            .filter(|&c| c.is_alphanumeric() || c.is_whitespace() || ",.!?:;()~".contains(c))
+            .filter(|&c| {
+                c.is_alphanumeric() 
+                    || c.is_whitespace() 
+                    || ",.!?:;()~，。！？：；（）、".contains(c)
+            })
             .collect();
-        let _ = std::fs::write(&text_file, &clean);
+        
+        // Skip if nothing speakable
+        let clean = clean.trim();
+        if clean.is_empty() {
+            bevy::log::warn!("[TTS] Skipping empty text");
+            return Ok(vec![]);
+        }
+        
+        let _ = std::fs::write(&text_file, clean);
 
         let out = Command::new("edge-tts")
             .args([
