@@ -35,6 +35,12 @@ error*.txt
 example/blender-main/
 example/include/
 
+# local AI models / checkpoints (do not commit)
+Lmodels/
+
+# archives / dumps (do not commit)
+*.rar
+
 # generated dist/build outputs
 dist/
 
