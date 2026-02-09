@@ -106,46 +106,72 @@ impl OverlayTheme {
 
 #[inline]
 pub fn paint_sdf_rect(ui: &mut Ui, rect: Rect, rounding: CornerRadius, fill: Color32, border: Color32, border_w: f32) {
-    let c = rect.center();
-    let s = rect.size();
-    let screen = ui.ctx().content_rect().size();
-    let uniform = SdfRectUniform {
-        center: [c.x, c.y],
-        half_size: [s.x * 0.5, s.y * 0.5],
-        corner_radii: [rounding.nw as f32, rounding.ne as f32, rounding.se as f32, rounding.sw as f32],
-        fill_color: egui::Rgba::from(fill).to_array(),
-        shadow_color: [0.0; 4],
-        shadow_blur: 0.0,
-        _pad1: 0.0,
-        shadow_offset: [0.0, 0.0],
-        border_width: border_w.max(0.0),
-        _pad2: [0.0; 3],
-        border_color: egui::Rgba::from(border).to_array(),
-        screen_size: [screen.x, screen.y],
-        _pad3: [0.0; 2],
-    };
-    let frame_id = ui.ctx().cumulative_frame_nr();
-    ui.painter().add(create_sdf_rect_callback(rect, uniform, frame_id));
+    // On wasm we render text as normal egui primitives (not GPU callbacks). If we keep SDF as callbacks,
+    // callbacks may be executed after normal shapes and can cover icons/text. Use normal egui shapes here.
+    #[cfg(target_arch = "wasm32")]
+    {
+        if fill != Color32::TRANSPARENT {
+            ui.painter().rect_filled(rect, rounding, fill);
+        }
+        if border_w > 0.0 && border != Color32::TRANSPARENT {
+            ui.painter().rect_stroke(rect, rounding, egui::Stroke::new(border_w, border), egui::StrokeKind::Inside);
+        }
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let c = rect.center();
+        let s = rect.size();
+        let screen = ui.ctx().content_rect().size();
+        let uniform = SdfRectUniform {
+            center: [c.x, c.y],
+            half_size: [s.x * 0.5, s.y * 0.5],
+            corner_radii: [rounding.nw as f32, rounding.ne as f32, rounding.se as f32, rounding.sw as f32],
+            fill_color: egui::Rgba::from(fill).to_array(),
+            shadow_color: [0.0; 4],
+            shadow_blur: 0.0,
+            _pad1: 0.0,
+            shadow_offset: [0.0, 0.0],
+            border_width: border_w.max(0.0),
+            _pad2: [0.0; 3],
+            border_color: egui::Rgba::from(border).to_array(),
+            screen_size: [screen.x, screen.y],
+            _pad3: [0.0; 2],
+        };
+        let frame_id = ui.ctx().cumulative_frame_nr();
+        ui.painter().add(create_sdf_rect_callback(rect, uniform, frame_id));
+    }
 }
 
 #[inline]
 pub fn paint_sdf_circle(ui: &mut Ui, center: Pos2, radius: f32, fill: Color32, border: Color32, border_w: f32) {
-    let screen = ui.ctx().content_rect().size();
-    let u = SdfCircleUniform {
-        center: [center.x, center.y],
-        radius: radius.max(0.0),
-        border_width: border_w.max(0.0),
-        fill_color: egui::Rgba::from(fill).to_array(),
-        border_color: egui::Rgba::from(border).to_array(),
-        softness: 1.0,
-        _pad0: 0.0,
-        screen_size: [screen.x, screen.y],
-        _pad1: [0.0; 2],
-        _pad2: [0.0; 2],
-    };
-    let frame_id = ui.ctx().cumulative_frame_nr();
-    let r = Rect::from_center_size(center, Vec2::splat((radius + border_w + 2.0) * 2.0));
-    ui.painter().add(create_sdf_circle_callback(r, ui.painter().clip_rect(), u, frame_id));
+    #[cfg(target_arch = "wasm32")]
+    {
+        if fill != Color32::TRANSPARENT {
+            ui.painter().circle_filled(center, radius.max(0.0), fill);
+        }
+        if border_w > 0.0 && border != Color32::TRANSPARENT {
+            ui.painter().circle_stroke(center, radius.max(0.0), egui::Stroke::new(border_w, border));
+        }
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let screen = ui.ctx().content_rect().size();
+        let u = SdfCircleUniform {
+            center: [center.x, center.y],
+            radius: radius.max(0.0),
+            border_width: border_w.max(0.0),
+            fill_color: egui::Rgba::from(fill).to_array(),
+            border_color: egui::Rgba::from(border).to_array(),
+            softness: 1.0,
+            _pad0: 0.0,
+            screen_size: [screen.x, screen.y],
+            _pad1: [0.0; 2],
+            _pad2: [0.0; 2],
+        };
+        let frame_id = ui.ctx().cumulative_frame_nr();
+        let r = Rect::from_center_size(center, Vec2::splat((radius + border_w + 2.0) * 2.0));
+        ui.painter().add(create_sdf_circle_callback(r, ui.painter().clip_rect(), u, frame_id));
+    }
 }
 
 #[inline]
