@@ -1,0 +1,34 @@
+name = "Height Displace HighPoly V2"
+category = "Modeling"
+description = "Displace geometry by a UV heightmap (requires @uv), then optionally SDF remesh for a watertight highpoly."
+
+[io]
+input_type = "Single"
+output_type = "Geometry"
+
+[[io.inputs]]
+index = 0
+name = "Input"
+description = "Lowpoly geometry with @uv"
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "Highpoly geometry (UV not required after SDF remesh)"
+
+[parameters]
+height_path = "String. Optional height image path under assets/ (or absolute). If empty, reads detail `__ai_heightmap_path` from input geometry."
+strength = "Float. Displacement strength along normals. Default: 0.05."
+mid = "Float. Height midpoint (0..1) mapped to zero displacement. Default: 0.5."
+sdf_remesh = "Bool. Run SDF remesh after displacement. Default: true."
+voxel_size = "Float. SDF voxel size (smaller = more detail, more cost). Default: 0.01."
+bandwidth = "Int. SDF narrow band in voxels. Default: 3."
+iso_value = "Float. Iso-surface threshold. Default: 0.0."
+hard_surface = "Bool. Sharper extraction. Default: false."
+
+[usage]
+text = """
+This node requires @uv. It will NOT auto-unwrap UVs.
+If `height_path` is empty, it reads the height map path from the input geometry detail attribute `__ai_heightmap_path` (typically produced by AI nodes).
+"""
+

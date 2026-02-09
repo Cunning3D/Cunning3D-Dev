@@ -1,0 +1,28 @@
+name = "Circle"
+category = "Primitives"
+description = "Creates a circle as a polygon (closed) or an arc as a polyline, with orientation and angle range."
+
+[io]
+input_type = "None"
+output_type = "Geometry"
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "生成的圆形几何体（多边形或开放弧线）"
+
+[parameters]
+type = "Int (Dropdown). Primitive type: Polygon (closed) or Open Arc (polyline). Default: Polygon."
+orient = "Int (Dropdown). Orientation plane: XY / YZ / ZX. Default: ZX."
+t = "Vec3. Center position. Default: (0, 0, 0)."
+rad = "Vec2. Radius along the plane axes (allows ellipse). Default: (1, 1)."
+begin = "Float. Begin angle in degrees. Default: 0."
+end = "Float. End angle in degrees. Default: 360."
+divs = "Int. Divisions (segments). Default: 12."
+
+[usage]
+text = """
+Generator node: no inputs.
+Creates points on an angle range [Begin, End] and outputs either a Polygon or Polyline primitive.
+For Polygon output, flat normals are computed.
+"""

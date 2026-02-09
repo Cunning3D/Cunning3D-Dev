@@ -1,0 +1,37 @@
+name = "Nano Voxel Point Scatter"
+category = "AI Texture"
+description = "Use a top-down reference image to generate colored scatter dots via Gemini and paint/add voxels on the surface."
+
+[io]
+input_type = "Geometry"   # Expects voxel geometry (discrete payload or VoxelEdit cache).
+output_type = "Voxel"
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "Voxel geometry with scattered palette indices applied."
+
+[parameters]
+system_prompt = "Code/String. System prompt that forces sparse colored dots on the reference image. Default: SYS_SCATTER."
+prompt = "String. What to scatter (flowers/rocks/props) and the pattern. Default: \"Scatter a few clusters of colorful flowers, rocks, and props.\"."
+reference_image = "FilePath. Top-down black/white (or mask) image. Default: \"\"."
+ref_white_threshold = "Float. Only accept scatter dots where reference pixel is bright enough. Default: 0.30."
+min_value = "Float. Minimum brightness of the scatter pixel to count as a dot. Default: 0.35."
+min_saturation = "Float. Minimum saturation of the scatter pixel to count as a dot. Default: 0.20."
+palette_r = "Int. Palette index used for Red-dominant dots. Default: 2."
+palette_g = "Int. Palette index used for Green-dominant dots. Default: 3."
+palette_b = "Int. Palette index used for Blue-dominant dots. Default: 4."
+paint_surface = "Bool. If true, paint the top surface voxel; otherwise add at (top_y + y_offset). Default: true."
+y_offset = "Int. Offset when paint_surface=false. Default: 1."
+max_points = "Int. Safety cap for applied dots (0 disables cap). Default: 20000."
+seed = "Int. Seed hint appended to the prompt. Default: 0."
+timeout_s = "Int. Request timeout seconds (0 = unlimited). Default: 0."
+generate = "Button. Runs Gemini and saves a scatter image under assets/textures/ai_voxel_scatter/<node_id>/. Default: 0."
+
+[usage]
+text = """
+Processor node: connect voxel terrain (Geometry/Voxel) as input.
+Set Reference Image (top-down mask), tweak palette indices (R/G/B), then click Generate.
+The node applies colored dots back onto the voxel surface by painting or adding voxels.
+"""
+

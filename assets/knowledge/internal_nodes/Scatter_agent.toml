@@ -1,0 +1,28 @@
+name = "Scatter"
+category = "Modeling"
+description = "Scatters random points over polygon surfaces with area-weighted sampling."
+
+[io]
+input_type = "Single"
+output_type = "Geometry"
+
+[[io.inputs]]
+index = 0
+name = "Input"
+description = "输入多边形几何体，将在表面生成随机点"
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "生成的随机点几何体（仅点，无图元）"
+
+[parameters]
+count = "Int. Number of points to generate. Default: 1000."
+seed = "Int. Random seed. Default: 0."
+
+[usage]
+text = """
+Generates points on polygon triangles using area-weighted sampling (triangulated per polygon fan).
+Outputs a point-only geometry with @P positions (no primitives).
+Requires polygon input with non-zero area; empty/invalid input returns empty geometry.
+"""

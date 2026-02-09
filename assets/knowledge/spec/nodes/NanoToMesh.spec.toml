@@ -1,0 +1,142 @@
+[node]
+name = "Nano To Mesh"
+category = "AI Generation"
+summary = "Generate a closed mesh from a prompt or reference image via Gemini 3x2 depth atlas -> point splat VDB(SDF) -> Surface Nets."
+
+[ports]
+inputs = [{ key = "in:0", label = "Input (optional)", type = "Geometry", optional = true }]
+outputs = [{ key = "out:0", label = "Mesh", type = "Geometry" }]
+
+[[params]]
+name = "__ai_system_prompt"
+type = "string"
+default = ""
+ui = { kind = "code" }
+meaning = "System prompt used to constrain the 3x2 depth atlas generation."
+
+[[params]]
+name = "prompt"
+type = "string"
+default = "A stylized banana figurine, clean silhouette."
+ui = { kind = "string" }
+meaning = "User prompt describing the object to reconstruct."
+
+[[params]]
+name = "reference_image"
+type = "filepath"
+default = ""
+ui = { kind = "file_path", filters = ["png", "jpg", "jpeg", "webp"] }
+meaning = "Optional reference image for image-conditioned generation."
+
+[[params]]
+name = "tile_res"
+type = "int"
+default = 256
+units = "px"
+range = [64, 1024]
+ui = { kind = "int_slider", min = 64, max = 1024 }
+meaning = "Per-tile resolution for the 3x2 depth atlas (atlas size = tile_res*3 by tile_res*2)."
+
+[[params]]
+name = "world_size"
+type = "float"
+default = 1.0
+units = "scene"
+range = [0.01, 100.0]
+ui = { kind = "float_slider", min = 0.01, max = 100.0 }
+meaning = "Output bounding cube size in world units for the reconstructed point cloud."
+
+[[params]]
+name = "sample_step"
+type = "int"
+default = 4
+units = "px"
+range = [1, 16]
+ui = { kind = "int_slider", min = 1, max = 16 }
+meaning = "Pixel stride when extracting points from the depth atlas (higher = fewer points)."
+
+[[params]]
+name = "depth_min"
+type = "float"
+default = 0.05
+range = [0.0, 0.5]
+ui = { kind = "float_slider", min = 0.0, max = 0.5 }
+meaning = "Depth threshold below which pixels are treated as background and ignored."
+
+[[params]]
+name = "voxel_size"
+type = "float"
+default = 0.03
+units = "scene"
+range = [0.001, 1.0]
+ui = { kind = "float_slider", min = 0.001, max = 1.0 }
+meaning = "Voxel size for VDB(SDF) construction; lower values preserve more detail."
+
+[[params]]
+name = "splat_radius_vox"
+type = "int"
+default = 2
+units = "vox"
+range = [1, 12]
+ui = { kind = "int_slider", min = 1, max = 12 }
+meaning = "Point splat radius in voxel units; larger values close holes but inflate the shape."
+
+[[params]]
+name = "iso_value"
+type = "float"
+default = 0.0
+range = [-1.0, 1.0]
+ui = { kind = "float_slider", min = -1.0, max = 1.0 }
+meaning = "Iso-surface threshold used by Surface Nets when extracting the mesh."
+
+[[params]]
+name = "hard_surface"
+type = "bool"
+default = false
+ui = { kind = "toggle" }
+meaning = "Enable hard-surface mode in Surface Nets extraction."
+
+[[params]]
+name = "timeout_s"
+type = "int"
+default = 0
+units = "s"
+range = [0, 1800]
+ui = { kind = "int_slider", min = 0, max = 1800 }
+meaning = "Gemini request timeout (0 = unlimited)."
+
+[[params]]
+name = "generate"
+type = "int"
+default = 0
+ui = { kind = "button" }
+meaning = "Start the generation pipeline."
+
+[semantics]
+algorithm = """
+1) Request a 3x2 orthographic depth atlas from Gemini (grayscale, fixed tile layout).
+2) Extract a point cloud by unprojecting depth pixels for each of the 6 faces into a world-space cube of size world_size.
+3) Build an implicit SDF volume by splatting points into a sparse chunked VDB grid (min-combine).
+4) Convert the VDB(SDF) to polygons via Surface Nets at iso_value.
+"""
+edge_cases = [
+  "Missing Gemini API key results in failure and no output",
+  "If no points can be extracted (depth atlas mostly background), output is empty",
+  "Very small voxel_size or very large tile_res may cause slow cooks or memory pressure",
+]
+determinism = "Non-deterministic due to AI generation; deterministic once depth atlas is fixed."
+
+[performance]
+time = "AI request dominates; local cook is roughly O(P * R^3) for point splat (P=points, R=splat_radius_vox) + O(V) for meshing active volume bounds."
+memory = "Sparse chunk storage for VDB; dense densification occurs inside VDB To Polygons bounds during meshing."
+caching = "Cache by (depth_atlas_path, voxel_size, splat_radius_vox, iso_value, hard_surface, world_size, sample_step, depth_min)."
+
+[validation]
+fingerprint_fields = ["point_count", "primitive_count", "bbox_min", "bbox_max"]
+tolerance = { bbox_eps = 1e-3 }
+recipe = """
+1) Run once to produce a depth atlas, then freeze the depth atlas path.
+2) Re-cook with identical params and verify stable fingerprint fields (within tolerance).
+3) Decrease voxel_size and verify primitive_count increases monotonically (typical behavior).
+"""
+

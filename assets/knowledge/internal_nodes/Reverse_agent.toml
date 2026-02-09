@@ -1,0 +1,28 @@
+name = "Reverse"
+category = "Modeling"
+description = "Reverses primitive vertex order and/or flips normals on the input geometry."
+
+[io]
+input_type = "Single"
+output_type = "Geometry"
+
+[[io.inputs]]
+index = 0
+name = "Input"
+description = "输入几何体，将反转顶点顺序或法线"
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "反转后的几何体"
+
+[parameters]
+reverse_vertices = "Bool. Reverse polygon/polyline vertex order (winding). Default: true."
+reverse_normals = "Bool. Multiply normals (@N) by -1 on points/vertices. Default: true."
+
+[usage]
+text = """
+Optionally reverses vertex order on Polygon and Polyline primitives.
+Optionally flips point and vertex normals by negating @N.
+Useful for fixing winding/normals after mirror or import operations.
+"""

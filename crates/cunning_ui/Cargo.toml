@@ -1,0 +1,8 @@
+[package]
+name = "cunning_ui"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+egui = { path = "../../src/cunning_ui/crates/cunning_egui/crates/egui" }
+serde = { version = "1.0", features = ["derive"] }

@@ -1,0 +1,33 @@
+name = "Nano HexPlanar Baker V2"
+category = "AI Texture"
+description = "V2 pipeline: BaseColor UV (Gemini 6-view atlas → GPU bake) + AI Height UV + deterministic Normal UV derived from Height."
+
+[io]
+input_type = "Geometry"   # Requires input geometry with @uv.
+output_type = "Geometry"  # Outputs the same geometry with material texture bindings in detail attrs.
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "Geometry with MAT_BASECOLOR_TEX + MAT_NORMAL_TEX detail bindings"
+
+[parameters]
+__ai_system_prompt = "String. System prompt for BaseColor atlas generation. Default: V2 internal."
+prompt_basecolor = "String. BaseColor prompt (pure albedo; no shadows/AO/spec). Default: provided."
+prompt_height = "String. Height/Displacement UV prompt (grayscale, UV-aligned). Default: provided."
+tile_res = "Int. Per-face tile resolution for 3x2 atlases. Default: 512."
+uv_res = "Int. UV texture resolution (square). Default: 1024."
+timeout_s = "Int. Request timeout seconds (0 = unlimited). Default: 0."
+seam_px = "Int. Seam band width in pixels for seam mask dilation. Default: 8."
+seam_fix = "Bool. Run seam repair (inpaint) for BaseColor UV. Default: true."
+height_strength = "Float. Height→Normal strength multiplier. Default: 2.0."
+generate = "Button. Starts pipeline (guides → basecolor atlas → bake → optional seamfix → height uv → normal uv)."
+thinking = "String. Streamed Gemini text/thinking (internal)."
+
+[usage]
+text = """
+Processor node: requires input geometry with @uv (vertex or point attribute).
+Generates a 6-view BaseColor atlas from a GPU-captured guide atlas, bakes to UV, optionally seam-fixes BaseColor UV, then asks Gemini for a Height UV (grayscale) and derives a deterministic tangent-space Normal UV from that Height.
+Outputs are written under assets/textures/ai_bakes_v2/<node_id>/ and the node writes MAT_* detail attributes for viewport shading.
+"""
+

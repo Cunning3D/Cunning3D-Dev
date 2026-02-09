@@ -1,0 +1,26 @@
+name = "Triangulate"
+category = "Modeling"
+description = "Converts polygon primitives (n-gons) into triangles by fan triangulation."
+
+[io]
+input_type = "Single"
+output_type = "Geometry"
+
+[[io.inputs]]
+index = 0
+name = "Input"
+description = "输入多边形几何体，将被三角化"
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "三角化后的几何体（仅三角形多边形）"
+
+[parameters]
+
+[usage]
+text = """
+Splits polygons with more than 3 vertices into triangles using a fan from the first vertex.
+Outputs triangle polygons; does not compute normals automatically.
+Topology changes; attribute behavior depends on existing vertex/point attributes.
+"""

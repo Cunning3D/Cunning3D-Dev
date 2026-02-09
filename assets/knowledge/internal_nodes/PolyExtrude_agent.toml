@@ -1,0 +1,37 @@
+name = "PolyExtrude"
+category = "Modeling"
+description = "Extrudes selected polygons along their normal (or averaged direction) with optional inset and output group tagging."
+
+[io]
+input_type = "Single"
+output_type = "Geometry"
+
+[[io.inputs]]
+index = 0
+name = "Input"
+description = "输入几何体，将挤出选中的多边形"
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "挤出后的几何体，包含前/后/侧面多边形"
+
+[parameters]
+group = "String. Primitive group pattern to select faces to extrude. Default: empty (all)."
+split = "Int (Dropdown). Split mode: Connected Components or Individual Elements. Default: Connected Components."
+distance = "Float. Extrusion distance. Default: 0.0."
+inset = "Float. Inset amount (shrink toward center). Default: 0.0."
+divisions = "Int. Number of extrusion divisions (reserved; may not affect current implementation in all modes). Default: 1."
+output_front = "Bool. Output the extruded front faces. Default: true."
+output_back = "Bool. Output the original/back faces. Default: false."
+output_side = "Bool. Output the side walls. Default: true."
+front_grp = "String. Output group name for front faces. Default: extrudeFront."
+back_grp = "String. Output group name for back faces. Default: extrudeBack."
+side_grp = "String. Output group name for side faces. Default: extrudeSide."
+
+[usage]
+text = """
+Extrudes selected polygon primitives. Selection is controlled by Group; empty means all primitives.
+Split controls whether faces share points (Connected Components) or are extruded independently (Individual Elements).
+Outputs front/back/side polygons according to the Output toggles and writes group masks for produced primitives.
+"""

@@ -1,0 +1,5 @@
+{
+  "allow_always": [
+    "apply_rust_nodespec"
+  ]
+}

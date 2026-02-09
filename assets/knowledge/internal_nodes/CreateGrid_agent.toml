@@ -1,0 +1,25 @@
+name = "Create Grid"
+category = "Basic"
+description = "Creates a planar polygon grid (quads) with configurable size and subdivisions."
+
+[io]
+input_type = "None"
+output_type = "Geometry"
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "生成的平面网格几何体（四边形）"
+
+[parameters]
+size = "Vec2. Grid dimensions in world units (X, Z). Default: (10, 10)."
+center = "Vec3. Grid center position. Default: (0, 0, 0)."
+rows = "Int. Number of points along Z. Default: 10."
+columns = "Int. Number of points along X. Default: 10."
+
+[usage]
+text = """
+Generator node: no inputs.
+Builds a quad grid in the XZ plane at Y=0, then offsets by Center.
+Outputs polygon primitives and computes flat normals.
+"""

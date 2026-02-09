@@ -1,0 +1,32 @@
+name = "CopyToPoints"
+category = "Modeling"
+description = "Instantiates source geometry onto each point of a target points geometry, using @P and optional pscale."
+
+[io]
+input_type = "Multi"
+output_type = "Geometry"
+
+[[io.inputs]]
+index = 0
+name = "Geometry"
+description = "要复制的源几何体"
+
+[[io.inputs]]
+index = 1
+name = "Points"
+description = "目标点几何体，将在每个点上实例化源几何体"
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "合并后的几何体，包含所有实例"
+
+[parameters]
+scale_mult = "Float. Global scale multiplier applied to each instance. Default: 1.0."
+
+[usage]
+text = """
+Input 1: Geometry to copy. Input 2: Points geometry (uses point positions @P).
+If the points input has a float point attribute named \"pscale\", it scales instances per-point.
+Outputs a merged geometry containing all instances (topology and point count increase).
+"""

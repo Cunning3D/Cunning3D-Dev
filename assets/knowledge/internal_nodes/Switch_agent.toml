@@ -1,0 +1,41 @@
+name = "Switch"
+category = "Utility"
+description = "Selects one of multiple input geometries by index and passes it through."
+
+[io]
+input_type = "Multi"
+output_type = "Geometry"
+
+[[io.inputs]]
+index = 0
+name = "0"
+description = "第一个输入几何体（索引0）"
+
+[[io.inputs]]
+index = 1
+name = "1"
+description = "第二个输入几何体（索引1）"
+
+[[io.inputs]]
+index = 2
+name = "2"
+description = "第三个输入几何体（索引2）"
+
+[[io.inputs]]
+index = 3
+name = "3"
+description = "第四个输入几何体（索引3）"
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "根据参数选择的输入几何体"
+
+[parameters]
+input = "Int. Selected input index (0-based). Default: 0."
+
+[usage]
+text = """
+Pass-through utility: returns the selected input geometry by index.
+If the index is out of range, outputs empty geometry.
+"""

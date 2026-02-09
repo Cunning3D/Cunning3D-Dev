@@ -1,0 +1,18 @@
+[package]
+name = "paths"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "GPL-3.0-or-later"
+
+
+[features]
+test-support = []
+
+[lib]
+path = "src/paths.rs"
+
+[dependencies]
+dirs = "4.0"
+ignore = "0.4.22"
+util = { path = "../util" }

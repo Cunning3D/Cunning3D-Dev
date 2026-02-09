@@ -1,0 +1,28 @@
+# Ignore large model files causing indexing lag
+Lmodels/
+**/*.gguf
+**/*.bin
+**/*.onnx
+
+# Ignore build artifacts and binaries
+target/
+dist/
+**/*.dll
+**/*.pdb
+**/*.exe
+**/*.so
+**/*.lib
+
+# Ignore binary assets
+assets/textures/
+**/*.vox
+**/*.png
+**/*.jpg
+**/*.jpeg
+
+# Ignore large vendor/example directories
+example/blender-main/
+
+# Ignore logs and temporary files
+**/*.log
+**/*.tmp

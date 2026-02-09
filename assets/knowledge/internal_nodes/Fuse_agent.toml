@@ -1,0 +1,29 @@
+name = "Fuse"
+category = "Modeling"
+description = "Welds points within a distance threshold and optionally cleans up unused points and degenerate primitives."
+
+[io]
+input_type = "Single"
+output_type = "Geometry"
+
+[[io.inputs]]
+index = 0
+name = "Input"
+description = "输入几何体，将焊接邻近点"
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "焊接后的几何体，包含清理后的点和图元"
+
+[parameters]
+distance = "Float. Snap/weld distance. Default: 0.001."
+remove_unused = "Bool. Remove points that become unused after fusing. Default: true."
+remove_degenerate = "Bool. Remove degenerate primitives produced by welding. Default: true."
+
+[usage]
+text = """
+Merges nearby points (weld) using the given Snap Distance.
+Optionally removes unused points and degenerate primitives after welding.
+Topology and point count may change; attribute interpolation depends on the fuse backend.
+"""

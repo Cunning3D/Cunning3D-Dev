@@ -1,0 +1,27 @@
+name = "Auto UV"
+category = "UV"
+description = "自动展开 UV（使用 xatlas 进行参数化与打包），结果写入顶点属性 @uv。"
+
+[io]
+input_type = "Single"
+output_type = "Geometry"
+
+[[io.inputs]]
+index = 0
+name = "Input"
+description = "输入几何体，将被自动展开UV"
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "包含UV属性的几何体"
+
+[parameters]
+padding = "Float. Packing padding (normalized, scaled by atlas size). Default: 0.02."
+
+[usage]
+text = """
+对输入几何进行扇形三角化后送入 xatlas，生成 UV charts 并打包到固定分辨率图集。
+把生成的 UV 写入 Vertex 属性 @uv（适合存在 UV seam 的情况）。
+需要有效的 @P 与可三角化的面；失败时回退为原输入几何。
+"""

@@ -1,0 +1,55 @@
+target/
+**/target/
+**/*.pdb
+**/*.exe
+**/*.dll
+**/*.lib
+**/*.exp
+.vscode/
+.idea/
+
+# logs / local artifacts
+*.log
+log.txt
+build.log
+check_*.txt
+cargo_check*.log
+error*.txt
+
+# cursor / local sessions
+.cunning_sessions.json
+**/.cursor/**
+
+# local cargo config (machine-specific)
+.cargo/config.toml
+
+# local editor state (do not commit)
+.zed/
+**/.zed/**
+
+# OS junk
+**/.DS_Store
+**/Thumbs.db
+
+# big vendor/examples (keep out of git; use separate storage if needed)
+example/blender-main/
+example/include/
+
+# generated dist/build outputs
+dist/
+
+# wasm bindgen outputs (keep index.html as source)
+crates/cunning_player/web_output/cunning_player*.wasm
+crates/cunning_player/web_output/cunning_player*.js
+crates/cunning_player/web_output/snippets/
+
+# ensure shaders in assets are always committed
+!assets/shaders/**/*.wgsl
+!assets/shaders/**/*.wgsl.meta
+
+# local secrets (do not commit)
+settings/secrets.toml
+settings/ai/providers.json
+settings/ai/sessions.json
+**/.env
+**/.env.*

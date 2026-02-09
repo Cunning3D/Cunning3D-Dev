@@ -1,0 +1,23 @@
+name = "Create Sphere"
+category = "Basic"
+description = "Creates a sphere geometry."
+
+[io]
+input_type = "None"      # Generator node, does not require input connections.
+output_type = "Geometry"  # Produces one geometry stream.
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "生成的球体几何体"
+
+[parameters]
+radius = "Float. The radius of the sphere. Default: 0.5"
+center = "Vec3. The center position of the sphere. Default: (0, 0, 0)"
+divisions = "IVec2. The number of subdivisions (slices, stacks). X is longitude (around Y), Y is latitude. Default: (20, 10)"
+
+[usage]
+text = """
+Generator node: no inputs.
+Use this node to generate a sphere. You can control the radius, center position, and the resolution (divisions).
+"""

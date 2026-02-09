@@ -1,0 +1,23 @@
+name = "Create Cube"
+category = "Basic"
+description = "Creates a cube geometry with optional subdivisions."
+
+[io]
+input_type = "None"      # Generator node, does not require input connections.
+output_type = "Geometry"  # Produces one geometry stream.
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "生成的立方体几何体"
+
+[parameters]
+size = "Float. The size of the cube (length of side). Default: 1.0"
+center = "Vec3. The center position of the cube. Default: (0, 0, 0)"
+divisions = "Vec3. The number of subdivisions along X, Y, Z axes. Default: (10, 10, 10)"
+
+[usage]
+text = """
+Generator node: no inputs.
+Use this node to generate a basic cube or box shape. You can control the size, center position, and the number of subdivisions along each axis.
+"""

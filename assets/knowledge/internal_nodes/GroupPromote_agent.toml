@@ -1,0 +1,33 @@
+name = "Group Promote"
+category = "Group"
+description = "把一个域上的组提升到另一个域（点/顶点/面/边），并输出为新组。"
+
+[io]
+input_type = "Single"
+output_type = "Geometry"
+
+[[io.inputs]]
+index = 0
+name = "Input"
+description = "输入几何体，包含要提升的源组"
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "输出几何体，包含提升后的目标组"
+
+
+
+[parameters]
+from_domain = "Int (Dropdown). Source domain: Point/Vertex/Primitive/Edge. Default: Primitive."
+from = "String. Source group name. Default: empty."
+to_domain = "Int (Dropdown). Destination domain: Point/Vertex/Primitive/Edge. Default: Point."
+to = "String. Output group name. Default: group1."
+mode = "Int (Dropdown). Promote mode: All/BoundaryOnly. Default: All."
+
+[usage]
+text = """
+把源组从 From Domain 提升到 To Domain 并写入 Out 组。
+Mode=BoundaryOnly 时仅提升边界元素（具体边界定义依赖组算法实现）。
+不会改变拓扑，只创建/覆盖目标域上的组掩码。
+"""

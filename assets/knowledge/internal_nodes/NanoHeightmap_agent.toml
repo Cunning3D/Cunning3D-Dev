@@ -1,0 +1,29 @@
+name = "Nano Heightmap"
+category = "AI Texture"
+description = "Generate a grayscale heightmap PNG using Gemini image generation."
+
+[io]
+input_type = "None"
+output_type = "Heightmap"
+
+[[io.outputs]]
+index = 0
+name = "Heightmap"
+description = "Heightmap image reference (PNG path)."
+
+[parameters]
+system_prompt = "Code/String. System prompt used to constrain image generation (top-down orthographic, grayscale heightmap only). Default enforces strict heightmap rules."
+prompt = "String. Text description of the terrain/shape. Default: \"A smooth mountainous terrain with ridges.\"."
+width = "Int. Output image width in pixels. Default: 512."
+height = "Int. Output image height in pixels. Default: 512."
+seed = "Int. Random seed hint. Default: 0."
+timeout_s = "Int. Request timeout seconds (0 = unlimited). Default: 0."
+generate = "Button. Triggers image generation. Default: 0."
+
+[usage]
+text = """
+Generator node: no inputs.
+Use Prompt to describe the heightmap. Click Generate to request Gemini and save a PNG.
+Connect to Voxel From Heightmap to convert into voxels.
+"""
+

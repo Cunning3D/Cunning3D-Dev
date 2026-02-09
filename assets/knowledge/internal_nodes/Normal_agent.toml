@@ -1,0 +1,33 @@
+name = "Normal"
+category = "Attribute"
+description = "计算/修改法线 @N，可写入点/顶点/面/细节并支持夹角硬边与加权方式。"
+
+[io]
+input_type = "Single"
+output_type = "Geometry"
+
+[[io.inputs]]
+index = 0
+name = "Input"
+description = "输入几何体，将计算或修改法线"
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "包含计算后法线的几何体"
+
+[parameters]
+compute_normals = "Bool. Compute normals. Default: true."
+add_normals_to = "Int (Dropdown). Target: Points/Vertices/Primitives/Detail. Default: Vertices."
+cusp_angle = "Float. Cusp angle in degrees for smoothing splits. Default: 60."
+weighting_method = "Int (Dropdown). Weighting: EachVertexEqually/ByVertexAngle/ByFaceArea. Default: ByVertexAngle."
+keep_original_zero = "Bool. Keep existing normal where computed normal is zero. Default: false."
+make_unit_length = "Bool. Normalize normals to unit length. Default: false."
+reverse_normals = "Bool. Flip normals by multiplying by -1. Default: false."
+
+[usage]
+text = """
+根据拓扑与位置属性 @P 计算面法线，并按夹角阈值（Cusp Angle）在共享点处进行平滑/硬边分割。
+可选择把结果写入点/顶点/面/细节层级，并可选进行单位化与反向。
+用于修复导入/建模后法线不正确的问题；不会改变拓扑。
+"""

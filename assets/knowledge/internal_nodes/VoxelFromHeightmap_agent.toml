@@ -1,0 +1,31 @@
+name = "Voxel From Heightmap"
+category = "Voxel"
+description = "Convert a heightmap into GPU-preview voxel chunks (pure voxel output, no CPU meshing)."
+
+[io]
+input_type = "Heightmap"
+output_type = "Voxel"
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "Pure voxel marker geometry (rendered via voxel chunk cache)."
+
+[parameters]
+heightmap_path = "FilePath. Heightmap PNG (used when upstream is not connected). Default: \"\"."
+voxel_size = "Float. World size per voxel. Default: 0.1."
+height_scale = "Float. Height in world units for white pixels. Default: 10.0."
+height_offset = "Float. World height offset added after scaling. Default: 0.0."
+palette_index = "Int. Palette index for solid voxels (1..255). Default: 1."
+palette_min = "Int. Palette min for height-based mapping (1..255). Default: 1."
+palette_max = "Int. Palette max for height-based mapping (1..255). Default: 1."
+gradient_noise = "Float. Small noise applied before palette mapping. Default: 0.0."
+invert = "Bool. Invert height (white becomes low). Default: false."
+surface_only = "Bool. Generate only surface voxels for fast preview (recommended for huge terrains). Default: true."
+
+[usage]
+text = """
+Processor node: optional input heightmap, or load from Heightmap parameter.
+Generates GPU-friendly voxel chunks for viewport preview (no CPU meshing).
+"""
+

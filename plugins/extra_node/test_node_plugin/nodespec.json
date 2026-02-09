@@ -1,0 +1,7 @@
+{
+  "node": {
+    "category": "Utility",
+    "name": "Test Node"
+  },
+  "plugin_name": "test_node_plugin"
+}

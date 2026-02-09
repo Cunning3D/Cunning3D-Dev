@@ -1,0 +1,66 @@
+# Copyright © 2025 The µcad authors <info@ucad.xyz>
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "manifold-rs"
+version = "0.6.4"
+description = "Rust wrapper for manifold"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/WilstonOreo/manifold-rs"
+
+exclude = [
+    "glm/doc/**/*",
+    "glm/test/**/*",
+    "manifold/docs/**/*",
+    "manifold/test/**/*",
+    "manifold/samples/**/*",
+]
+
+[lib]
+name = "manifold_rs"
+path = "src/lib.rs"
+
+[dependencies]
+cxx = "1.0"
+cgmath = { version = "0.18.0", optional = true }
+
+[build-dependencies]
+cxx-build = "1.0"
+cmake = "0.1"
+
+[features]
+default = []
+output = ["cgmath"]
+bevy_example = [
+    "bevy",
+    "bevy_panorbit_camera",
+] # feature to bundle Bevy for the example
+
+[dependencies.bevy]
+version = "0.16"
+optional = true
+
+[dependencies.bevy_panorbit_camera]
+version = "0.26.0"
+optional = true
+
+[[example]]
+name = "simple"
+path = "examples/simple.rs"
+
+[[example]]
+name = "bevy"
+path = "examples/bevy.rs"
+required-features = ["bevy_example"]
+
+[[example]]
+name = "write_ply"
+path = "examples/write_ply.rs"
+required-features = ["output"]
+
+[[example]]
+name = "write_stl"
+path = "examples/write_stl.rs"
+required-features = ["output"]

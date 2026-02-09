@@ -1,0 +1,37 @@
+name = "Match Size"
+category = "Utility"
+description = "Fits and aligns geometry to a target bounding box or a reference geometry's bounds."
+
+[io]
+input_type = "Multi"
+output_type = "Geometry"
+
+[[io.inputs]]
+index = 0
+name = "Geometry"
+description = "要变换的几何体"
+
+[[io.inputs]]
+index = 1
+name = "Reference"
+description = "参考几何体（可选），用于获取目标边界框"
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "变换后的几何体，已匹配到目标尺寸或参考边界框"
+
+[parameters]
+justify_x = "Int (Dropdown). Alignment mode on X: None/Min/Center/Max. Default: None."
+justify_y = "Int (Dropdown). Alignment mode on Y: None/Min/Center/Max. Default: None."
+justify_z = "Int (Dropdown). Alignment mode on Z: None/Min/Center/Max. Default: None."
+target = "Vec3. Target position used when no reference geometry is provided. Default: (0, 0, 0)."
+scale_axis = "Int (Dropdown). Scale mode: None/Uniform/Non-Uniform. Default: None."
+size = "Vec3. Target size used when no reference geometry is provided. Default: (1, 1, 1)."
+
+[usage]
+text = """
+Input 1: Geometry to transform. Input 2 (optional): Reference geometry for bounds matching.
+Computes bounds of the input, optionally scales to fit a target size or reference bounds, then applies axis justification.
+Transforms point positions (@P); topology is unchanged.
+"""

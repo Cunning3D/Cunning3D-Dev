@@ -1,0 +1,30 @@
+name = "UV Project"
+category = "UV"
+description = "按投影方式（平面/圆柱/球）生成 UV，并写入顶点属性 @uv，可设置中心/旋转/缩放。"
+
+[io]
+input_type = "Single"
+output_type = "Geometry"
+
+[[io.inputs]]
+index = 0
+name = "Input"
+description = "输入几何体，将被投影生成UV"
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "包含投影UV属性的几何体"
+
+[parameters]
+type = "Int (Dropdown). Projection: Planar XY/YZ/ZX, Cylindrical, Spherical. Default: Planar (XY)."
+center = "Vec3. Projection transform translation. Default: (0,0,0)."
+rotate = "Vec3. Euler rotation in degrees (YXZ). Default: (0,0,0)."
+scale = "Vec3. Projection transform scale (0 is clamped). Default: (1,1,1)."
+
+[usage]
+text = """
+对每个顶点按选定的投影方式计算 UV，并写入 Vertex 属性 @uv（支持 seam）。
+先把点转换到投影空间（Center/Rotate/Scale），再进行平面/圆柱/球面坐标映射。
+不会改变拓扑，只新增/覆盖 @uv。
+"""

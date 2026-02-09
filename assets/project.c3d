@@ -1,0 +1,790 @@
+{
+  "header": {
+    "version": "1.1.0",
+    "app_version": "0.1.0",
+    "uuid": "58cc85f9-3aa0-4a35-be44-81b9d22a4c86",
+    "author": "User",
+    "created_at": "2026-02-07T15:12:04.257894200+00:00"
+  },
+  "graph": {
+    "nodes": {
+      "b9045fc4-8fd3-4d1b-9561-e63b97209b3f": {
+        "id": "b9045fc4-8fd3-4d1b-9561-e63b97209b3f",
+        "name": "File",
+        "node_type": {
+          "Generic": "File"
+        },
+        "position": {
+          "x": 31.000017,
+          "y": 443.60864
+        },
+        "size": {
+          "x": 160.0,
+          "y": 80.0
+        },
+        "parameters": [
+          {
+            "id": "3705f3e6-f214-41ca-931e-17f32ce65dda",
+            "name": "file_path",
+            "label": "File",
+            "group": "File",
+            "value": {
+              "String": "textures/testpig_4.fbx"
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "fbx",
+                  "obj",
+                  "gltf",
+                  "glb",
+                  "stl",
+                  "ply",
+                  "vox"
+                ]
+              }
+            },
+            "visible_condition": null
+          }
+        ],
+        "is_template": false,
+        "inputs": {
+          "in:0": null
+        },
+        "outputs": {
+          "out:0": null
+        },
+        "is_bypassed": false,
+        "is_display_node": false,
+        "is_locked": false,
+        "input_style": "Individual",
+        "style": "Normal"
+      },
+      "40c38567-1a84-4434-919b-b639eebf2366": {
+        "id": "40c38567-1a84-4434-919b-b639eebf2366",
+        "name": "Nano Voxel Painter",
+        "node_type": {
+          "Generic": "Nano Voxel Painter"
+        },
+        "position": {
+          "x": 382.0,
+          "y": 160.0
+        },
+        "size": {
+          "x": 160.0,
+          "y": 80.0
+        },
+        "parameters": [
+          {
+            "id": "98eadbdb-c1b4-480f-b437-d159f7e8a3dd",
+            "name": "__ai_system_prompt",
+            "label": "System Prompt",
+            "group": "AI",
+            "value": {
+              "String": "You generate a 3x2 atlas texture for a voxel asset based on a provided 3x2 guide atlas.\nRules:\n- Output MUST be a single image and nothing else.\n- Preserve the 3x2 layout EXACTLY.\n- Each tile corresponds to an orthographic view: row0=[+X,-X,+Y], row1=[-Y,+Z,-Z].\n- No text, watermark, or annotations.\n- Keep style consistent across all 6 tiles.\n"
+            },
+            "ui_type": "Code",
+            "visible_condition": null
+          },
+          {
+            "id": "7c2253f8-cf68-4c46-8491-c575813efa37",
+            "name": "prompt",
+            "label": "Prompt",
+            "group": "AI",
+            "value": {
+              "String": "A stylized but physically plausible material."
+            },
+            "ui_type": "String",
+            "visible_condition": null
+          },
+          {
+            "id": "19d91542-99b2-49c2-9092-ab4e4b99bfe1",
+            "name": "tile_res",
+            "label": "Tile Resolution",
+            "group": "AI",
+            "value": {
+              "Int": 384
+            },
+            "ui_type": {
+              "IntSlider": {
+                "min": 128,
+                "max": 1024
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "580e27ab-d050-4571-8d1d-8e9a605cc314",
+            "name": "palette_max",
+            "label": "Palette Max",
+            "group": "Voxel",
+            "value": {
+              "Int": 64
+            },
+            "ui_type": {
+              "IntSlider": {
+                "min": 4,
+                "max": 200
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "fd48ce52-684a-4a00-946b-0f12a309b536",
+            "name": "mask_only",
+            "label": "Mask Only",
+            "group": "Voxel",
+            "value": {
+              "Bool": true
+            },
+            "ui_type": "Toggle",
+            "visible_condition": null
+          },
+          {
+            "id": "9357086c-4922-408f-93f3-bbdb85bdd6b7",
+            "name": "depth_eps",
+            "label": "Depth Epsilon",
+            "group": "Voxel",
+            "value": {
+              "Float": 0.02
+            },
+            "ui_type": {
+              "FloatSlider": {
+                "min": 0.0,
+                "max": 0.2
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "610eb110-aacd-4f83-989d-9ad233dbc51a",
+            "name": "max_surface_voxels",
+            "label": "Max Surface Voxels",
+            "group": "Safety",
+            "value": {
+              "Int": 250000
+            },
+            "ui_type": {
+              "IntSlider": {
+                "min": 10000,
+                "max": 5000000
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "060ad71a-26b5-40a4-8188-0a4b8346dc8a",
+            "name": "reference_image",
+            "label": "Reference Image",
+            "group": "AI",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png",
+                  "jpg",
+                  "jpeg",
+                  "webp"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "4347c878-1a90-45d7-9513-d4c19c63c54c",
+            "name": "generate",
+            "label": "Generate",
+            "group": "AI",
+            "value": {
+              "Int": 1
+            },
+            "ui_type": {
+              "BusyButton": {
+                "busy_param": "busy",
+                "busy_label": "Generating...",
+                "busy_label_param": "status"
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "9c37a2d0-535f-4bf6-bf9b-6b4e9269f975",
+            "name": "guide_atlas",
+            "label": "Guide Atlas (Internal)",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "20795a99-1f23-4634-a409-cc536050e2f2",
+            "name": "basecolor_atlas",
+            "label": "BaseColor Atlas (Internal)",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png",
+                  "jpg",
+                  "jpeg",
+                  "webp"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "46fb04e8-efa3-49c3-b18a-388a7bb136d6",
+            "name": "status",
+            "label": "Status",
+            "group": "Internal",
+            "value": {
+              "String": "Generating..."
+            },
+            "ui_type": "String",
+            "visible_condition": null
+          },
+          {
+            "id": "6770f4e9-81fe-40f9-b80c-b214e784fc11",
+            "name": "error",
+            "label": "Error",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": "String",
+            "visible_condition": null
+          },
+          {
+            "id": "67b23b3b-9e78-47db-8f64-001ad5217e4a",
+            "name": "busy",
+            "label": "Busy (Internal)",
+            "group": "Debug",
+            "value": {
+              "Bool": true
+            },
+            "ui_type": "Toggle",
+            "visible_condition": null
+          }
+        ],
+        "is_template": false,
+        "inputs": {
+          "in:0": null
+        },
+        "outputs": {
+          "out:0": null
+        },
+        "is_bypassed": false,
+        "is_display_node": false,
+        "is_locked": false,
+        "input_style": "Individual",
+        "style": "Normal"
+      },
+      "fde77b8d-f53b-4301-ba37-9c5d5b52a5eb": {
+        "id": "fde77b8d-f53b-4301-ba37-9c5d5b52a5eb",
+        "name": "File",
+        "node_type": {
+          "Generic": "File"
+        },
+        "position": {
+          "x": 31.0,
+          "y": 160.0
+        },
+        "size": {
+          "x": 160.0,
+          "y": 80.0
+        },
+        "parameters": [
+          {
+            "id": "da9d99b9-56c5-49f0-8533-2bee8b0fc724",
+            "name": "file_path",
+            "label": "File",
+            "group": "File",
+            "value": {
+              "String": "textures/dragon_10.vox"
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "fbx",
+                  "obj",
+                  "gltf",
+                  "glb",
+                  "stl",
+                  "ply",
+                  "vox"
+                ]
+              }
+            },
+            "visible_condition": null
+          }
+        ],
+        "is_template": false,
+        "inputs": {
+          "in:0": null
+        },
+        "outputs": {
+          "out:0": null
+        },
+        "is_bypassed": false,
+        "is_display_node": false,
+        "is_locked": false,
+        "input_style": "Individual",
+        "style": "Normal"
+      },
+      "a7ff0e7a-54ee-4b30-849f-c79774950e20": {
+        "id": "a7ff0e7a-54ee-4b30-849f-c79774950e20",
+        "name": "Nano HexPlanar Baker",
+        "node_type": {
+          "Generic": "Nano HexPlanar Baker"
+        },
+        "position": {
+          "x": 410.78256,
+          "y": 443.60864
+        },
+        "size": {
+          "x": 160.0,
+          "y": 80.0
+        },
+        "parameters": [
+          {
+            "id": "6e509981-f7ca-4f4f-842c-8aab4a396889",
+            "name": "__ai_system_prompt",
+            "label": "System Prompt (BaseColor Atlas)",
+            "group": "AI",
+            "value": {
+              "String": "You generate a 3x2 atlas texture for a 3D asset based on a provided 3x2 guide atlas.\nRules:\n- Output MUST be a single image and nothing else.\n- Preserve the 3x2 layout EXACTLY.\n- Each tile corresponds to an orthographic view: row0=[+X,-X,+Y], row1=[-Y,+Z,-Z].\n- No text, watermark, or annotations.\n- Keep style consistent across all 6 tiles.\n"
+            },
+            "ui_type": "Code",
+            "visible_condition": null
+          },
+          {
+            "id": "381d32fe-dbbf-408d-9f9d-33942b7c3304",
+            "name": "prompt",
+            "label": "Prompt",
+            "group": "AI",
+            "value": {
+              "String": "A stylized but physically plausible material."
+            },
+            "ui_type": "String",
+            "visible_condition": null
+          },
+          {
+            "id": "5b2dacb4-e5c2-46d8-9435-5fbc0b2997e8",
+            "name": "tile_res",
+            "label": "Tile Resolution",
+            "group": "AI",
+            "value": {
+              "Int": 512
+            },
+            "ui_type": {
+              "IntSlider": {
+                "min": 128,
+                "max": 2048
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "56e1a1d1-8cf2-457d-8ec8-215bbbd942d5",
+            "name": "uv_res",
+            "label": "UV Resolution",
+            "group": "AI",
+            "value": {
+              "Int": 1024
+            },
+            "ui_type": {
+              "IntSlider": {
+                "min": 128,
+                "max": 4096
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "629ac0cf-dee3-426e-aee3-02ba900012d4",
+            "name": "seam_px",
+            "label": "Seam Width (px)",
+            "group": "AI",
+            "value": {
+              "Int": 8
+            },
+            "ui_type": {
+              "IntSlider": {
+                "min": 1,
+                "max": 64
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "d53dec1a-899a-4196-9bc1-debc109621ce",
+            "name": "gen_basecolor",
+            "label": "BaseColor",
+            "group": "Outputs",
+            "value": {
+              "Bool": true
+            },
+            "ui_type": "Toggle",
+            "visible_condition": null
+          },
+          {
+            "id": "a1f3cdca-9d71-493e-839e-1371189513db",
+            "name": "gen_normal",
+            "label": "Normal",
+            "group": "Outputs",
+            "value": {
+              "Bool": false
+            },
+            "ui_type": "Toggle",
+            "visible_condition": null
+          },
+          {
+            "id": "cb09477b-fdd6-425e-a70b-dc61aa5444b5",
+            "name": "gen_orm",
+            "label": "ORM",
+            "group": "Outputs",
+            "value": {
+              "Bool": false
+            },
+            "ui_type": "Toggle",
+            "visible_condition": null
+          },
+          {
+            "id": "5ecc878e-2eaf-4212-b4fc-03ce565f0127",
+            "name": "gen_emissive",
+            "label": "Emissive",
+            "group": "Outputs",
+            "value": {
+              "Bool": false
+            },
+            "ui_type": "Toggle",
+            "visible_condition": null
+          },
+          {
+            "id": "32c4cebe-30b7-4f28-b0a5-d174dec7fdbc",
+            "name": "seam_fix",
+            "label": "Seam Fix (BaseColor UV)",
+            "group": "Outputs",
+            "value": {
+              "Bool": true
+            },
+            "ui_type": "Toggle",
+            "visible_condition": null
+          },
+          {
+            "id": "79d14f7f-ac55-4125-aa4c-80e8994aebe7",
+            "name": "generate",
+            "label": "Generate",
+            "group": "AI",
+            "value": {
+              "Int": 1
+            },
+            "ui_type": {
+              "BusyButton": {
+                "busy_param": "busy",
+                "busy_label": "Generating...",
+                "busy_label_param": "stage_label"
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "8ae4d32e-ea15-4458-ab2b-a7328d5f7189",
+            "name": "status",
+            "label": "Status",
+            "group": "Internal",
+            "value": {
+              "String": "Failed: No input geometry."
+            },
+            "ui_type": "String",
+            "visible_condition": null
+          },
+          {
+            "id": "c5db6ba2-7906-465a-81c3-0de9bd55f86b",
+            "name": "stage_label",
+            "label": "Stage Label",
+            "group": "Internal",
+            "value": {
+              "String": "Generate"
+            },
+            "ui_type": "String",
+            "visible_condition": null
+          },
+          {
+            "id": "64b3ba13-07bc-464a-ba59-b8bff1ec2eab",
+            "name": "error",
+            "label": "Error",
+            "group": "Internal",
+            "value": {
+              "String": "No input geometry connected."
+            },
+            "ui_type": "String",
+            "visible_condition": null
+          },
+          {
+            "id": "08035e51-09ac-4875-967f-94e64bf5f2f4",
+            "name": "busy",
+            "label": "Busy (Internal)",
+            "group": "Debug",
+            "value": {
+              "Bool": false
+            },
+            "ui_type": "Toggle",
+            "visible_condition": null
+          },
+          {
+            "id": "6648fccc-2079-42e0-bef6-9bc406c8b68b",
+            "name": "guide_atlas",
+            "label": "Guide Atlas",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "d6a5f2bb-6ed6-44d6-8738-dd98b91a13aa",
+            "name": "basecolor_atlas",
+            "label": "BaseColor Atlas",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png",
+                  "jpg",
+                  "jpeg",
+                  "webp"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "7a0930ae-5601-41e2-8c03-4fb4c9349ecd",
+            "name": "normal_atlas",
+            "label": "Normal Atlas",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png",
+                  "jpg",
+                  "jpeg",
+                  "webp"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "dbdfd99c-16a7-4f15-8024-eab585e8ffd0",
+            "name": "orm_atlas",
+            "label": "ORM Atlas",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png",
+                  "jpg",
+                  "jpeg",
+                  "webp"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "0564c91b-0eb0-4393-8e24-8b6c8f01e605",
+            "name": "emissive_atlas",
+            "label": "Emissive Atlas",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png",
+                  "jpg",
+                  "jpeg",
+                  "webp"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "2b784fc4-4787-4294-b750-1169989229af",
+            "name": "basecolor_uv",
+            "label": "BaseColor UV",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "9a068ee5-5db9-45f5-a28a-d35d34deba05",
+            "name": "normal_uv",
+            "label": "Normal UV",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "b4e46f0a-0c84-4d23-93bb-eaed1a464293",
+            "name": "orm_uv",
+            "label": "ORM UV",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "28cb487f-8901-46ef-a60e-5d3c2fd43eac",
+            "name": "emissive_uv",
+            "label": "Emissive UV",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "d6665f61-90e2-4202-97a3-e4654cd0ed12",
+            "name": "seam_mask",
+            "label": "Seam Mask",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "e4f33ee5-25c6-4dd5-9ae9-daa0735a5468",
+            "name": "basecolor_uv_fixed",
+            "label": "BaseColor UV (Fixed)",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png"
+                ]
+              }
+            },
+            "visible_condition": null
+          }
+        ],
+        "is_template": false,
+        "inputs": {
+          "in:0": null
+        },
+        "outputs": {
+          "out:0": null
+        },
+        "is_bypassed": false,
+        "is_display_node": true,
+        "is_locked": false,
+        "input_style": "Individual",
+        "style": "Normal"
+      }
+    },
+    "connections": {
+      "95738129-9173-41bc-8abf-ff87032ce82c": {
+        "id": "95738129-9173-41bc-8abf-ff87032ce82c",
+        "from_node": "fde77b8d-f53b-4301-ba37-9c5d5b52a5eb",
+        "from_port": "out:0",
+        "to_node": "40c38567-1a84-4434-919b-b639eebf2366",
+        "to_port": "in:0",
+        "order": 0,
+        "waypoints": []
+      }
+    },
+    "sticky_notes": {},
+    "sticky_note_draw_order": [],
+    "network_boxes": {},
+    "network_box_draw_order": [],
+    "promote_notes": {},
+    "promote_note_draw_order": [],
+    "display_node": "a7ff0e7a-54ee-4b30-849f-c79774950e20",
+    "ui_state": {
+      "pan": [
+        116.08,
+        -91.119995
+      ],
+      "zoom": 0.92
+    }
+  },
+  "cda_defs": {}
+}

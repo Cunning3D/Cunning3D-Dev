@@ -1,0 +1,31 @@
+name = "Attribute Promote"
+category = "Attribute"
+description = "在不同几何层级之间提升/转换属性（点/顶点/面）。"
+
+[io]
+input_type = "Single"
+output_type = "Geometry"
+
+[[io.inputs]]
+index = 0
+name = "Input"
+description = "输入几何体，包含要提升的属性"
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "包含提升后属性的几何体"
+
+[parameters]
+name = "String. Attribute name (e.g. @Cd). Default: @Cd."
+source_level = "Int (Dropdown). Source level: Point/Vertex. Default: Point."
+dest_level = "Int (Dropdown). Destination level: Point/Vertex/Primitive. Default: Vertex."
+method = "Int (Dropdown). Aggregation: Average/Sum/Min/Max (used for reductions). Default: Average."
+keep_original = "Bool. Keep the original attribute on the source level. Default: true."
+
+[usage]
+text = """
+把属性从 Source Level 提升到 Destination Level；例如 Point->Vertex，或 Vertex->Point/Primitive（会做聚合）。
+对 Vertex->Point/Primitive 会按 Method 聚合；对 Point->Vertex 是逐顶点拷贝点属性。
+不允许从 Point 层提升 @P（位置属性）。
+"""

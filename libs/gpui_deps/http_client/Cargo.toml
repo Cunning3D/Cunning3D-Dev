@@ -1,0 +1,35 @@
+[package]
+name = "http_client"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "Apache-2.0"
+description = "A HTTP client library for Zed and GPUI"
+
+
+[features]
+test-support = []
+
+[lib]
+path = "src/http_client.rs"
+doctest = true
+
+[dependencies]
+anyhow = "1.0.86"
+async-compression = { version = "0.4", features = ["gzip", "futures-io"] }
+async-fs = "2.1"
+async-tar = "0.5"
+bytes = "1.5"
+derive_more = "0.99.17"
+futures = "0.3"
+http-body = "1.0"
+http = "1.1"
+log = { version = "0.4.16", features = ["kv_unstable_serde", "serde"] }
+parking_lot = "0.12.1"
+serde = { version = "1.0.221", features = ["derive", "rc"] }
+serde_json = { version = "1.0.144", features = ["preserve_order", "raw_value"] }
+serde_urlencoded = "0.7"
+sha2 = "0.10"
+tempfile = "3.20.0"
+url = "2.2"
+util = { path = "../util" }

@@ -1,0 +1,29 @@
+name = "VDB From Polygons"
+category = "Volume"
+description = "Converts polygon geometry into a sparse signed-distance voxel grid (VDB-style volume)."
+
+[io]
+input_type = "Single"    # Expects one polygon mesh input.
+output_type = "Volume"   # Produces a VoxelGrid volume stored in Geometry.volume.
+
+[[io.inputs]]
+index = 0
+name = "Input"
+description = "输入多边形网格，将被转换为体积"
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "包含VoxelGrid体积的几何体"
+
+[parameters]
+voxel_size = "Float. Default: 0.1. Size of each voxel in world units (smaller = higher resolution, more memory)."
+bandwidth = "Int. Default: 3. Number of voxel layers stored around the surface (narrow band width)."
+display_points = "Bool. Default: false. If true, downstream visualization prefers a point cloud view."
+
+[usage]
+text = """
+Takes a closed polygon mesh as input and builds a sparse signed-distance volume.
+Use this node as the entry point to volume/VDB workflows. Connect a mesh into the input port.
+Downstream, feed the volume into `VDB To Polygons` or other volume processing nodes.
+"""

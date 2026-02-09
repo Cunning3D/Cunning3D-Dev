@@ -1,0 +1,30 @@
+name = "Transform"
+category = "Manipulation"
+description = "Applies translation, rotation, and scaling to input geometry."
+
+[io]
+input_type = "Single"
+output_type = "Geometry"
+
+[[io.inputs]]
+index = 0
+name = "Input"
+description = "输入几何体，将被应用变换矩阵"
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "变换后的几何体"
+
+[parameters]
+translate = "Vec3. Default: (0,0,0). Move geometry."
+rotate = "Vec3. Default: (0,0,0). Rotate geometry (Euler degrees X, Y, Z)."
+scale = "Vec3. Default: (1,1,1). Scale geometry along axes."
+uniform_scale = "Float. Default: 1.0. Multiplier for the scale vector."
+
+[usage]
+text = """
+Use this node to move, rotate, or resize geometry. 
+It applies the transformation matrix to all points (`@P`) and updates normals (`@N`) accordingly.
+Transformation order: Scale -> Rotate -> Translate.
+"""

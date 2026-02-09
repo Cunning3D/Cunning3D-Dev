@@ -1,0 +1,132 @@
+[package]
+name = "cunning3d"
+version = "0.10.0"
+edition = "2021"
+build = "build.rs"
+
+[features]
+default = ["cuda", "voice_full"]
+cuda = ["candle-core/cuda", "candle-nn/cuda", "candle-transformers/cuda"]
+voice = ["voice_cpal", "voice_rodio", "voice_tts"]  # voice_whisper disabled - needs CMake
+voice_cpal = ["cpal"]
+voice_rodio = ["rodio"]
+voice_whisper = ["whisper-rs"]
+voice_tts = ["ort", "ndarray"]
+voice_full = ["voice", "voice_whisper"]
+codex_bundled = []
+codex = ["codex_bundled", "dep:axum", "dep:rmcp"]
+virtual_geometry_meshlet = ["bevy/meshlet", "bevy/meshlet_processor", "cunning_viewport/virtual_geometry_meshlet"]
+
+[dependencies]
+bevy = { path = "src/cunning_core/libs/3rd/bevy", default-features = false, features = ["3d"] }
+bevy_ecs = { path = "src/cunning_core/libs/3rd/bevy/crates/bevy_ecs", default-features = false }
+bevy_image = { path = "src/cunning_core/libs/3rd/bevy/crates/bevy_image", default-features = false }
+bevy_egui = { path = "src/cunning_ui/crates/cunning_egui/crates/cunning_egui_bevy", default-features = false, features = ["default_fonts", "render", "manage_clipboard", "holes", "holes_cgui"] }
+egui_dock = { path = "src/cunning_ui/crates/cunning_egui/crates/cunning_egui_dock", features = ["serde"] }
+egui_extras = { path = "src/cunning_ui/crates/cunning_egui/crates/egui_extras", features = ["svg", "image", "all_loaders"] }
+egui-wgpu = { path = "src/cunning_ui/crates/cunning_egui/crates/egui-wgpu" }
+once_cell = "1.19"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_path_to_error = "0.1"
+ron = "0.8"
+uuid = { version = "1.8.0", features = ["v4", "v5", "serde", "js"] }
+web-sys = { version = "0.3.69", features = ["Window"] }
+rfd = "0.14.1"
+fbxcel = { version = "0.9.0", features = ["tree"] }
+tobj = "4.0"
+gltf = "1.4"
+stl_io = "0.7"
+ply-rs = "0.1"
+mesh_to_sdf = "0.4.0"
+bvh = "0.12.0"
+nalgebra = "0.34.1"
+marching-cubes = "0.1.2"
+rayon = "1.10"
+dashmap = "5.5"
+parry3d = "0.13"
+bytemuck = "1.24.0"
+base64 = "0.22"
+chacha20poly1305 = "0.10.1"
+sha2 = "0.10.9"
+arboard = { version = "3.4", features = ["image-data"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+urlencoding = "2.1"
+wgpu = { version = "28", default-features = false, features = ["wgsl", "dx12", "vulkan", "metal", "naga-ir"] }
+pollster = "0.3"
+getrandom = { version = "0.3", features = ["wasm_js"] }
+inventory = "0.3"
+libloading = "0.9.0"
+chrono = { version = "0.4", features = ["serde"] }
+egui_plot = { path = "src/cunning_ui/crates/cunning_egui/crates/egui_plot" }
+puffin = { package = "cunning-puffin", path = "libs/puffin_source/puffin" }
+puffin_egui = { package = "cunning-puffin_egui", path = "libs/puffin_source/puffin_egui" }
+puffin_http = { path = "libs/puffin_source/puffin_http" }
+futures-lite = "2.0"
+wasm-bindgen-futures = "0.4"
+rhai = { version = "1.18.0", features = ["sync", "serde", "internals"] }
+toml = "0.8"
+sysinfo = "0.30"
+tokio = { version = "1.36", features = ["full"] }
+reqwest = { version = "0.11", features = ["json", "stream", "blocking"] }
+crossbeam-channel = "0.5"
+gpui = { path = "libs/gpui_deps/gpui", default-features = false }
+taffy = "0.3.19"
+cosmic-text = "0.14.0"
+unicode-segmentation = "1.12"
+ordered-float = "5.1.0"
+walkdir = "2.5"
+ustr = { version = "1.1.0", features = ["serde"] }
+robust = "1.2.0"
+xatlas-rs = "0.1.3"
+similar = "2.5"
+manifold-rs = { path = "src/cunning_core/core/algorithms/algorithms_editor/libs/manifold3d" }
+bevy_cgui = { path = "src/cunning_core/libs/3rd/bevy/crates/bevy_cgui" }
+bevy_cgui_render = { path = "src/cunning_core/libs/3rd/bevy/crates/bevy_cgui_render" }
+bevy_cgui_widgets = { path = "src/cunning_core/libs/3rd/bevy/crates/bevy_cgui_widgets" }
+bevy_feathers = { path = "src/cunning_core/libs/3rd/bevy/crates/bevy_feathers" }
+bevy_input_focus = { path = "src/cunning_core/libs/3rd/bevy/crates/bevy_input_focus" }
+bevy_picking = { path = "src/cunning_core/libs/3rd/bevy/crates/bevy_picking" }
+kiddo = "5.2.4"
+candle-core = { git = "https://github.com/huggingface/candle.git", default-features = false }
+candle-nn = { git = "https://github.com/huggingface/candle.git", default-features = false }
+candle-transformers = { git = "https://github.com/huggingface/candle.git", default-features = false }
+tokenizers = "0.19.1"
+anyhow = "1.0.100"
+byteorder = "1.5.0"
+
+# Voice module (optional features)
+cpal = { version = "0.15", optional = true }
+rodio = { version = "0.19", optional = true }
+whisper-rs = { version = "0.13", optional = true }
+ort = { version = "2.0.0-rc.11", optional = true }
+ndarray = { version = "0.16", optional = true }
+axum = { version = "0.7", optional = true }
+rmcp = { version = "0.12", optional = true, features = ["transport-streamable-http-server"] }
+
+# Runtime kernel + CDA runtime evaluator (shared with Unity/FFI)
+cunning_kernel = { package = "cunning_core", path = "crates/cunning_core" }
+cunning_cda_runtime = { path = "crates/cunning_cda_runtime" }
+cunning_ui = { path = "crates/cunning_ui" }
+cunning_viewport = { path = "crates/cunning_viewport" }
+cunning_grid_plane = { path = "crates/cunning_grid_plane" }
+cunning_voxel_faces = { path = "crates/cunning_voxel_faces" }
+cunning_overlay_widgets = { path = "crates/cunning_overlay_widgets" }
+cunning_plugin_sdk = { path = "crates/cunning_plugin_sdk" }
+redb = "3.1.0"
+
+[build-dependencies]
+chacha20poly1305 = "0.10.1"
+getrandom = "0.3"
+serde_json = "1.0"
+sha2 = "0.10.9"
+
+[patch."https://github.com/guoqingbao/bindgen_cuda.git"]
+bindgen_cuda = { path = "crates/third_party/bindgen_cuda-0.1.7" }
+
+[patch.crates-io]
+esaxx-rs = { path = "crates/third_party/esaxx-rs-0.1.10" }
+bindgen_cuda = { path = "crates/third_party/bindgen_cuda-0.1.7" }
+
+[target.'cfg(target_os = "windows")'.build-dependencies]
+embed-resource = "3.0"

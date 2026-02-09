@@ -1,0 +1,22 @@
+name = "File"
+category = "IO"
+description = "Imports geometry from a supported file path (single entry import node)."
+
+[io]
+input_type = "None"
+output_type = "Geometry"
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "导入的几何体"
+
+[parameters]
+file_path = "String (FilePath). Source file path. Default: empty."
+
+[usage]
+text = """
+Generator-style IO node: no inputs.
+Reads the file specified by File Path and returns imported geometry; empty path returns empty geometry.
+Import format support depends on the active importer registry and file extension.
+"""

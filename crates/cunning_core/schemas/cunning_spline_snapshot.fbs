@@ -1,0 +1,36 @@
+namespace Cunning.Splines;
+
+enum TangentMode : byte { AutoSmooth = 0, Linear = 1, Mirrored = 2, Continuous = 3, Broken = 4 }
+
+struct Vec3 { x:float; y:float; z:float; }
+struct Vec4 { x:float; y:float; z:float; w:float; }
+struct Quat { x:float; y:float; z:float; w:float; }
+struct Mat4 { c0:Vec4; c1:Vec4; c2:Vec4; c3:Vec4; } // column-major
+
+struct KnotRef { spline:int; knot:int; }
+
+table Knot {
+  position:Vec3;
+  tangent_in:Vec3;
+  tangent_out:Vec3;
+  rotation:Quat;
+  mode:TangentMode;
+  tension:float;
+}
+
+table Spline {
+  closed:bool;
+  knots:[Knot];
+}
+
+table LinkGroup { knots:[KnotRef]; }
+
+table SplineContainerSnapshot {
+  schema_version:uint = 1;
+  local_to_world:Mat4;
+  splines:[Spline];
+  links:[LinkGroup];
+}
+
+root_type SplineContainerSnapshot;
+

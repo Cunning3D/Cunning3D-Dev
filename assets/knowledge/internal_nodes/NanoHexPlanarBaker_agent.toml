@@ -1,0 +1,34 @@
+name = "Nano HexPlanar Baker"
+category = "AI Texture"
+description = "Generates a consistent 6-view atlas via Gemini and bakes it into UV textures, with optional seam repair."
+
+[io]
+input_type = "Geometry"   # Requires input geometry with @uv.
+output_type = "Geometry"  # Outputs the same geometry with material texture bindings in detail attrs.
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "输出带贴图绑定的几何体（detail: MAT_*）"
+
+[parameters]
+prompt = "String. Material description prompt for Gemini. Default: \"A stylized but physically plausible material.\""
+tile_res = "Int. Per-face tile resolution for 3x2 atlases. Default: 512."
+uv_res = "Int. UV texture resolution (square). Default: 1024."
+timeout_s = "Int. Request timeout seconds (0 = unlimited). Default: 0."
+seam_px = "Int. Seam band width in pixels for seam mask dilation. Default: 8."
+gen_basecolor = "Bool. Generate BaseColor (required if any other map is enabled). Default: true."
+gen_normal = "Bool. Generate Normal (tangent-space). Default: false."
+gen_orm = "Bool. Generate ORM (R=AO, G=Roughness, B=Metallic). Default: false."
+gen_emissive = "Bool. Generate Emissive. Default: false."
+seam_fix = "Bool. Run seam repair for UV BaseColor and optionally re-generate Normal from the repaired BaseColor. Default: true."
+generate = "Button. Starts the full pipeline (guides → atlas → bake → seam mask → optional seam fix). Default: 0."
+thinking = "String. Streamed Gemini text/thinking (internal)."
+
+[usage]
+text = """
+Processor node: requires input geometry with @uv (vertex or point attribute).
+It captures a fixed 3x2 guide atlas (row0=[+X,-X,+Y], row1=[-Y,+Z,-Z]), asks Gemini for a BaseColor atlas, optionally generates Normal/ORM/Emissive atlases, then GPU-bakes them into UV textures.
+Outputs are written under assets/textures/ai_bakes/<node_id>/ and the node writes MAT_* detail attributes for viewport shading.
+"""
+

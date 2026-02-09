@@ -1,0 +1,27 @@
+[package]
+name = "cunning_core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bevy = { path = "../../src/cunning_core/libs/3rd/bevy", default-features = false, features = ["3d"] }
+egui = { path = "../../src/cunning_ui/crates/cunning_egui/crates/egui" }
+serde = { version = "1.0", features = ["derive", "rc"] }
+serde_json = "1.0"
+flatbuffers = "24.3.25"
+bytemuck = "1.24.0"
+rayon = "1.10"
+ustr = "1.1.0"
+bvh = "0.12.0"
+robust = "1.2.0"
+nalgebra = "0.34.1"
+parry3d = "0.13"
+puffin = { package = "cunning-puffin", path = "../../libs/puffin_source/puffin" }
+kiddo = "5.2.4"
+uuid = { version = "1.8.0", features = ["v4", "v5", "serde", "js"] }
+inventory = "0.3"
+redb = "2.1.0"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+manifold-rs = { path = "../../src/cunning_core/core/algorithms/algorithms_editor/libs/manifold3d" }
+

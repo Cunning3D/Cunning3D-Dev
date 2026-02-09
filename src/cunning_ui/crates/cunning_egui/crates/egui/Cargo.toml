@@ -1,0 +1,90 @@
+[package]
+name = "egui"
+version.workspace = true
+authors = ["Emil Ernerfeldt <emil.ernerfeldt@gmail.com>"]
+description = "An easy-to-use immediate mode GUI that runs on both web and native"
+edition.workspace = true
+rust-version.workspace = true
+homepage = "https://github.com/emilk/egui"
+license.workspace = true
+readme = "../../README.md"
+repository = "https://github.com/emilk/egui"
+categories = ["gui", "game-development"]
+keywords = ["gui", "imgui", "immediate", "portable", "gamedev"]
+include = ["../LICENSE-APACHE", "../LICENSE-MIT", "**/*.rs", "Cargo.toml"]
+
+[lints]
+workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--generate-link-to-definition"]
+
+[lib]
+
+
+[features]
+default = ["default_fonts"]
+
+## Exposes detailed accessibility implementation required by platform accessibility APIs.
+accesskit = ["dep:accesskit"]
+
+## [`bytemuck`](https://docs.rs/bytemuck) enables you to cast [`epaint::Vertex`], [`emath::Vec2`] etc to `&[u8]`.
+bytemuck = ["epaint/bytemuck"]
+
+## Show a debug-ui on hover including the stacktrace to the hovered item. Does not work on web.
+callstack = ["dep:backtrace"]
+
+## [`cint`](https://docs.rs/cint) enables interoperability with other color libraries.
+cint = ["epaint/cint"]
+
+## Enable the [`hex_color`] macro.
+color-hex = ["epaint/color-hex"]
+
+## If set, egui will use `include_bytes!` to bundle some fonts.
+default_fonts = ["epaint/default_fonts"]
+
+## [`mint`](https://docs.rs/mint) enables interoperability with other math libraries.
+mint = ["epaint/mint"]
+
+## Enable persistence of memory (window positions etc).
+persistence = ["serde", "epaint/serde", "ron"]
+
+## Enable parallel tessellation using [`rayon`](https://docs.rs/rayon).
+rayon = ["epaint/rayon"]
+
+## Allow serialization using [`serde`](https://docs.rs/serde).
+serde = ["dep:serde", "epaint/serde", "accesskit?/serde"]
+
+## Compatibility alias: upstream 0.33 keeps `puffin`, but it now maps to `profiling`.
+puffin = []
+
+## Change Vertex layout to be compatible with unity
+unity = ["epaint/unity"]
+
+## Override and disable the unity feature (for --all-features testing)
+_override_unity = ["epaint/_override_unity"]
+
+## Extra assertions (0.33 feature parity).
+extra_asserts = ["emath/extra_asserts", "epaint/extra_asserts"]
+extra_debug_asserts = ["emath/extra_debug_asserts", "epaint/extra_debug_asserts"]
+
+
+[dependencies]
+emath = { workspace = true, default-features = false }
+epaint = { workspace = true, default-features = false }
+
+ahash.workspace = true
+bitflags.workspace = true
+log.workspace = true
+nohash-hasher.workspace = true
+profiling.workspace = true
+smallvec.workspace = true
+unicode-segmentation.workspace = true
+
+#! ### Optional dependencies
+accesskit = { workspace = true, optional = true }
+backtrace = { workspace = true, optional = true }
+document-features = { workspace = true, optional = true }
+ron = { workspace = true, optional = true }
+serde = { workspace = true, optional = true, features = ["derive", "rc"] }

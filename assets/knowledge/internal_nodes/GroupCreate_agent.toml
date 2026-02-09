@@ -1,0 +1,41 @@
+name = "Group Create"
+category = "Group"
+description = "创建或更新点组/面组，并可通过模式、包围区域、法线与边界条件筛选。"
+
+[io]
+input_type = "Single"
+output_type = "Geometry"
+
+[[io.inputs]]
+index = 0
+name = "Input"
+description = "输入几何体，将在其上创建组"
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "包含新创建组的几何体"
+
+[parameters]
+group_name = "String. Output group name. Default: group1."
+group_type = "Int (Dropdown). Group type: Points/Primitives. Default: Points."
+merge_op = "Int (Dropdown). Replace/Union/Intersect/Subtract. Default: Replace."
+base_enable = "Bool. Enable base pattern selection. Default: false."
+pattern = "String. Base selection pattern. Default: empty."
+bound_enable = "Bool. Enable bounding filter. Default: false."
+bound_type = "Int (Dropdown). Box/Sphere/Input Box/Input Volume. Default: Box."
+bound_center = "Vec3. Bounding center. Default: (0,0,0)."
+bound_size = "Vec3. Box size. Default: (1,1,1)."
+bound_radius = "Float. Sphere radius. Default: 1.0."
+bound_iso = "Float. Isovalue for volume bounding (reserved). Default: 0.0."
+normal_enable = "Bool. Enable normal direction filter. Default: false."
+normal_dir = "Vec3. Target normal direction. Default: (0,1,0)."
+normal_angle = "Float. Spread angle in degrees. Default: 180."
+edge_enable = "Bool. Include boundary points (points only). Default: false."
+
+[usage]
+text = """
+在输入几何上生成一个命名组（点组或面组），并把筛选结果写入该组。
+Base Pattern 可作为初始选择集合，随后通过包围盒/球、法线方向、边界点等过滤（AND 逻辑）。
+Initial Merge 控制与已有同名组的合并方式（Replace/Union/Intersect/Subtract）。
+"""

@@ -1,0 +1,29 @@
+name = "VDB To Polygons"
+category = "Volume"
+description = "Converts a VDB-style volume (VoxelGrid) back into a polygon mesh using Surface Nets."
+
+[io]
+input_type = "Single"    # Expects one volume input (Geometry.volume must be Some).
+output_type = "Geometry"  # Outputs a polygon mesh with quads.
+
+[[io.inputs]]
+index = 0
+name = "Input"
+description = "输入体积（VoxelGrid），将被转换为多边形网格"
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "提取的多边形网格（四边形）"
+
+[parameters]
+iso_value = "Float. Default: 0.0. Iso-surface threshold in the signed-distance field."
+invert = "Bool. Default: false. If true, flips inside/outside sign before meshing."
+hard_surface = "Bool. Default: false. If true, preserves sharper features when extracting the surface."
+
+[usage]
+text = """
+Takes a VoxelGrid volume (produced by `VDB From Polygons` or other volume nodes) and extracts a polygon surface.
+Adjust `iso_value` to control the surface position relative to the SDF. `invert` flips inside/outside.
+The output is a quad mesh with @P, vertices, primitives and computed normals.
+"""

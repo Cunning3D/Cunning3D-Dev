@@ -1,0 +1,31 @@
+name = "Color"
+category = "Attribute"
+description = "生成或写入颜色属性 @Cd（点或面），支持常量/随机/基于包围盒的颜色。"
+
+[io]
+input_type = "Single"
+output_type = "Geometry"
+
+[[io.inputs]]
+index = 0
+name = "Input"
+description = "输入几何体，将添加或修改颜色属性"
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "包含颜色属性的几何体"
+
+[parameters]
+group = "String. Group filter (currently parsed but not applied). Default: empty."
+class = "Int (Dropdown). Write to Point or Primitive. Default: Point."
+color_type = "Int (Dropdown). Constant/Random/Bounding Box. Default: Constant."
+color = "Color(Vec3). Constant color (RGB). Default: (1, 0, 0)."
+seed = "Int. Random seed. Default: 0."
+
+[usage]
+text = """
+向 @Cd 写入颜色，可作用在点或面（Primitive）。
+Random 模式按元素索引与 Seed 生成伪随机颜色；Bounding Box 模式按位置在包围盒中的归一化坐标生成颜色。
+输出拓扑不变，只修改/新增 @Cd 属性。
+"""

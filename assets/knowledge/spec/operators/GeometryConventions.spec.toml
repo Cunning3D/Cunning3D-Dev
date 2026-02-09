@@ -1,0 +1,18 @@
+[operators]
+title = "Geometry Conventions"
+summary = "Shared conventions for geometry attributes, units, and coordinate space."
+
+[attributes]
+position = { name = "@P", type = "vec3", scope = "point", meaning = "Point position in scene units." }
+normal = { name = "@N", type = "vec3", scope = "point|vertex", meaning = "Normal direction; must be normalized." }
+uv = { name = "@uv", type = "vec2", scope = "vertex|point", meaning = "UV coordinates in [0..1] for texture mapping." }
+
+[units]
+scene = "World/scene units used across nodes."
+count = "Counts (integers). For UI, floats may be accepted but are clamped/rounded by node policy."
+
+[notes]
+text = """
+Specs should declare attribute expectations explicitly. When implementing equivalent nodes, prefer writing minimal, deterministic logic and validate via geometry fingerprints.
+"""
+

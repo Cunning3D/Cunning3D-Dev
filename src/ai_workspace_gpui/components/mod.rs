@@ -1,0 +1,47 @@
+//! AI Workspace specific components (Zed-aligned)
+
+mod session_list;
+mod thread_view;
+mod message_entry;
+mod tool_card;
+pub mod input_composer;
+mod model_selector;
+mod mode_selector;
+mod profile_selector;
+mod code_block;
+mod diff_view;
+mod terminal_output;
+mod config_options;
+mod message_feedback;
+mod queued_messages;
+mod entry_view_state;
+mod project_panel;
+pub mod code_editor;
+mod editor_tabs;
+mod quick_open;
+mod command_palette;
+mod provider_settings;
+mod voice_assistant_settings;
+
+pub use session_list::*;
+pub use thread_view::*;
+pub use message_entry::*;
+pub use tool_card::*;
+pub use input_composer::*;
+pub use model_selector::*;
+pub use mode_selector::*;
+pub use profile_selector::*;
+pub use code_block::*;
+pub use diff_view::*;
+pub use terminal_output::*;
+pub use config_options::*;
+pub use message_feedback::*;
+pub use queued_messages::*;
+pub use entry_view_state::*;
+pub use project_panel::*;
+pub use code_editor::*;
+pub use editor_tabs::*;
+pub use quick_open::*;
+pub use command_palette::*;
+pub use provider_settings::*;
+pub use voice_assistant_settings::*;

@@ -1,0 +1,31 @@
+[package]
+name = "rope"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "GPL-3.0-or-later"
+
+
+[lib]
+path = "src/rope.rs"
+
+[dependencies]
+arrayvec = "0.7.1"
+log = { version = "0.4.16", features = ["kv_unstable_serde", "serde"] }
+rayon = "1.8"
+sum_tree = { path = "../sum_tree" }
+unicode-segmentation = "1.10"
+util = { path = "../util" }
+tracing = "0.1.40"
+
+[dev-dependencies]
+ctor = "0.4.0"
+rand = "0.9"
+criterion = "0.5"
+
+[[bench]]
+name = "rope_benchmark"
+harness = false
+
+[package.metadata.cargo-machete]
+ignored = ["tracing"]

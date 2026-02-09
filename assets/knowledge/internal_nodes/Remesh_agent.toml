@@ -1,0 +1,29 @@
+name = "Remesh"
+category = "Modeling"
+description = "Remeshes polygon geometry by triangulating and subdividing long edges toward a target edge length."
+
+[io]
+input_type = "Single"
+output_type = "Geometry"
+
+[[io.inputs]]
+index = 0
+name = "Input"
+description = "输入多边形几何体，将被重新网格化"
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "重新网格化后的三角形几何体"
+
+[parameters]
+target_edge_length = "Float. Target maximum edge length for splitting. Default: 0.1."
+iterations = "Int. Number of refinement/smoothing iterations. Default: 5."
+smooth_strength = "Float. Smoothing factor per iteration (0..1). Default: 0.5."
+
+[usage]
+text = """
+Takes polygon input, builds a triangle set (fan triangulation per polygon), then repeatedly splits edges longer than Target Edge Length.
+Outputs triangles and recomputes smooth normals.
+Note: This is a topology-changing operation and may drop non-position attributes.
+"""

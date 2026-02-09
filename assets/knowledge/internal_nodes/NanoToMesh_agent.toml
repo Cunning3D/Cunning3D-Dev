@@ -1,0 +1,36 @@
+name = "Nano To Mesh"
+category = "AI Generation"
+description = "Generate a closed mesh via Gemini depth atlas (3x2 orthographic) -> point cloud -> VDB(SDF) -> VDB To Polygons."
+
+[io]
+input_type = "Geometry"   # Optional: can carry __ai_reference_image_path detail attr
+output_type = "Geometry"
+
+[[io.outputs]]
+index = 0
+name = "Mesh"
+description = "Surface mesh extracted from an implicit VDB built from the AI depth atlas."
+
+[parameters]
+__ai_system_prompt = "String. System prompt for the 3x2 depth atlas (orthographic, grayscale, consistent). Default: internal."
+prompt = "String. Object description. Default: \"A stylized banana figurine, clean silhouette.\"."
+reference_image = "FilePath. Optional reference image to steer generation. Default: \"\"."
+tile_res = "Int. Per-view tile resolution for the 3x2 atlas. Default: 256."
+world_size = "Float. Output bounding cube size in world units. Default: 1.0."
+sample_step = "Int. Pixel stride for point extraction (higher = faster, fewer points). Default: 4."
+depth_min = "Float. Ignore pixels below this depth value as background. Default: 0.05."
+voxel_size = "Float. VDB voxel size for implicit surface. Default: 0.03."
+splat_radius_vox = "Int. Point splat radius in voxel units (controls closing). Default: 2."
+iso_value = "Float. Iso value for surface extraction. Default: 0.0."
+hard_surface = "Bool. Surface Nets hard-surface mode. Default: false."
+timeout_s = "Int. Request timeout seconds (0 = unlimited). Default: 0."
+generate = "Button. Runs: Gemini depth atlas -> points -> VDB -> mesh. Default: 0."
+
+[usage]
+text = """
+Generator node:
+1) Generates a 3x2 depth atlas via Gemini (orthographic views).
+2) Extracts a point cloud from depth tiles.
+3) Builds a VDB(SDF) via point splatting.
+4) Converts VDB to polygons (Surface Nets) and outputs Geometry.
+"""

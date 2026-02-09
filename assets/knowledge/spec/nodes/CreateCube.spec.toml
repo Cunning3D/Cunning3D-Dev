@@ -1,0 +1,60 @@
+[node]
+name = "Create Cube"
+category = "Basic"
+summary = "Generate a cube mesh with shared points and per-axis subdivisions."
+
+[ports]
+inputs = [{ key = "in:0", label = "Input", type = "Geometry", optional = true }]
+outputs = [{ key = "out:0", label = "Output", type = "Geometry" }]
+
+[[params]]
+name = "size"
+type = "float"
+default = 1.0
+units = "scene"
+range = [0.0, 100.0]
+ui = { kind = "float_slider", min = 0.0, max = 100.0 }
+meaning = "Edge length of the cube before translation."
+
+[[params]]
+name = "center"
+type = "vec3"
+default = [0.0, 0.0, 0.0]
+units = "scene"
+ui = { kind = "vec3_drag" }
+meaning = "Translation applied to all generated points."
+
+[[params]]
+name = "divisions"
+type = "vec3"
+default = [10.0, 10.0, 10.0]
+units = "count"
+range = [1.0, 1024.0]
+ui = { kind = "vec3_drag" }
+meaning = "Per-axis subdivision counts. Values are clamped to >= 1."
+
+[semantics]
+algorithm = """
+Generate a cube primitive with shared points. Subdivision is applied per-axis, producing a denser quad layout.
+After generation, apply center translation to point positions.
+"""
+edge_cases = [
+  "divisions components < 1 are clamped to 1",
+  "size <= 0 should produce a valid (possibly degenerate) mesh or clamp per engine policy",
+]
+determinism = "Deterministic for identical params."
+
+[performance]
+time = "O(N) in generated points/prims; N grows with divisions."
+memory = "O(N) geometry storage."
+caching = "Cache by (size, center, divisions) in node compute cache."
+
+[validation]
+fingerprint_fields = ["point_count", "primitive_count", "bbox_min", "bbox_max"]
+tolerance = { bbox_eps = 1e-5 }
+recipe = """
+1) Set size=1, center=[0,0,0], divisions=[1,1,1].
+2) Expect bbox to be approximately [-0.5,-0.5,-0.5]..[0.5,0.5,0.5].
+3) Increase divisions and verify point_count and primitive_count increase monotonically.
+"""
+

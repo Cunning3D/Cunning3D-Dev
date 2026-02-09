@@ -1,0 +1,29 @@
+name = "Group Manage"
+category = "Group"
+description = "对命名组执行复制/重命名/删除等管理操作。"
+
+[io]
+input_type = "Single"
+output_type = "Geometry"
+
+[[io.inputs]]
+index = 0
+name = "Input"
+description = "输入几何体，包含要管理的组"
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "包含管理后组的几何体"
+
+[parameters]
+domain = "Int (Dropdown). Domain: Point/Vertex/Primitive/Edge. Default: Primitive."
+action = "Int (Dropdown). Copy/Rename/Delete. Default: Copy."
+from = "String. Source group name. Default: empty."
+to = "String. Destination group name (for copy/rename). Default: empty."
+
+[usage]
+text = """
+在指定 Domain 上对组进行管理：复制、重命名或删除。
+不会改变拓扑，只影响组掩码与组命名。
+"""

@@ -1,0 +1,30 @@
+[node]
+name = "Create Teapot (VOX)"
+category = "Test Assets"
+summary = "Generate a deterministic built-in MagicaVoxel teapot and expose it as voxel-backed Geometry."
+
+[ports]
+inputs = [{ key = "in:0", label = "Input", type = "Geometry", optional = true }]
+outputs = [{ key = "out:0", label = "Output", type = "Geometry" }]
+
+[semantics]
+algorithm = """
+Load a built-in .vox asset embedded in the binary, parse voxels and palette, normalize the minimum voxel coordinate to the origin, register the voxel grid into the voxel renderer cache, and output a Geometry that references the registered grid via detail attributes.
+"""
+edge_cases = ["If parsing fails, output an empty Geometry."]
+determinism = "Deterministic output for identical engine version."
+
+[performance]
+time = "O(V) in number of voxels in the asset."
+memory = "O(V) for voxel grid plus palette."
+caching = "Cache the resulting Geometry and voxel grid by node id; the asset is constant."
+
+[validation]
+fingerprint_fields = ["detail.__voxel_pure", "detail.__voxel_node", "detail.__voxel_size"]
+tolerance = { exact = true }
+recipe = """
+1) Create a graph with this node as the only node.
+2) Confirm Geometry has detail attributes: __voxel_pure=1, __voxel_size=0.1, and __voxel_node is a valid UUID string.
+3) Verify the viewport displays the teapot.
+"""
+

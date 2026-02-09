@@ -1,0 +1,22 @@
+name = "Curve"
+category = "Primitives"
+description = "Draws a curve/polyline from control points defined in the UI."
+
+[io]
+input_type = "None"      # Generator node, does not require input connections.
+output_type = "Geometry"  # Outputs a polyline geometry.
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "生成的曲线几何体（折线）"
+
+[parameters]
+curve_data = "CurveData. Stores control points, curve type (Polygon/Bezier/NURBS), closure flag, and weights. Edited via the curve editor HUD."
+
+[usage]
+text = """
+Generator node: no inputs.
+Use this node to sketch a curve directly in the viewport/curve editor.
+The node outputs a polyline with @P positions and @N normals, which can be used for sweep, loft, or other downstream operations.
+"""

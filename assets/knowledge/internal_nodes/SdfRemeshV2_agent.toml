@@ -1,0 +1,31 @@
+name = "SDF Remesh V2"
+category = "Modeling"
+description = "Watertight remesh via SDF voxelization + Surface Nets extraction (UV seams safe)."
+
+[io]
+input_type = "Single"
+output_type = "Geometry"
+
+[[io.inputs]]
+index = 0
+name = "Input"
+description = "Input mesh geometry to remesh"
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "Remeshed polygon geometry extracted from SDF"
+
+[parameters]
+voxel_size = "Float. World-space voxel size for SDF voxelization. Default: 0.02."
+bandwidth = "Int. SDF narrow band width in voxels. Default: 3."
+iso_value = "Float. Iso-surface threshold in the SDF. Default: 0.0."
+hard_surface = "Bool. Use QEF-based extraction for sharper features. Default: false."
+
+[usage]
+text = """
+This node converts the input mesh to a signed-distance field (SDF) volume, then extracts a surface using Surface Nets.
+It is robust to UV seams because connectivity is rebuilt from the volumetric surface.
+Increase `bandwidth` for thicker features; reduce `voxel_size` for higher detail (higher cost).
+"""
+

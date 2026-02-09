@@ -1,0 +1,29 @@
+name = "Mirror"
+category = "Modeling"
+description = "Mirrors geometry across a plane defined by an origin and normal, optionally keeping the original."
+
+[io]
+input_type = "Single"
+output_type = "Geometry"
+
+[[io.inputs]]
+index = 0
+name = "Input"
+description = "输入几何体，将被镜像"
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "镜像后的几何体（可选包含原始几何）"
+
+[parameters]
+origin = "Vec3. A point on the mirror plane. Default: (0, 0, 0)."
+direction = "Vec3. Plane normal (normalized). Default: (1, 0, 0)."
+keep_original = "Bool. If true, merges original and mirrored geometry. Default: true."
+
+[usage]
+text = """
+Reflects point positions (@P) across the plane and flips normals (@N) accordingly.
+Polygon/polyline winding is reversed for the mirrored copy.
+If Keep Original is enabled, the output is a merge of original + mirrored geometry.
+"""

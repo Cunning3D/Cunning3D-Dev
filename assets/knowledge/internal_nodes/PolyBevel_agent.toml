@@ -1,0 +1,47 @@
+name = "PolyBevel"
+category = "Modeling"
+description = "Bevels selected edges or vertices, creating additional geometry with configurable profile and segments."
+
+[io]
+input_type = "Single"
+output_type = "Geometry"
+
+[[io.inputs]]
+index = 0
+name = "Input"
+description = "输入几何体，将在选中的边或顶点上生成倒角"
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "倒角后的几何体，包含新增的倒角面和边"
+
+[parameters]
+group = "String. Selection group pattern (used for edge selection). Default: empty."
+affect = "Int (Dropdown). Affects Edges or Vertices. Default: Edges."
+offset_type = "Int (Dropdown). Offset type: Offset/Width/Depth/Percent/Absolute. Default: Offset."
+distance = "Float. Bevel amount. Default: 0.1."
+divisions = "Int. Number of bevel segments. Default: 1."
+profile_type = "Int (Dropdown). Profile type: Superellipse/Custom. Default: Superellipse."
+profile = "Float. Profile shape (0..1). Default: 0.5."
+clamp_overlap = "Bool. Clamp overlap to avoid self-intersections. Default: true."
+loop_slide = "Bool. Slide bevel loops where possible. Default: true."
+miter_outer = "Int (Dropdown). Outer miter type. Default: Sharp."
+miter_inner = "Int (Dropdown). Inner miter type. Default: Sharp."
+spread = "Float. Miter spread amount. Default: 0.1."
+vmesh_method = "Int (Dropdown). Intersection method: Grid Fill/Cutoff. Default: Grid Fill."
+harden_normals = "Bool. Harden normals on bevel faces. Default: false."
+mark_seam = "Bool. Mark seam flags on bevel edges. Default: false."
+mark_sharp = "Bool. Mark sharp flags on bevel edges. Default: false."
+face_strength = "Int (Dropdown). Face strength tagging. Default: None."
+material = "Int. Material index for new faces. Default: -1."
+debug_flip_input = "Bool. Flip input winding for debugging. Default: false."
+debug_invert_profile = "Bool. Invert profile for debugging. Default: false."
+debug_corner_scale = "Float. Corner scaling debug control. Default: 1.0."
+
+[usage]
+text = """
+Bevels geometry by inserting new faces along selected edges (or vertices) according to the chosen settings.
+Selection can be driven by a group name/pattern; empty selection falls back to all manifold edges.
+This is a topology-changing operation and may affect shading/attributes depending on options.
+"""

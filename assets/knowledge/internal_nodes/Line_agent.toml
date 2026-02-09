@@ -1,0 +1,24 @@
+name = "Line"
+category = "Primitives"
+description = "Creates a polyline from an origin, direction, length, and point count."
+
+[io]
+input_type = "None"
+output_type = "Geometry"
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "生成的线段几何体（开放折线）"
+
+[parameters]
+origin = "Vec3. Start point. Default: (0, 0, 0)."
+dir = "Vec3. Direction vector (normalized). Default: (0, 1, 0)."
+dist = "Float. Line length. Default: 1.0."
+points = "Int. Number of points along the line. Default: 2."
+
+[usage]
+text = """
+Generator node: no inputs.
+Outputs an open Polyline primitive with evenly spaced points from Origin in Direction.
+"""

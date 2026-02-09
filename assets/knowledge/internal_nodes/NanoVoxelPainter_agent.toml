@@ -1,0 +1,28 @@
+name = "Nano Voxel Painter"
+category = "AI Texture"
+description = "Generate a 3x2 BaseColor atlas via Gemini from a voxel guide atlas, then project and quantize it into a voxel palette (supports selection mask)."
+
+[io]
+input_type = "Voxel"
+output_type = "Voxel"
+
+[[io.outputs]]
+index = 0
+name = "Voxel"
+description = "Voxel surface mesh with embedded discrete voxel payload and updated palette."
+
+[parameters]
+prompt = "String. Material/style description. Default: \"A stylized but physically plausible material.\""
+tile_res = "Int. Per-view tile resolution for the 3x2 atlas. Default: 384."
+palette_max = "Int. Max generated palette colors used for recolor (quantized). Default: 64."
+mask_only = "Bool. If true, recolor only selected-mask voxels (when mask exists). Default: true."
+reference_image = "FilePath. Optional photo/collage reference to steer generation. Default: \"\"."
+timeout_s = "Int. Request timeout seconds (0 = unlimited). Default: 0."
+generate = "Button. Generate guide atlas and BaseColor atlas via Gemini. Default: 0."
+
+[usage]
+text = """
+Processor node: connect a VoxelEdit output (selection mask is forwarded via __voxel_mask_cells_i32).
+Click Generate to create a BaseColor 3x2 atlas, then the node projects it onto surface voxels and quantizes colors into the voxel palette.
+"""
+

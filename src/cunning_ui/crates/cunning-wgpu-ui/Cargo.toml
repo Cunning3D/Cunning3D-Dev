@@ -1,0 +1,29 @@
+[package]
+name = "cunning-wgpu-ui"
+version = "0.1.0"
+edition = "2021"
+build = "build.rs"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+egui = { path = "../cunning_egui/crates/egui", default-features = false, features = ["bytemuck"] }
+epaint = { path = "../cunning_egui/crates/epaint", default-features = false, features = ["bytemuck"] }
+bytemuck = "1.7"
+log = "0.4"
+thiserror = "1.0"
+type-map = "0.5.0"
+web-time = "0.2"
+wgpu = { version = "28", default-features = false, features = [
+  "wgsl",
+  "dx12",
+  "metal",
+  "vulkan",
+  "naga-ir",
+  "fragile-send-sync-non-atomic-wasm",
+] }
+cosmic-text = "0.14.0"
+etagere = "0.2"
+
+

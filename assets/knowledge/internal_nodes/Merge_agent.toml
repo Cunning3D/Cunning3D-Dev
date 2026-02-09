@@ -1,0 +1,27 @@
+name = "Merge"
+category = "Utility"
+description = "Combines multiple geometry streams into one."
+
+[io]
+input_type = "Multi" # Accepts unlimited input connections.
+output_type = "Geometry"
+
+[[io.inputs]]
+index = 0
+name = "Input"
+description = "输入几何体（可连接多个输入端口）"
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "合并后的几何体，包含所有输入的几何元素"
+
+[parameters]
+# This node has no adjustable parameters.
+
+[usage]
+text = """
+Use this node to combine geometry from different branches of the graph into a single stream.
+It concatenates points, vertices, and primitives. Attribute arrays are extended.
+Input order matters: geometry is appended sequentially from Input 1 to Input N.
+"""

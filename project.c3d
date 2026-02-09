@@ -1,0 +1,2008 @@
+{
+  "header": {
+    "version": "1.1.0",
+    "app_version": "0.1.0",
+    "uuid": "1322d9aa-72ff-40d0-a051-a9233fd94d74",
+    "author": "User",
+    "created_at": "2026-02-07T20:24:14.888312700+00:00"
+  },
+  "graph": {
+    "nodes": {
+      "b9045fc4-8fd3-4d1b-9561-e63b97209b3f": {
+        "id": "b9045fc4-8fd3-4d1b-9561-e63b97209b3f",
+        "name": "File",
+        "node_type": {
+          "Generic": "File"
+        },
+        "position": {
+          "x": 31.000017,
+          "y": 443.60864
+        },
+        "size": {
+          "x": 160.0,
+          "y": 80.0
+        },
+        "parameters": [
+          {
+            "id": "3705f3e6-f214-41ca-931e-17f32ce65dda",
+            "name": "file_path",
+            "label": "File",
+            "group": "File",
+            "value": {
+              "String": "textures/testpig_4.fbx"
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "fbx",
+                  "obj",
+                  "gltf",
+                  "glb",
+                  "stl",
+                  "ply",
+                  "vox"
+                ]
+              }
+            },
+            "visible_condition": null
+          }
+        ],
+        "is_template": false,
+        "inputs": {
+          "in:0": null
+        },
+        "outputs": {
+          "out:0": null
+        },
+        "is_bypassed": false,
+        "is_display_node": false,
+        "is_locked": false,
+        "input_style": "Individual",
+        "style": "Normal"
+      },
+      "01a6f157-51ca-4c77-a5d8-cf88d1f12ee9": {
+        "id": "01a6f157-51ca-4c77-a5d8-cf88d1f12ee9",
+        "name": "Normal",
+        "node_type": {
+          "Generic": "Normal"
+        },
+        "position": {
+          "x": 882.351,
+          "y": 477.42563
+        },
+        "size": {
+          "x": 160.0,
+          "y": 80.0
+        },
+        "parameters": [
+          {
+            "id": "7b8f136e-46f2-4676-b812-f3f52a43b47c",
+            "name": "compute_normals",
+            "label": "Compute Normals",
+            "group": "Construct",
+            "value": {
+              "Bool": true
+            },
+            "ui_type": "Toggle",
+            "visible_condition": null
+          },
+          {
+            "id": "cfee7dcc-1d61-460d-ba82-c34251cd093b",
+            "name": "add_normals_to",
+            "label": "Add Normals to",
+            "group": "Construct",
+            "value": {
+              "Int": 1
+            },
+            "ui_type": {
+              "Dropdown": {
+                "choices": [
+                  [
+                    "Points",
+                    0
+                  ],
+                  [
+                    "Vertices",
+                    1
+                  ],
+                  [
+                    "Primitives",
+                    2
+                  ],
+                  [
+                    "Detail",
+                    3
+                  ]
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "cb149775-b0ab-47fd-83c7-62e6f4dc4398",
+            "name": "cusp_angle",
+            "label": "Cusp Angle",
+            "group": "Construct",
+            "value": {
+              "Float": 60.0
+            },
+            "ui_type": {
+              "FloatSlider": {
+                "min": 0.0,
+                "max": 180.0
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "f5af768a-e365-41fd-9437-e73f0e390c73",
+            "name": "weighting_method",
+            "label": "Weighting Method",
+            "group": "Construct",
+            "value": {
+              "Int": 1
+            },
+            "ui_type": {
+              "Dropdown": {
+                "choices": [
+                  [
+                    "Each Vertex Equally",
+                    0
+                  ],
+                  [
+                    "By Vertex Angle",
+                    1
+                  ],
+                  [
+                    "By Face Area",
+                    2
+                  ]
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "5acd9268-7c6e-4d30-b127-c8cd9bfd4289",
+            "name": "keep_original_zero",
+            "label": "Keep Original Normal Where Computed Normal Is Zero",
+            "group": "Construct",
+            "value": {
+              "Bool": false
+            },
+            "ui_type": "Toggle",
+            "visible_condition": null
+          },
+          {
+            "id": "bbfe322d-7aa1-479f-898c-dc8347b19416",
+            "name": "make_unit_length",
+            "label": "Make Normals Unit Length",
+            "group": "Modify",
+            "value": {
+              "Bool": false
+            },
+            "ui_type": "Toggle",
+            "visible_condition": null
+          },
+          {
+            "id": "ec197083-9664-4a89-afed-ae87f1b77d29",
+            "name": "reverse_normals",
+            "label": "Reverse Normals",
+            "group": "Modify",
+            "value": {
+              "Bool": false
+            },
+            "ui_type": "Toggle",
+            "visible_condition": null
+          }
+        ],
+        "is_template": false,
+        "inputs": {
+          "in:0": null
+        },
+        "outputs": {
+          "out:0": null
+        },
+        "is_bypassed": false,
+        "is_display_node": false,
+        "is_locked": false,
+        "input_style": "Individual",
+        "style": "Normal"
+      },
+      "16ed3c5f-318d-4c1e-a2fa-471bc872e60b": {
+        "id": "16ed3c5f-318d-4c1e-a2fa-471bc872e60b",
+        "name": "Quick Material",
+        "node_type": {
+          "Generic": "Quick Material"
+        },
+        "position": {
+          "x": 1262.0171,
+          "y": 477.4257
+        },
+        "size": {
+          "x": 160.0,
+          "y": 80.0
+        },
+        "parameters": [
+          {
+            "id": "36b265a6-085d-45ca-8e03-27a368cb3102",
+            "name": "name",
+            "label": "Material Name",
+            "group": "General",
+            "value": {
+              "String": ""
+            },
+            "ui_type": "String",
+            "visible_condition": null
+          },
+          {
+            "id": "fc4b8760-2133-41db-b850-b96025cbf1a8",
+            "name": "basecolor_tex",
+            "label": "BaseColor Texture",
+            "group": "Textures",
+            "value": {
+              "String": "textures/ai_bakes/a7ff0e7a-54ee-4b30-849f-c79774950e20/normal_uv_fixed_6.png"
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png",
+                  "jpg",
+                  "jpeg",
+                  "tga",
+                  "bmp",
+                  "hdr",
+                  "exr",
+                  "ktx2",
+                  "dds"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "38817e64-b865-42ee-8cff-752c8c8e4212",
+            "name": "normal_tex",
+            "label": "Normal Texture",
+            "group": "Textures",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png",
+                  "jpg",
+                  "jpeg",
+                  "tga",
+                  "bmp",
+                  "hdr",
+                  "exr",
+                  "ktx2",
+                  "dds"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "873ab738-0cbf-4351-98c5-8fbca8b919e5",
+            "name": "tint",
+            "label": "BaseColor Tint",
+            "group": "Params",
+            "value": {
+              "Color4": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "ui_type": {
+              "Color": {
+                "show_alpha": true
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "d3995585-d16a-4645-8a4a-509e376a6922",
+            "name": "roughness",
+            "label": "Roughness",
+            "group": "Params",
+            "value": {
+              "Float": 0.6
+            },
+            "ui_type": {
+              "FloatSlider": {
+                "min": 0.0,
+                "max": 1.0
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "99895a5a-eca9-44a5-97ac-a6dd155a9e24",
+            "name": "metallic",
+            "label": "Metallic",
+            "group": "Params",
+            "value": {
+              "Float": 0.0
+            },
+            "ui_type": {
+              "FloatSlider": {
+                "min": 0.0,
+                "max": 1.0
+              }
+            },
+            "visible_condition": null
+          }
+        ],
+        "is_template": false,
+        "inputs": {
+          "in:0": null
+        },
+        "outputs": {
+          "out:0": null
+        },
+        "is_bypassed": false,
+        "is_display_node": false,
+        "is_locked": false,
+        "input_style": "Individual",
+        "style": "Normal"
+      },
+      "fde77b8d-f53b-4301-ba37-9c5d5b52a5eb": {
+        "id": "fde77b8d-f53b-4301-ba37-9c5d5b52a5eb",
+        "name": "File",
+        "node_type": {
+          "Generic": "File"
+        },
+        "position": {
+          "x": -593.0876,
+          "y": -321.6018
+        },
+        "size": {
+          "x": 160.0,
+          "y": 80.0
+        },
+        "parameters": [
+          {
+            "id": "da9d99b9-56c5-49f0-8533-2bee8b0fc724",
+            "name": "file_path",
+            "label": "File",
+            "group": "File",
+            "value": {
+              "String": "textures/dragon_10.vox"
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "fbx",
+                  "obj",
+                  "gltf",
+                  "glb",
+                  "stl",
+                  "ply",
+                  "vox"
+                ]
+              }
+            },
+            "visible_condition": null
+          }
+        ],
+        "is_template": false,
+        "inputs": {
+          "in:0": null
+        },
+        "outputs": {
+          "out:0": null
+        },
+        "is_bypassed": false,
+        "is_display_node": false,
+        "is_locked": false,
+        "input_style": "Individual",
+        "style": "Normal"
+      },
+      "371c7790-a821-41e0-8563-fd233448e3e9": {
+        "id": "371c7790-a821-41e0-8563-fd233448e3e9",
+        "name": "Nano HexPlanar Baker",
+        "node_type": {
+          "Generic": "Nano HexPlanar Baker"
+        },
+        "position": {
+          "x": 483.35736,
+          "y": 849.8316
+        },
+        "size": {
+          "x": 160.0,
+          "y": 80.0
+        },
+        "parameters": [
+          {
+            "id": "1e2caa10-87bc-4cf3-80cf-c63182192d84",
+            "name": "__ai_system_prompt",
+            "label": "System Prompt (BaseColor Atlas)",
+            "group": "AI",
+            "value": {
+              "String": "You generate a 3x2 atlas texture for a 3D asset based on a provided 3x2 guide atlas.\nRules:\n- Output MUST be a single image and nothing else.\n- Preserve the 3x2 layout EXACTLY.\n- Each tile corresponds to an orthographic view: row0=[+X,-X,+Y], row1=[-Y,+Z,-Z].\n- No text, watermark, or annotations.\n- Keep style consistent across all 6 tiles.\n"
+            },
+            "ui_type": "Code",
+            "visible_condition": null
+          },
+          {
+            "id": "a8e08ee0-d50c-4cfe-945e-8f2b734cc60c",
+            "name": "prompt",
+            "label": "Prompt",
+            "group": "AI",
+            "value": {
+              "String": "a ugly pig"
+            },
+            "ui_type": "String",
+            "visible_condition": null
+          },
+          {
+            "id": "67fdd1cf-55fe-4367-ae7b-9447fb31dbea",
+            "name": "tile_res",
+            "label": "Tile Resolution",
+            "group": "AI",
+            "value": {
+              "Int": 1024
+            },
+            "ui_type": {
+              "IntSlider": {
+                "min": 128,
+                "max": 2048
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "e831621b-40d4-4269-83c8-4531280eea06",
+            "name": "uv_res",
+            "label": "UV Resolution",
+            "group": "AI",
+            "value": {
+              "Int": 1024
+            },
+            "ui_type": {
+              "IntSlider": {
+                "min": 128,
+                "max": 4096
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "9d9d014d-913a-4ff1-8f2f-2a1a56c9884c",
+            "name": "timeout_s",
+            "label": "Timeout (s)",
+            "group": "AI",
+            "value": {
+              "Int": 0
+            },
+            "ui_type": {
+              "IntSlider": {
+                "min": 0,
+                "max": 3600
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "0df21048-0b96-4318-a947-74bcc2551966",
+            "name": "seam_px",
+            "label": "Seam Width (px)",
+            "group": "AI",
+            "value": {
+              "Int": 8
+            },
+            "ui_type": {
+              "IntSlider": {
+                "min": 1,
+                "max": 64
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "3833f473-aa8f-4fc1-8f87-607673b6e173",
+            "name": "gen_basecolor",
+            "label": "BaseColor",
+            "group": "Outputs",
+            "value": {
+              "Bool": true
+            },
+            "ui_type": "Toggle",
+            "visible_condition": null
+          },
+          {
+            "id": "f71ddb18-3520-41b2-96f6-17db7c326972",
+            "name": "gen_normal",
+            "label": "Normal",
+            "group": "Outputs",
+            "value": {
+              "Bool": false
+            },
+            "ui_type": "Toggle",
+            "visible_condition": null
+          },
+          {
+            "id": "eb3126c1-88c4-4a03-b0ff-96db76fbd897",
+            "name": "gen_orm",
+            "label": "ORM",
+            "group": "Outputs",
+            "value": {
+              "Bool": false
+            },
+            "ui_type": "Toggle",
+            "visible_condition": null
+          },
+          {
+            "id": "6dc40845-b0d7-4425-b970-6d8e97caf56d",
+            "name": "gen_emissive",
+            "label": "Emissive",
+            "group": "Outputs",
+            "value": {
+              "Bool": false
+            },
+            "ui_type": "Toggle",
+            "visible_condition": null
+          },
+          {
+            "id": "dd3be0de-f106-4682-9fc2-987c7bd7fbb2",
+            "name": "seam_fix",
+            "label": "Seam Fix (BaseColor UV)",
+            "group": "Outputs",
+            "value": {
+              "Bool": true
+            },
+            "ui_type": "Toggle",
+            "visible_condition": null
+          },
+          {
+            "id": "43a9e110-232b-4adb-9fc6-d62d7f66c5fa",
+            "name": "generate",
+            "label": "Generate",
+            "group": "AI",
+            "value": {
+              "Int": 1
+            },
+            "ui_type": {
+              "BusyButton": {
+                "busy_param": "busy",
+                "busy_label": "Generating...",
+                "busy_label_param": "stage_label"
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "1f408ebb-f6f4-4315-b26b-2e2e459704da",
+            "name": "status",
+            "label": "Status",
+            "group": "Internal",
+            "value": {
+              "String": "Generating... (SeamFix)"
+            },
+            "ui_type": "String",
+            "visible_condition": null
+          },
+          {
+            "id": "835dccd3-d626-434b-86bc-216171ac04c7",
+            "name": "stage_label",
+            "label": "Stage Label",
+            "group": "Internal",
+            "value": {
+              "String": "Generating... (SeamFix)"
+            },
+            "ui_type": "String",
+            "visible_condition": null
+          },
+          {
+            "id": "c8872974-6c1a-475d-bd19-767395ba9c6b",
+            "name": "thinking",
+            "label": "Thinking",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": "Code",
+            "visible_condition": null
+          },
+          {
+            "id": "cd8fd043-4232-416f-b047-39b72f8de1a8",
+            "name": "error",
+            "label": "Error",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": "String",
+            "visible_condition": null
+          },
+          {
+            "id": "62239872-c62f-4750-b599-bd685cbd03ba",
+            "name": "busy",
+            "label": "Busy (Internal)",
+            "group": "Debug",
+            "value": {
+              "Bool": true
+            },
+            "ui_type": "Toggle",
+            "visible_condition": null
+          },
+          {
+            "id": "d6c5ded8-3250-4ce2-aea1-38f04dc98373",
+            "name": "guide_atlas",
+            "label": "Guide Atlas",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "fa3cb917-3454-43e6-b714-23da56237d3f",
+            "name": "basecolor_atlas",
+            "label": "BaseColor Atlas",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png",
+                  "jpg",
+                  "jpeg",
+                  "webp"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "92aaa5fa-b75d-462a-ba9b-558a7233f19e",
+            "name": "normal_atlas",
+            "label": "Normal Atlas",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png",
+                  "jpg",
+                  "jpeg",
+                  "webp"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "23c43ee9-0830-497a-b398-040aaeeb9cab",
+            "name": "orm_atlas",
+            "label": "ORM Atlas",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png",
+                  "jpg",
+                  "jpeg",
+                  "webp"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "d3e04a29-74ac-4635-9536-271152a5cd6e",
+            "name": "emissive_atlas",
+            "label": "Emissive Atlas",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png",
+                  "jpg",
+                  "jpeg",
+                  "webp"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "e37c3585-5c49-4c8e-9191-d64bffbb2c1a",
+            "name": "basecolor_uv",
+            "label": "BaseColor UV",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "6fd04a0d-f8a3-49ee-9939-9b508b0fd710",
+            "name": "normal_uv",
+            "label": "Normal UV",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "fc84da7c-0026-43db-aa40-93e9a73a8a7f",
+            "name": "orm_uv",
+            "label": "ORM UV",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "c1138808-c26f-4561-8998-099e7752c37c",
+            "name": "emissive_uv",
+            "label": "Emissive UV",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "5e50fcc5-213b-489a-85a7-43c9954e2cdc",
+            "name": "seam_mask",
+            "label": "Seam Mask",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "a055a993-375b-467c-8392-a1fcb06bcd6e",
+            "name": "basecolor_uv_fixed",
+            "label": "BaseColor UV (Fixed)",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png"
+                ]
+              }
+            },
+            "visible_condition": null
+          }
+        ],
+        "is_template": false,
+        "inputs": {
+          "in:0": null
+        },
+        "outputs": {
+          "out:0": null
+        },
+        "is_bypassed": false,
+        "is_display_node": false,
+        "is_locked": false,
+        "input_style": "Individual",
+        "style": "Normal"
+      },
+      "40c38567-1a84-4434-919b-b639eebf2366": {
+        "id": "40c38567-1a84-4434-919b-b639eebf2366",
+        "name": "Nano Voxel Painter",
+        "node_type": {
+          "Generic": "Nano Voxel Painter"
+        },
+        "position": {
+          "x": 243.78868,
+          "y": -234.6854
+        },
+        "size": {
+          "x": 160.0,
+          "y": 80.0
+        },
+        "parameters": [
+          {
+            "id": "98eadbdb-c1b4-480f-b437-d159f7e8a3dd",
+            "name": "__ai_system_prompt",
+            "label": "System Prompt",
+            "group": "AI",
+            "value": {
+              "String": "You generate a 3x2 atlas texture for a voxel asset based on a provided 3x2 guide atlas.\nRules:\n- Output MUST be a single image and nothing else.\n- Preserve the 3x2 layout EXACTLY.\n- Each tile corresponds to an orthographic view: row0=[+X,-X,+Y], row1=[-Y,+Z,-Z].\n- No text, watermark, or annotations.\n- Keep style consistent across all 6 tiles.\n"
+            },
+            "ui_type": "Code",
+            "visible_condition": null
+          },
+          {
+            "id": "7c2253f8-cf68-4c46-8491-c575813efa37",
+            "name": "prompt",
+            "label": "Prompt",
+            "group": "AI",
+            "value": {
+              "String": "A stylized but physically plausible material."
+            },
+            "ui_type": "String",
+            "visible_condition": null
+          },
+          {
+            "id": "19d91542-99b2-49c2-9092-ab4e4b99bfe1",
+            "name": "tile_res",
+            "label": "Tile Resolution",
+            "group": "AI",
+            "value": {
+              "Int": 384
+            },
+            "ui_type": {
+              "IntSlider": {
+                "min": 128,
+                "max": 1024
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "580e27ab-d050-4571-8d1d-8e9a605cc314",
+            "name": "palette_max",
+            "label": "Palette Max",
+            "group": "Voxel",
+            "value": {
+              "Int": 64
+            },
+            "ui_type": {
+              "IntSlider": {
+                "min": 4,
+                "max": 200
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "fd48ce52-684a-4a00-946b-0f12a309b536",
+            "name": "mask_only",
+            "label": "Mask Only",
+            "group": "Voxel",
+            "value": {
+              "Bool": true
+            },
+            "ui_type": "Toggle",
+            "visible_condition": null
+          },
+          {
+            "id": "9357086c-4922-408f-93f3-bbdb85bdd6b7",
+            "name": "depth_eps",
+            "label": "Depth Epsilon",
+            "group": "Voxel",
+            "value": {
+              "Float": 0.02
+            },
+            "ui_type": {
+              "FloatSlider": {
+                "min": 0.0,
+                "max": 0.2
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "610eb110-aacd-4f83-989d-9ad233dbc51a",
+            "name": "max_surface_voxels",
+            "label": "Max Surface Voxels",
+            "group": "Safety",
+            "value": {
+              "Int": 250000
+            },
+            "ui_type": {
+              "IntSlider": {
+                "min": 10000,
+                "max": 5000000
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "060ad71a-26b5-40a4-8188-0a4b8346dc8a",
+            "name": "reference_image",
+            "label": "Reference Image",
+            "group": "AI",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png",
+                  "jpg",
+                  "jpeg",
+                  "webp"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "4347c878-1a90-45d7-9513-d4c19c63c54c",
+            "name": "generate",
+            "label": "Generate",
+            "group": "AI",
+            "value": {
+              "Int": 1
+            },
+            "ui_type": {
+              "BusyButton": {
+                "busy_param": "busy",
+                "busy_label": "Generating...",
+                "busy_label_param": "status"
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "9c37a2d0-535f-4bf6-bf9b-6b4e9269f975",
+            "name": "guide_atlas",
+            "label": "Guide Atlas (Internal)",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "20795a99-1f23-4634-a409-cc536050e2f2",
+            "name": "basecolor_atlas",
+            "label": "BaseColor Atlas (Internal)",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png",
+                  "jpg",
+                  "jpeg",
+                  "webp"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "46fb04e8-efa3-49c3-b18a-388a7bb136d6",
+            "name": "status",
+            "label": "Status",
+            "group": "Internal",
+            "value": {
+              "String": "Generating..."
+            },
+            "ui_type": "String",
+            "visible_condition": null
+          },
+          {
+            "id": "6770f4e9-81fe-40f9-b80c-b214e784fc11",
+            "name": "error",
+            "label": "Error",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": "String",
+            "visible_condition": null
+          },
+          {
+            "id": "67b23b3b-9e78-47db-8f64-001ad5217e4a",
+            "name": "busy",
+            "label": "Busy (Internal)",
+            "group": "Debug",
+            "value": {
+              "Bool": true
+            },
+            "ui_type": "Toggle",
+            "visible_condition": null
+          }
+        ],
+        "is_template": false,
+        "inputs": {
+          "in:0": null
+        },
+        "outputs": {
+          "out:0": null
+        },
+        "is_bypassed": false,
+        "is_display_node": false,
+        "is_locked": false,
+        "input_style": "Individual",
+        "style": "Normal"
+      },
+      "a7ff0e7a-54ee-4b30-849f-c79774950e20": {
+        "id": "a7ff0e7a-54ee-4b30-849f-c79774950e20",
+        "name": "Nano HexPlanar Baker",
+        "node_type": {
+          "Generic": "Nano HexPlanar Baker"
+        },
+        "position": {
+          "x": 469.42792,
+          "y": 443.60864
+        },
+        "size": {
+          "x": 160.0,
+          "y": 80.0
+        },
+        "parameters": [
+          {
+            "id": "6e509981-f7ca-4f4f-842c-8aab4a396889",
+            "name": "__ai_system_prompt",
+            "label": "System Prompt (BaseColor Atlas)",
+            "group": "AI",
+            "value": {
+              "String": "You generate a 3x2 atlas texture for a 3D asset based on a provided 3x2 guide atlas.\nRules:\n- Output MUST be a single image and nothing else.\n- Preserve the 3x2 layout EXACTLY.\n- Each tile corresponds to an orthographic view: row0=[+X,-X,+Y], row1=[-Y,+Z,-Z].\n- No text, watermark, or annotations.\n- Keep style consistent across all 6 tiles.\n- with extramely shadow\n"
+            },
+            "ui_type": "Code",
+            "visible_condition": null
+          },
+          {
+            "id": "381d32fe-dbbf-408d-9f9d-33942b7c3304",
+            "name": "prompt",
+            "label": "Prompt",
+            "group": "AI",
+            "value": {
+              "String": "a handsome pig with yellow cloth"
+            },
+            "ui_type": "String",
+            "visible_condition": null
+          },
+          {
+            "id": "5b2dacb4-e5c2-46d8-9435-5fbc0b2997e8",
+            "name": "tile_res",
+            "label": "Tile Resolution",
+            "group": "AI",
+            "value": {
+              "Int": 2048
+            },
+            "ui_type": {
+              "IntSlider": {
+                "min": 128,
+                "max": 2048
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "56e1a1d1-8cf2-457d-8ec8-215bbbd942d5",
+            "name": "uv_res",
+            "label": "UV Resolution",
+            "group": "AI",
+            "value": {
+              "Int": 2048
+            },
+            "ui_type": {
+              "IntSlider": {
+                "min": 128,
+                "max": 4096
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "629ac0cf-dee3-426e-aee3-02ba900012d4",
+            "name": "seam_px",
+            "label": "Seam Width (px)",
+            "group": "AI",
+            "value": {
+              "Int": 8
+            },
+            "ui_type": {
+              "IntSlider": {
+                "min": 1,
+                "max": 64
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "d53dec1a-899a-4196-9bc1-debc109621ce",
+            "name": "gen_basecolor",
+            "label": "BaseColor",
+            "group": "Outputs",
+            "value": {
+              "Bool": true
+            },
+            "ui_type": "Toggle",
+            "visible_condition": null
+          },
+          {
+            "id": "a1f3cdca-9d71-493e-839e-1371189513db",
+            "name": "gen_normal",
+            "label": "Normal",
+            "group": "Outputs",
+            "value": {
+              "Bool": true
+            },
+            "ui_type": "Toggle",
+            "visible_condition": null
+          },
+          {
+            "id": "cb09477b-fdd6-425e-a70b-dc61aa5444b5",
+            "name": "gen_orm",
+            "label": "ORM",
+            "group": "Outputs",
+            "value": {
+              "Bool": false
+            },
+            "ui_type": "Toggle",
+            "visible_condition": null
+          },
+          {
+            "id": "5ecc878e-2eaf-4212-b4fc-03ce565f0127",
+            "name": "gen_emissive",
+            "label": "Emissive",
+            "group": "Outputs",
+            "value": {
+              "Bool": false
+            },
+            "ui_type": "Toggle",
+            "visible_condition": null
+          },
+          {
+            "id": "32c4cebe-30b7-4f28-b0a5-d174dec7fdbc",
+            "name": "seam_fix",
+            "label": "Seam Fix (BaseColor UV)",
+            "group": "Outputs",
+            "value": {
+              "Bool": false
+            },
+            "ui_type": "Toggle",
+            "visible_condition": null
+          },
+          {
+            "id": "79d14f7f-ac55-4125-aa4c-80e8994aebe7",
+            "name": "generate",
+            "label": "Generate",
+            "group": "AI",
+            "value": {
+              "Int": 14
+            },
+            "ui_type": {
+              "BusyButton": {
+                "busy_param": "busy",
+                "busy_label": "Generating...",
+                "busy_label_param": "stage_label"
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "8ae4d32e-ea15-4458-ab2b-a7328d5f7189",
+            "name": "status",
+            "label": "Status",
+            "group": "Internal",
+            "value": {
+              "String": "Done"
+            },
+            "ui_type": "String",
+            "visible_condition": null
+          },
+          {
+            "id": "c5db6ba2-7906-465a-81c3-0de9bd55f86b",
+            "name": "stage_label",
+            "label": "Stage Label",
+            "group": "Internal",
+            "value": {
+              "String": "Done"
+            },
+            "ui_type": "String",
+            "visible_condition": null
+          },
+          {
+            "id": "64b3ba13-07bc-464a-ba59-b8bff1ec2eab",
+            "name": "error",
+            "label": "Error",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": "String",
+            "visible_condition": null
+          },
+          {
+            "id": "08035e51-09ac-4875-967f-94e64bf5f2f4",
+            "name": "busy",
+            "label": "Busy (Internal)",
+            "group": "Debug",
+            "value": {
+              "Bool": false
+            },
+            "ui_type": "Toggle",
+            "visible_condition": null
+          },
+          {
+            "id": "6648fccc-2079-42e0-bef6-9bc406c8b68b",
+            "name": "guide_atlas",
+            "label": "Guide Atlas",
+            "group": "Internal",
+            "value": {
+              "String": "textures/ai_bakes/a7ff0e7a-54ee-4b30-849f-c79774950e20/guide_atlas_14.png"
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "d6a5f2bb-6ed6-44d6-8738-dd98b91a13aa",
+            "name": "basecolor_atlas",
+            "label": "BaseColor Atlas",
+            "group": "Internal",
+            "value": {
+              "String": "textures/ai_bakes/a7ff0e7a-54ee-4b30-849f-c79774950e20/basecolor_atlas_14.png"
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png",
+                  "jpg",
+                  "jpeg",
+                  "webp"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "7a0930ae-5601-41e2-8c03-4fb4c9349ecd",
+            "name": "normal_atlas",
+            "label": "Normal Atlas",
+            "group": "Internal",
+            "value": {
+              "String": "textures/ai_bakes/a7ff0e7a-54ee-4b30-849f-c79774950e20/normal_atlas_14.png"
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png",
+                  "jpg",
+                  "jpeg",
+                  "webp"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "dbdfd99c-16a7-4f15-8024-eab585e8ffd0",
+            "name": "orm_atlas",
+            "label": "ORM Atlas",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png",
+                  "jpg",
+                  "jpeg",
+                  "webp"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "0564c91b-0eb0-4393-8e24-8b6c8f01e605",
+            "name": "emissive_atlas",
+            "label": "Emissive Atlas",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png",
+                  "jpg",
+                  "jpeg",
+                  "webp"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "2b784fc4-4787-4294-b750-1169989229af",
+            "name": "basecolor_uv",
+            "label": "BaseColor UV",
+            "group": "Internal",
+            "value": {
+              "String": "textures/ai_bakes/a7ff0e7a-54ee-4b30-849f-c79774950e20/basecolor_uv_14.png"
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "9a068ee5-5db9-45f5-a28a-d35d34deba05",
+            "name": "normal_uv",
+            "label": "Normal UV",
+            "group": "Internal",
+            "value": {
+              "String": "textures/ai_bakes/a7ff0e7a-54ee-4b30-849f-c79774950e20/normal_uv_14.png"
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "b4e46f0a-0c84-4d23-93bb-eaed1a464293",
+            "name": "orm_uv",
+            "label": "ORM UV",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "28cb487f-8901-46ef-a60e-5d3c2fd43eac",
+            "name": "emissive_uv",
+            "label": "Emissive UV",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "d6665f61-90e2-4202-97a3-e4654cd0ed12",
+            "name": "seam_mask",
+            "label": "Seam Mask",
+            "group": "Internal",
+            "value": {
+              "String": "textures/ai_bakes/a7ff0e7a-54ee-4b30-849f-c79774950e20/seam_mask_14.png"
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "e4f33ee5-25c6-4dd5-9ae9-daa0735a5468",
+            "name": "basecolor_uv_fixed",
+            "label": "BaseColor UV (Fixed)",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png"
+                ]
+              }
+            },
+            "visible_condition": null
+          }
+        ],
+        "is_template": false,
+        "inputs": {
+          "in:0": null
+        },
+        "outputs": {
+          "out:0": null
+        },
+        "is_bypassed": false,
+        "is_display_node": true,
+        "is_locked": false,
+        "input_style": "Individual",
+        "style": "Normal"
+      },
+      "da78c7c3-0b09-4387-af66-1c812788f723": {
+        "id": "da78c7c3-0b09-4387-af66-1c812788f723",
+        "name": "Nano HexPlanar Baker",
+        "node_type": {
+          "Generic": "Nano HexPlanar Baker"
+        },
+        "position": {
+          "x": 483.35754,
+          "y": 1217.1104
+        },
+        "size": {
+          "x": 160.0,
+          "y": 80.0
+        },
+        "parameters": [
+          {
+            "id": "1e2caa10-87bc-4cf3-80cf-c63182192d84",
+            "name": "__ai_system_prompt",
+            "label": "System Prompt (BaseColor Atlas)",
+            "group": "AI",
+            "value": {
+              "String": "You generate a 3x2 atlas texture for a 3D asset based on a provided 3x2 guide atlas.\nRules:\n- Output MUST be a single image and nothing else.\n- Preserve the 3x2 layout EXACTLY.\n- Each tile corresponds to an orthographic view: row0=[+X,-X,+Y], row1=[-Y,+Z,-Z].\n- No text, watermark, or annotations.\n- Keep style consistent across all 6 tiles.\n"
+            },
+            "ui_type": "Code",
+            "visible_condition": null
+          },
+          {
+            "id": "a8e08ee0-d50c-4cfe-945e-8f2b734cc60c",
+            "name": "prompt",
+            "label": "Prompt",
+            "group": "AI",
+            "value": {
+              "String": "a zombie pig"
+            },
+            "ui_type": "String",
+            "visible_condition": null
+          },
+          {
+            "id": "67fdd1cf-55fe-4367-ae7b-9447fb31dbea",
+            "name": "tile_res",
+            "label": "Tile Resolution",
+            "group": "AI",
+            "value": {
+              "Int": 1024
+            },
+            "ui_type": {
+              "IntSlider": {
+                "min": 128,
+                "max": 2048
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "e831621b-40d4-4269-83c8-4531280eea06",
+            "name": "uv_res",
+            "label": "UV Resolution",
+            "group": "AI",
+            "value": {
+              "Int": 1024
+            },
+            "ui_type": {
+              "IntSlider": {
+                "min": 128,
+                "max": 4096
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "9d9d014d-913a-4ff1-8f2f-2a1a56c9884c",
+            "name": "timeout_s",
+            "label": "Timeout (s)",
+            "group": "AI",
+            "value": {
+              "Int": 0
+            },
+            "ui_type": {
+              "IntSlider": {
+                "min": 0,
+                "max": 3600
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "0df21048-0b96-4318-a947-74bcc2551966",
+            "name": "seam_px",
+            "label": "Seam Width (px)",
+            "group": "AI",
+            "value": {
+              "Int": 8
+            },
+            "ui_type": {
+              "IntSlider": {
+                "min": 1,
+                "max": 64
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "3833f473-aa8f-4fc1-8f87-607673b6e173",
+            "name": "gen_basecolor",
+            "label": "BaseColor",
+            "group": "Outputs",
+            "value": {
+              "Bool": true
+            },
+            "ui_type": "Toggle",
+            "visible_condition": null
+          },
+          {
+            "id": "f71ddb18-3520-41b2-96f6-17db7c326972",
+            "name": "gen_normal",
+            "label": "Normal",
+            "group": "Outputs",
+            "value": {
+              "Bool": false
+            },
+            "ui_type": "Toggle",
+            "visible_condition": null
+          },
+          {
+            "id": "eb3126c1-88c4-4a03-b0ff-96db76fbd897",
+            "name": "gen_orm",
+            "label": "ORM",
+            "group": "Outputs",
+            "value": {
+              "Bool": false
+            },
+            "ui_type": "Toggle",
+            "visible_condition": null
+          },
+          {
+            "id": "6dc40845-b0d7-4425-b970-6d8e97caf56d",
+            "name": "gen_emissive",
+            "label": "Emissive",
+            "group": "Outputs",
+            "value": {
+              "Bool": false
+            },
+            "ui_type": "Toggle",
+            "visible_condition": null
+          },
+          {
+            "id": "dd3be0de-f106-4682-9fc2-987c7bd7fbb2",
+            "name": "seam_fix",
+            "label": "Seam Fix (BaseColor UV)",
+            "group": "Outputs",
+            "value": {
+              "Bool": true
+            },
+            "ui_type": "Toggle",
+            "visible_condition": null
+          },
+          {
+            "id": "43a9e110-232b-4adb-9fc6-d62d7f66c5fa",
+            "name": "generate",
+            "label": "Generate",
+            "group": "AI",
+            "value": {
+              "Int": 2
+            },
+            "ui_type": {
+              "BusyButton": {
+                "busy_param": "busy",
+                "busy_label": "Generating...",
+                "busy_label_param": "stage_label"
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "1f408ebb-f6f4-4315-b26b-2e2e459704da",
+            "name": "status",
+            "label": "Status",
+            "group": "Internal",
+            "value": {
+              "String": "Generating... (BaseColor)"
+            },
+            "ui_type": "String",
+            "visible_condition": null
+          },
+          {
+            "id": "835dccd3-d626-434b-86bc-216171ac04c7",
+            "name": "stage_label",
+            "label": "Stage Label",
+            "group": "Internal",
+            "value": {
+              "String": "Generating... (BaseColor)"
+            },
+            "ui_type": "String",
+            "visible_condition": null
+          },
+          {
+            "id": "c8872974-6c1a-475d-bd19-767395ba9c6b",
+            "name": "thinking",
+            "label": "Thinking",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": "Code",
+            "visible_condition": null
+          },
+          {
+            "id": "cd8fd043-4232-416f-b047-39b72f8de1a8",
+            "name": "error",
+            "label": "Error",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": "String",
+            "visible_condition": null
+          },
+          {
+            "id": "62239872-c62f-4750-b599-bd685cbd03ba",
+            "name": "busy",
+            "label": "Busy (Internal)",
+            "group": "Debug",
+            "value": {
+              "Bool": true
+            },
+            "ui_type": "Toggle",
+            "visible_condition": null
+          },
+          {
+            "id": "d6c5ded8-3250-4ce2-aea1-38f04dc98373",
+            "name": "guide_atlas",
+            "label": "Guide Atlas",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "fa3cb917-3454-43e6-b714-23da56237d3f",
+            "name": "basecolor_atlas",
+            "label": "BaseColor Atlas",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png",
+                  "jpg",
+                  "jpeg",
+                  "webp"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "92aaa5fa-b75d-462a-ba9b-558a7233f19e",
+            "name": "normal_atlas",
+            "label": "Normal Atlas",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png",
+                  "jpg",
+                  "jpeg",
+                  "webp"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "23c43ee9-0830-497a-b398-040aaeeb9cab",
+            "name": "orm_atlas",
+            "label": "ORM Atlas",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png",
+                  "jpg",
+                  "jpeg",
+                  "webp"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "d3e04a29-74ac-4635-9536-271152a5cd6e",
+            "name": "emissive_atlas",
+            "label": "Emissive Atlas",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png",
+                  "jpg",
+                  "jpeg",
+                  "webp"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "e37c3585-5c49-4c8e-9191-d64bffbb2c1a",
+            "name": "basecolor_uv",
+            "label": "BaseColor UV",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "6fd04a0d-f8a3-49ee-9939-9b508b0fd710",
+            "name": "normal_uv",
+            "label": "Normal UV",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "fc84da7c-0026-43db-aa40-93e9a73a8a7f",
+            "name": "orm_uv",
+            "label": "ORM UV",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "c1138808-c26f-4561-8998-099e7752c37c",
+            "name": "emissive_uv",
+            "label": "Emissive UV",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "5e50fcc5-213b-489a-85a7-43c9954e2cdc",
+            "name": "seam_mask",
+            "label": "Seam Mask",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png"
+                ]
+              }
+            },
+            "visible_condition": null
+          },
+          {
+            "id": "a055a993-375b-467c-8392-a1fcb06bcd6e",
+            "name": "basecolor_uv_fixed",
+            "label": "BaseColor UV (Fixed)",
+            "group": "Internal",
+            "value": {
+              "String": ""
+            },
+            "ui_type": {
+              "FilePath": {
+                "filters": [
+                  "png"
+                ]
+              }
+            },
+            "visible_condition": null
+          }
+        ],
+        "is_template": false,
+        "inputs": {
+          "in:0": null
+        },
+        "outputs": {
+          "out:0": null
+        },
+        "is_bypassed": false,
+        "is_display_node": false,
+        "is_locked": false,
+        "input_style": "Individual",
+        "style": "Normal"
+      }
+    },
+    "connections": {
+      "5f28e58a-b607-42f2-9e11-587e2d410987": {
+        "id": "5f28e58a-b607-42f2-9e11-587e2d410987",
+        "from_node": "01a6f157-51ca-4c77-a5d8-cf88d1f12ee9",
+        "from_port": "out:0",
+        "to_node": "16ed3c5f-318d-4c1e-a2fa-471bc872e60b",
+        "to_port": "in:0",
+        "order": 0,
+        "waypoints": []
+      },
+      "197e3b2f-1502-48a2-a476-2166f887e126": {
+        "id": "197e3b2f-1502-48a2-a476-2166f887e126",
+        "from_node": "b9045fc4-8fd3-4d1b-9561-e63b97209b3f",
+        "from_port": "out:0",
+        "to_node": "a7ff0e7a-54ee-4b30-849f-c79774950e20",
+        "to_port": "in:0",
+        "order": 0,
+        "waypoints": []
+      },
+      "95738129-9173-41bc-8abf-ff87032ce82c": {
+        "id": "95738129-9173-41bc-8abf-ff87032ce82c",
+        "from_node": "fde77b8d-f53b-4301-ba37-9c5d5b52a5eb",
+        "from_port": "out:0",
+        "to_node": "40c38567-1a84-4434-919b-b639eebf2366",
+        "to_port": "in:0",
+        "order": 0,
+        "waypoints": []
+      },
+      "065c8593-21e8-4dfb-ba32-845f8ecd40be": {
+        "id": "065c8593-21e8-4dfb-ba32-845f8ecd40be",
+        "from_node": "b9045fc4-8fd3-4d1b-9561-e63b97209b3f",
+        "from_port": "out:0",
+        "to_node": "371c7790-a821-41e0-8563-fd233448e3e9",
+        "to_port": "in:0",
+        "order": 0,
+        "waypoints": []
+      },
+      "e3bb6b3e-aebc-46d4-9a21-7c2d5e751f93": {
+        "id": "e3bb6b3e-aebc-46d4-9a21-7c2d5e751f93",
+        "from_node": "b9045fc4-8fd3-4d1b-9561-e63b97209b3f",
+        "from_port": "out:0",
+        "to_node": "da78c7c3-0b09-4387-af66-1c812788f723",
+        "to_port": "in:0",
+        "order": 0,
+        "waypoints": []
+      },
+      "ea41c656-3df0-4b5f-8fa0-a7a790e43498": {
+        "id": "ea41c656-3df0-4b5f-8fa0-a7a790e43498",
+        "from_node": "a7ff0e7a-54ee-4b30-849f-c79774950e20",
+        "from_port": "out:0",
+        "to_node": "01a6f157-51ca-4c77-a5d8-cf88d1f12ee9",
+        "to_port": "in:0",
+        "order": 0,
+        "waypoints": []
+      }
+    },
+    "sticky_notes": {},
+    "sticky_note_draw_order": [],
+    "network_boxes": {},
+    "network_box_draw_order": [],
+    "promote_notes": {},
+    "promote_note_draw_order": [],
+    "display_node": "a7ff0e7a-54ee-4b30-849f-c79774950e20",
+    "ui_state": {
+      "pan": [
+        -21.681427,
+        -307.17065
+      ],
+      "zoom": 0.84524226
+    }
+  },
+  "cda_defs": {}
+}

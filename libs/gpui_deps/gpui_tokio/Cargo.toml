@@ -1,0 +1,17 @@
+[package]
+name = "gpui_tokio"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "Apache-2.0"
+
+
+[lib]
+path = "src/gpui_tokio.rs"
+doctest = false
+
+[dependencies]
+anyhow = "1.0.86"
+util = { path = "../util" }
+gpui = { path = "../gpui", default-features = false }
+tokio = { version = "1", features = ["rt", "rt-multi-thread"] }

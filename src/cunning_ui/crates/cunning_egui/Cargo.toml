@@ -1,0 +1,97 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/ecolor",
+    "crates/egui_demo_app",
+    "crates/cunning_egui_demo",
+    "crates/egui_demo_lib",
+    "crates/egui_extras",
+    "crates/egui_glow",
+    "crates/egui_plot",
+    "crates/egui-wgpu",
+    "crates/egui-winit",
+    "crates/egui",
+    "crates/emath",
+    "crates/epaint",
+    "crates/epaint_default_fonts",
+
+    "examples/*",
+]
+
+[workspace.package]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+rust-version = "1.82"
+version = "0.33.3"
+
+
+[profile.release]
+opt-level = 2
+panic = "abort"
+
+
+[profile.dev]
+panic = "abort"
+
+[profile.dev.package."*"]
+opt-level = 2
+
+
+[workspace.dependencies]
+emath = { version = "0.33.3", path = "crates/emath", default-features = false }
+ecolor = { version = "0.33.3", path = "crates/ecolor", default-features = false }
+epaint = { version = "0.33.3", path = "crates/epaint", default-features = false }
+egui = { version = "0.33.3", path = "crates/egui", default-features = false }
+epaint_default_fonts = { version = "0.33.3", path = "crates/epaint_default_fonts" }
+egui_plot = { version = "0.33.3", path = "crates/egui_plot", default-features = false }
+egui-winit = { version = "0.33.3", path = "crates/egui-winit", default-features = false }
+egui_extras = { version = "0.33.3", path = "crates/egui_extras", default-features = false }
+egui-wgpu = { version = "0.33.3", path = "crates/egui-wgpu", default-features = false }
+egui_demo_lib = { version = "0.33.3", path = "crates/egui_demo_lib", default-features = false }
+egui_glow = { version = "0.33.3", path = "crates/egui_glow", default-features = false }
+eframe = { version = "0.33.3", path = "crates/eframe", default-features = false }
+
+ab_glyph = "0.2.11"
+accesskit = "0.12"
+ahash = { version = "0.8.6", default-features = false, features = ["no-rng", "std"] }
+backtrace = "0.3"
+bitflags = "2.4"
+bytemuck = "1.7.2"
+cint = "0.3.1"
+color-hex = "0.2.0"
+criterion = { version = "0.5.1", default-features = false }
+document-features = "0.2.8"
+glow = "0.13"
+log = { version = "0.4", features = ["std"] }
+mint = "0.5.6"
+nohash-hasher = "0.2"
+parking_lot = "0.12"
+profiling = { version = "1.0.17", default-features = false }
+puffin = "0.19"
+puffin_http = "0.16"
+rayon = "1.7"
+raw-window-handle = "0.6.0"
+ron = "0.8"
+serde = { version = "1", features = ["derive"] }
+smallvec = "1.11"
+thiserror = "1.0.37"
+type-map = "0.5.0"
+unicode-segmentation = "1.10"
+web-time = "0.2"
+wgpu = { version = "28", default-features = false, features = ["wgsl", "dx12", "metal", "vulkan", "naga-ir", "fragile-send-sync-non-atomic-wasm"] }
+winit = { version = "0.29.4", default-features = false }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+elided_lifetimes_in_paths = "warn"
+trivial_numeric_casts = "warn"
+unused_lifetimes = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+doc_markdown = "warn"
+manual_let_else = "warn"
+match_same_arms = "warn"
+semicolon_if_nothing_returned = "warn"
+undocumented_unsafe_blocks = "warn"
+unwrap_used = "allow"

@@ -1,0 +1,48 @@
+name = "Boolean"
+category = "Modeling"
+description = "Performs boolean operations between two input geometries (A and B) using a manifold backend."
+
+[io]
+input_type = "Multi"
+output_type = "Geometry"
+
+[[io.inputs]]
+index = 0
+name = "Geometry A"
+description = "第一个输入几何体，作为布尔运算的目标"
+
+[[io.inputs]]
+index = 1
+name = "Geometry B"
+description = "第二个输入几何体，作为布尔运算的切割器"
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "布尔运算后的结果几何体"
+
+[parameters]
+group_a = "String. Group filter for input A (currently not applied in compute). Default: empty."
+group_b = "String. Group filter for input B (currently not applied in compute). Default: empty."
+input_type = "Int (Dropdown). Treat inputs as Solid or Surface. Default: Solid."
+operation = "Int (Dropdown). Union / Intersect / Subtract / Difference. Default: Subtract."
+subtract_mode = "Int (Dropdown). A-B / B-A / Both. Default: A-B."
+output_topology = "Int (Dropdown). Polygons (N-gons) or Triangles. Default: Polygons."
+preserve_hard_edges = "Bool. Preserve hard edges in output if possible. Default: true."
+normal_strategy = "Int (Dropdown). Transfer from input or Recompute. Default: Transfer."
+tolerance = "Float. Welding tolerance for boolean. Default: 1e-4."
+group_a_inside_b = "String. Output group name for A inside B. Default: ainsideb."
+group_a_outside_b = "String. Output group name for A outside B. Default: aoutsideb."
+group_b_inside_a = "String. Output group name for B inside A. Default: binsidea."
+group_b_outside_a = "String. Output group name for B outside A. Default: boutsidea."
+group_overlap = "String. Output group name for overlap. Default: aboverlap."
+group_seam_aa = "String. Output edge group name for A-A seams. Default: aseams."
+group_seam_bb = "String. Output edge group name for B-B seams. Default: bseams."
+group_seam_ab = "String. Output edge group name for A-B seams. Default: abseams."
+
+[usage]
+text = """
+Takes two geometry inputs (A and B) and applies the selected boolean operation.
+If only one input is connected, it passes through; empty inputs are handled gracefully.
+On failure (e.g. invalid topology for manifold boolean), the node returns empty geometry.
+"""

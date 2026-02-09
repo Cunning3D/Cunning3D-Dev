@@ -1,0 +1,30 @@
+name = "Group Combine"
+category = "Group"
+description = "对两个命名组做集合运算（并集/交集/差集）并输出到新组。"
+
+[io]
+input_type = "Single"
+output_type = "Geometry"
+
+[[io.inputs]]
+index = 0
+name = "Input"
+description = "输入几何体，包含要组合的组"
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "包含组合后组的几何体"
+
+[parameters]
+domain = "Int (Dropdown). Domain: Point/Vertex/Primitive/Edge. Default: Primitive."
+a = "String. Group A name. Default: empty."
+op = "Int (Dropdown). Union/Intersect/Subtract. Default: Union."
+b = "String. Group B name. Default: empty."
+out = "String. Output group name. Default: group1."
+
+[usage]
+text = """
+在指定 Domain 上对组 A 与组 B 做集合运算，并把结果写入 Out 组。
+不会改变拓扑，只创建/覆盖一个同名组掩码。
+"""

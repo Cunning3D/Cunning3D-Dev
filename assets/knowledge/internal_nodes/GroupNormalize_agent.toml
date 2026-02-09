@@ -1,0 +1,27 @@
+name = "Group Normalize"
+category = "Group"
+description = "规范化组集合（按域整理，并可丢弃空组）。"
+
+[io]
+input_type = "Single"
+output_type = "Geometry"
+
+[[io.inputs]]
+index = 0
+name = "Input"
+description = "输入几何体，包含要规范化的组"
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "包含规范化组后的几何体"
+
+[parameters]
+domain = "Int (Dropdown). Domain: Point/Vertex/Primitive/Edge. Default: Primitive."
+drop_empty = "Bool. Drop empty groups. Default: false."
+
+[usage]
+text = """
+对指定 Domain 的组做清理/规范化处理。
+可选丢弃空组（Drop Empty）。
+"""

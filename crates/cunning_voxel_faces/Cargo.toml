@@ -1,0 +1,17 @@
+[package]
+name = "cunning_voxel_faces"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = []
+voxel_faces_node_graph_sync = []
+
+[dependencies]
+bevy = { path = "../../src/cunning_core/libs/3rd/bevy", default-features = false, features = ["3d"] }
+bytemuck = "1"
+uuid = { version = "1.8.0", features = ["v4", "v5", "serde", "js"] }
+cunning_kernel = { package = "cunning_core", path = "../cunning_core" }
+cunning_viewport = { path = "../cunning_viewport" }
+puffin = { package = "cunning-puffin", path = "../../libs/puffin_source/puffin" }
+wgpu = { version = "28", default-features = false, features = ["wgsl"] }

@@ -1,0 +1,2 @@
+// Placeholder
+pub struct CurveBevelNode;

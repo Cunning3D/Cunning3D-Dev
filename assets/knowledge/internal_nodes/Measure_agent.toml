@@ -1,0 +1,28 @@
+name = "Measure"
+category = "Attribute"
+description = "测量多边形或折线的面积/周长，并把结果写入面属性。"
+
+[io]
+input_type = "Single"
+output_type = "Geometry"
+
+[[io.inputs]]
+index = 0
+name = "Input"
+description = "输入几何体，将测量面积或周长"
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "包含测量结果属性的几何体"
+
+[parameters]
+type = "String. Measure type: \"Area\" or \"Perimeter\" (UI TODO: Dropdown). Default: Area."
+attribute = "String. Output attribute name; empty uses default (area/perimeter). Default: empty."
+
+[usage]
+text = """
+对 Polygon 计算 Area（扇形三角化求和）或 Perimeter；对 Polyline 计算长度（closed 时包含闭合段）。
+把结果写入 Primitive 级别的 float 属性；默认属性名为 area 或 perimeter。
+不会改变拓扑，只增加/覆盖一个 primitive attribute。
+"""

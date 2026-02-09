@@ -1,0 +1,27 @@
+name = "Attribute Wrangle"
+category = "Attribute"
+description = "对输入几何执行 Rhai 脚本以读写/修改几何与属性。"
+
+[io]
+input_type = "Single"
+output_type = "Geometry"
+
+[[io.inputs]]
+index = 0
+name = "Input"
+description = "输入几何体，将被脚本修改"
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "脚本执行后的几何体"
+
+[parameters]
+code = "String (Code). Rhai script source. Default: non-empty example."
+
+[usage]
+text = """
+输入输出均为 Geometry。
+输出从输入拷贝开始，脚本在变量 geo 上运行；脚本为空则直接返回输入副本。
+脚本报错时返回原始输入几何（用于避免输出损坏）。
+"""

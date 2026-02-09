@@ -1,0 +1,19 @@
+name = "Create Dragon (VOX)"
+category = "Test Assets"
+description = "Creates the built-in dragon voxel asset and outputs a voxel-backed Geometry."
+
+[io]
+input_type = "None"
+output_type = "Geometry"
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "Voxel-backed geometry referencing an internal voxel grid."
+
+[usage]
+text = """
+Generator node: no inputs.
+Use this node to stress-test voxel rendering with a larger silhouette and more internal structure than the teapot.
+"""
+

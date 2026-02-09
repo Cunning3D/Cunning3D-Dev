@@ -1,0 +1,4 @@
+[submodule "src/cunning_core/libs/3rd/bevy"]
+	path = src/cunning_core/libs/3rd/bevy
+	url = https://github.com/Cunning3D/Cunning3D-Bevy-Fork.git
+
