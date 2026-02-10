@@ -7,6 +7,7 @@ This repository contains **Cunning3D** — a Gemini Hackathon project (an experi
 - **Gemini Hackathon project**: fast iteration and validation, while still pushing toward engineering rigor and maintainable code via agent tooling.
 - **Human-written code**: the core code is authored by developers; changes are reviewed as diffs and then amplified via multi-agent collaboration.
 - **Agent-assisted development**: agent tooling is used for exploration, implementation, and cross-checking, while keeping final edits reviewable, reproducible, and traceable.
+- Usage ： "create a procedural house and run it everywhere, and then use gemini generate a texture for the house from 3d to uv."
 
 ## Assets (important)
 
@@ -30,7 +31,7 @@ I am grateful to the open-source community. These libraries saved an enormous am
 - **Manifold** — robust geometry processing primitives.
 - And many other third-party libraries and their authors that made this project feasible.
 
-## AI tooling we use
+## AI tooling I use
 
 Agent-based tooling is used heavily to improve development efficiency:
 
