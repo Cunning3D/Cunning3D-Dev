@@ -8,6 +8,7 @@ This repository contains **Cunning3D** — a Gemini Hackathon project (an experi
 - **Human-written code**: the core code is authored by developers; changes are reviewed as diffs and then amplified via multi-agent collaboration.
 - **Agent-assisted development**: agent tooling is used for exploration, implementation, and cross-checking, while keeping final edits reviewable, reproducible, and traceable.
 - Usage ： "create a procedural house and run it everywhere, and then use gemini generate a texture for the house from 3d to uv."
+- - Usage ： "create a 3d modeling software just using the node and run everwhere ,unity unreal and web."
 
 ## Assets (important)
 
