@@ -11,19 +11,22 @@ Run from `Cunning3D_1.0` repo root:
 # From workspace root:
 cd .\Cunning3D_1.0
 
+# Recommended: force outputs to F:\cunning3d (avoid filling D:)
+.\script\package-windows-f.ps1 -Architecture x86_64
+
 # Optional: embed encrypted knowledge.pack into assets/ (requires CUNNING_KNOWLEDGE_KEY)
 $env:CUNNING_KNOWLEDGE_KEY="***"
-.\script\bundle-windows.ps1 -Architecture x86_64 -BuildKnowledgePack
+.\script\package-windows-f.ps1 -Architecture x86_64 -BuildKnowledgePack
 
 # Without knowledge.pack (default release build features: no CUDA, no whisper)
-.\script\bundle-windows.ps1 -Architecture x86_64
+.\script\package-windows-f.ps1 -Architecture x86_64
 
 # Full default features (may require CUDA toolkit + CMake)
-.\script\bundle-windows.ps1 -Architecture x86_64 -UseDefaultFeatures
+.\script\package-windows-f.ps1 -Architecture x86_64 -UseDefaultFeatures
 ```
 
 Outputs:
-- `target/Cunning3D-x86_64.exe`
+- `F:\cunning3d\target\Cunning3D-x86_64.exe` (default)
 
 ### Publish artifacts
 
