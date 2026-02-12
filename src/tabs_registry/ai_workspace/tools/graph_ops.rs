@@ -15,6 +15,10 @@ use crate::nodes::PortId;
 use crate::nodes::{Node, NodeGraph, NodeType};
 use crate::nodes::parameter::ParameterUIType;
 
+const AUTO_NODE_X_STEP: f32 = 260.0;
+const AUTO_NODE_Y_STEP: f32 = 120.0;
+const AUTO_NODE_NEAR_EPS: f32 = 36.0;
+
 fn snapshot() -> Result<Arc<crate::nodes::graph_model::NodeGraphSnapshot>, ToolError> {
     crate::nodes::graph_model::global_graph_snapshot()
         .ok_or_else(|| ToolError("Graph snapshot not available yet".to_string()))
@@ -22,6 +26,18 @@ fn snapshot() -> Result<Arc<crate::nodes::graph_model::NodeGraphSnapshot>, ToolE
 
 fn enqueue(cmd: crate::nodes::graph_model::GraphCommand) -> Result<(), ToolError> {
     crate::nodes::graph_model::enqueue_graph_command(cmd).map_err(ToolError)
+}
+
+fn auto_place_new_node(graph: &crate::nodes::graph_model::NodeGraphSnapshot) -> Pos2 {
+    if graph.nodes.is_empty() { return Pos2::new(0.0, 0.0); }
+    let (mut max_x, mut sum_y, mut n) = (f32::NEG_INFINITY, 0.0f32, 0.0f32);
+    for node in graph.nodes.values() { max_x = max_x.max(node.position.x); sum_y += node.position.y; n += 1.0; }
+    let mut p = Pos2::new(max_x + AUTO_NODE_X_STEP, sum_y / n.max(1.0));
+    for _ in 0..64 {
+        if graph.nodes.values().all(|node| (node.position.x - p.x).abs() >= AUTO_NODE_NEAR_EPS || (node.position.y - p.y).abs() >= AUTO_NODE_NEAR_EPS) { break; }
+        p.y += AUTO_NODE_Y_STEP;
+    }
+    p
 }
 
 fn find_node_id(
@@ -46,6 +62,7 @@ fn resolve_node_type(label: &str) -> NodeType {
         "Create Sphere" => NodeType::CreateSphere,
         "Transform" => NodeType::Transform,
         "Merge" => NodeType::Merge,
+        "Boolean" | "boolean" => NodeType::Boolean,
         "Curve" | "Curve (Plugin)" => NodeType::Generic("Curve".to_string()),
         "FBX Import" | "FBX Importer" => NodeType::FbxImporter,
         "VDB From Polygons" => NodeType::VdbFromPolygons,
@@ -141,6 +158,7 @@ impl Tool for CreateNodeTool {
         let name = args.node_name.unwrap_or_else(|| node_type.name().to_string());
         let name_for_closure = name.clone();
         let registry = self.registry.clone();
+        let pos = snapshot().map(|g| auto_place_new_node(&g)).unwrap_or(Pos2::new(0.0, 0.0));
         enqueue(Box::new(move |graph: &mut NodeGraph| {
             // Foreach macro block
             if matches!(&node_type, NodeType::Generic(s) if s == "ForEach Begin" || s == "ForEach End") {
@@ -156,7 +174,7 @@ impl Tool for CreateNodeTool {
                 node_id,
                 name_for_closure.clone(),
                 node_type.clone(),
-                Pos2::new(0.0, 0.0),
+                pos,
             );
             if let NodeType::Generic(type_name) = &node.node_type {
                 if let Some(descriptor) = registry.nodes.read().unwrap().get(type_name) {
@@ -310,6 +328,27 @@ impl Tool for ConnectNodeTool {
                     waypoints: Vec::new(),
                 },
             );
+            let (is_bool, is_default) = g
+                .nodes
+                .get(&to_id)
+                .map(|tn| {
+                    let b = matches!(tn.node_type, NodeType::Boolean)
+                        || matches!(&tn.node_type, NodeType::Generic(s) if s == "Boolean");
+                    let d = tn.position.x.abs() < 0.01 && tn.position.y.abs() < 0.01;
+                    (b, d)
+                })
+                .unwrap_or((false, false));
+            let mut new_pos = None;
+            if is_bool || is_default {
+                let (mut max_x, mut sum_y, mut n) = (f32::NEG_INFINITY, 0.0f32, 0.0f32);
+                for c in g.connections.values() {
+                    if c.to_node != to_id { continue; }
+                    if let Some(sn) = g.nodes.get(&c.from_node) { max_x = max_x.max(sn.position.x); sum_y += sn.position.y; n += 1.0; }
+                }
+                if max_x.is_finite() { new_pos = Some(Pos2::new(max_x + AUTO_NODE_X_STEP, sum_y / n.max(1.0))); }
+                else if let Some(sn) = g.nodes.get(&from_id) { new_pos = Some(Pos2::new(sn.position.x + AUTO_NODE_X_STEP, sn.position.y)); }
+            }
+            if let (Some(p), Some(tn)) = (new_pos, g.nodes.get_mut(&to_id)) { tn.position = p; }
             g.mark_dirty(to_id);
             crate::nodes::graph_model::GraphCommandEffect { graph_changed: true, geometry_changed: true }
         }))?;
