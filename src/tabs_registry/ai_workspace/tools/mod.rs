@@ -13,6 +13,7 @@ pub mod workspace_ops;
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use serde_json::Value;
 use std::sync::Arc;
+use crate::cunning_core::registries::node_registry::NodeRegistry;
 
 pub use definitions::{
     canonical_json, tool_call_signature, CancellationToken, Tool, ToolContext, ToolDefinition,
@@ -86,6 +87,83 @@ impl ToolRegistry {
     pub fn is_long_running(&self, name: &str) -> bool {
         self.get(name).map(|t| t.is_long_running()).unwrap_or(false)
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ToolProfile {
+    Full,
+    NodeAssistant,
+}
+
+fn register_node_assistant_tools(registry: &mut ToolRegistry, node_registry: Arc<NodeRegistry>) {
+    registry.register(graph_ops::CreateNodeTool::new(node_registry.clone()));
+    registry.register(graph_ops::ConnectNodeTool::new());
+    registry.register(graph_ops::SetParameterTool::new());
+    registry.register(graph_ops::GetGraphStateTool::new());
+    registry.register(graph_ops::GetNodeInfoTool::new(node_registry.clone()));
+    registry.register(graph_ops::GetNodeLibraryTool::new(node_registry));
+    registry.register(knowledge_ops::SearchKnowledgeTool);
+    registry.register(knowledge_ops::ReadKnowledgeTool);
+}
+
+fn register_full_tools(registry: &mut ToolRegistry, node_registry: Arc<NodeRegistry>) {
+    registry.register(workspace_ops::ExploreWorkspaceTool);
+    registry.register(workspace_ops::SearchWorkspaceTool);
+    registry.register(workspace_ops::ReadFileTool);
+    registry.register(workspace_ops::PatchFileTool);
+    registry.register(workspace_ops::WriteFileTool);
+    registry.register(workspace_ops::WebSearchTool);
+    registry.register(workspace_ops::GetNodeSpecTemplateTool);
+    registry.register(workspace_ops::GetAbiReferenceTool);
+    registry.register(workspace_ops::GetInteractionGuideTool);
+    registry.register(workspace_ops::GetInteractionTemplateTool);
+    registry.register(workspace_ops::GenerateReplayTool);
+    registry.register(workspace_ops::ComparePluginsTool);
+    registry.register(workspace_ops::TerminalTool);
+    registry.register(workspace_ops::DiagnosticsTool);
+
+    registry.register(rust_nodespec_ops::ExtractUserCodeTool);
+    registry.register(rust_nodespec_ops::ApplyRustNodeSpecTool::new(node_registry.clone()));
+
+    registry.register(rust_plugin_ops::CreateRustPluginTool);
+    registry.register(rust_plugin_ops::CompileRustPluginTool);
+    registry.register(rust_plugin_ops::LoadRustPluginsTool::new(node_registry.clone()));
+    registry.register(rust_plugin_ops::RevertRustPluginBuildTool::new(node_registry.clone()));
+
+    registry.register(graph_ops::CreateNodeTool::new(node_registry.clone()));
+    registry.register(graph_ops::DeleteNodeTool::new());
+    registry.register(graph_ops::ConnectNodeTool::new());
+    registry.register(graph_ops::SetNodeFlagTool::new());
+    registry.register(graph_ops::SetParameterTool::new());
+    registry.register(graph_ops::GetGraphStateTool::new());
+    registry.register(graph_ops::EditNodeGraphTool::new(node_registry.clone()));
+    registry.register(graph_ops::GetGeometryInsightTool::new());
+    registry.register(graph_ops::GetNodeInfoTool::new(node_registry.clone()));
+    registry.register(graph_ops::GetNodeLibraryTool::new(node_registry.clone()));
+    registry.register(graph_ops::ExportNodeSpecTool::new(node_registry.clone()));
+    registry.register(graph_ops::CompareGeometryTool::new());
+
+    registry.register(graph_script::RunGraphScriptTool::new(node_registry));
+
+    registry.register(knowledge_ops::SearchKnowledgeTool);
+    registry.register(knowledge_ops::ReadKnowledgeTool);
+    registry.register(knowledge_ops::BuildKnowledgePackTool);
+
+    registry.register(file_ops::CreateNodeFolderTool);
+    registry.register(file_ops::PatchNodeFileTool);
+    registry.register(file_ops::WriteNodeFileTool);
+
+    registry.register(rhai_ops::ReloadPluginTool);
+    registry.register(rhai_ops::CheckNodeCompileTool);
+}
+
+pub fn build_tool_registry(profile: ToolProfile, node_registry: Arc<NodeRegistry>) -> ToolRegistry {
+    let mut registry = ToolRegistry::new();
+    match profile {
+        ToolProfile::Full => register_full_tools(&mut registry, node_registry),
+        ToolProfile::NodeAssistant => register_node_assistant_tools(&mut registry, node_registry),
+    }
+    registry
 }
 
 /// Async tool executor that runs tools off the UI thread

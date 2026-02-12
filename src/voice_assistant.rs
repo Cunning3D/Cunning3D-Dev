@@ -94,7 +94,7 @@ fn load_voice_assistant_config(
             .map(|s| s.to_string())
             .collect::<Vec<_>>()
     };
-    let enabled = matches!(get("voice.assistant.enabled"), Some(SettingValue::Bool(true)) | None);
+    let enabled = matches!(get("voice.assistant.enabled"), Some(SettingValue::Bool(true)));
     let wake_phrases = match get("voice.assistant.wake_phrases") {
         Some(SettingValue::String(v)) => split_phrases(&v),
         _ => d.wake_phrases.clone(),
@@ -192,11 +192,15 @@ fn ai_voice_assistant_system(
     let mut on_wake = false;
     let mut utterances: Vec<String> = Vec::new();
     let mut errors: Vec<String> = Vec::new();
+    let mut live_tool_calls: Vec<(String, String, serde_json::Value)> = Vec::new();
     if let Some(ref rx) = st.rx {
         while let Ok(ev) = rx.try_recv() {
             match ev {
                 VoiceEvent::WakeWordDetected(_) => on_wake = true,
                 VoiceEvent::UtteranceFinalized(t) => utterances.push(t),
+                VoiceEvent::GeminiLiveToolCall { id, name, args } => {
+                    live_tool_calls.push((id, name, args));
+                }
                 VoiceEvent::Error(e) => errors.push(e),
                 _ => {}
             }
@@ -205,13 +209,22 @@ fn ai_voice_assistant_system(
 
     if !errors.is_empty() {
         let msg = errors.last().cloned().unwrap_or_default();
+        let noisy = {
+            let m = msg.to_lowercase();
+            m.contains("websocket closed")
+                || m.contains("ws closed")
+                || m.contains("connection closed")
+                || m.contains("broken pipe")
+                || m.contains("connection reset")
+                || m.contains("eof")
+        };
         let should_notify = st
             .last_error
             .as_deref()
             .map(|prev| prev != msg)
             .unwrap_or(true)
             || st.last_error_at.elapsed() >= Duration::from_secs(5);
-        if should_notify && !msg.trim().is_empty() {
+        if should_notify && !noisy && !msg.trim().is_empty() {
             st.last_error = Some(msg.clone());
             st.last_error_at = Instant::now();
             gpui.launch_if_not_running(node_registry.clone());
@@ -230,6 +243,13 @@ fn ai_voice_assistant_system(
             text: cfg.greet_text.clone(),
         });
         voice.send(VoiceCommand::Speak(cfg.greet_text.clone()));
+    }
+
+    if !live_tool_calls.is_empty() {
+        gpui.launch_if_not_running(node_registry.clone());
+        for (id, name, args) in live_tool_calls {
+            let _ = gpui.try_send(UiToHost::GeminiLiveToolCall { id, name, args });
+        }
     }
 
     if st.awake {

@@ -19,6 +19,7 @@
     Version="1.0.0.0" />
   <Properties>
     <DisplayName>Cunning3D</DisplayName>
+    <Logo>resources\logo_150x150.png</Logo>
     <PublisherDisplayName>Cunning3D</PublisherDisplayName>
     <uap10:AllowExternalContent>true</uap10:AllowExternalContent>
     <desktop6:RegistryWriteVirtualization>disabled</desktop6:RegistryWriteVirtualization>

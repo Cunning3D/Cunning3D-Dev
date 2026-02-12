@@ -21,7 +21,7 @@ impl Tooltip {
 impl IntoElement for Tooltip {
     type Element = <gpui::Div as IntoElement>::Element;
     fn into_element(self) -> Self::Element {
-        let content = h_flex().gap(Spacing::Base08.px())
+        let content = h_flex().gap(Spacing::Base06.px())
             .child(Label::new(self.text).size(LabelSize::Small).color(LabelColor::Primary))
             .children(self.shortcut.map(|s| {
                 div().px(Spacing::Base04.px()).py(px(1.0)).bg(ThemeColors::bg_active()).rounded_sm()
@@ -29,8 +29,8 @@ impl IntoElement for Tooltip {
             }));
 
         v_flex()
-            .px(Spacing::Base08.px())
-            .py(Spacing::Base04.px())
+            .px(Spacing::Base06.px())
+            .py(Spacing::Base02.px())
             .bg(ThemeColors::bg_elevated())
             .border_1()
             .border_color(ThemeColors::border())

@@ -15,6 +15,8 @@ pub struct InputComposer {
     ui_tx: Sender<UiToHost>,
     focus_handle: FocusHandle,
     is_busy: bool,
+    is_voice_active: bool,
+    voice_available: bool,
 }
 
 impl InputComposer {
@@ -25,7 +27,7 @@ impl InputComposer {
                 .on_change(|text, window, cx| { /* Trigger autocomplete check in parent */ })
         });
         let focus_handle = cx.focus_handle();
-        Self { text_input, autocomplete: None, mentions: Vec::new(), active_file: None, session_id, ui_tx, focus_handle, is_busy: false }
+        Self { text_input, autocomplete: None, mentions: Vec::new(), active_file: None, session_id, ui_tx, focus_handle, is_busy: false, is_voice_active: false, voice_available: false }
     }
 
     pub fn set_session(&mut self, session_id: Option<uuid::Uuid>) { self.session_id = session_id; }
@@ -34,8 +36,22 @@ impl InputComposer {
         cx.notify();
     }
     pub fn set_busy(&mut self, busy: bool, cx: &mut Context<Self>) { self.is_busy = busy; cx.notify(); }
+    pub fn set_voice_active(&mut self, active: bool, cx: &mut Context<Self>) { self.is_voice_active = active; cx.notify(); }
+    pub fn set_voice_available(&mut self, available: bool, cx: &mut Context<Self>) { self.voice_available = available; cx.notify(); }
+
+    fn toggle_voice(&mut self, _: &gpui::ClickEvent, _: &mut Window, _cx: &mut Context<Self>) {
+        if !self.voice_available {
+            return;
+        }
+        if self.is_voice_active {
+            let _ = self.ui_tx.send(UiToHost::StopVoice);
+        } else {
+            let _ = self.ui_tx.send(UiToHost::StartVoice);
+        }
+    }
     pub fn focus(&self, window: &mut Window, cx: &mut Context<Self>) { self.text_input.focus_handle(cx).focus(window, cx); }
     pub fn text(&self, cx: &App) -> String { self.text_input.read(cx).text().to_string() }
+    pub fn set_text(&mut self, text: impl Into<String>, cx: &mut Context<Self>) { self.text_input.update(cx, |i, cx| i.set_text(text.into(), cx)); }
     pub fn clear(&mut self, cx: &mut Context<Self>) {
         self.text_input.update(cx, |input, cx| input.clear(cx));
         self.mentions.clear();
@@ -171,6 +187,7 @@ impl Render for InputComposer {
         let is_empty = self.is_empty(cx);
         let has_autocomplete = self.autocomplete.is_some();
         let has_active_file = self.active_file.is_some();
+        let voice_available = self.voice_available;
 
         // Check for autocomplete trigger
         self.check_autocomplete(cx);
@@ -186,8 +203,8 @@ impl Render for InputComposer {
             .on_action(cx.listener(Self::autocomplete_prev))
             .on_action(cx.listener(Self::autocomplete_confirm))
             .w_full()
-            .gap(Spacing::Base04.px())
-            .p(Spacing::Base08.px())
+            .gap(Spacing::Base02.px())
+            .p(Spacing::Base06.px())
             .bg(ThemeColors::bg_secondary())
             .border_t_1()
             .border_color(ThemeColors::border())
@@ -200,7 +217,7 @@ impl Render for InputComposer {
                 this.child(
                     h_flex().w_full().gap(Spacing::Base04.px()).flex_wrap()
                         .children(self.mentions.iter().map(|m| {
-                            h_flex().px(Spacing::Base04.px()).py(px(2.0)).bg(ThemeColors::bg_selected()).rounded_sm().gap(Spacing::Base02.px())
+                            h_flex().px(Spacing::Base02.px()).py(px(1.0)).bg(ThemeColors::bg_selected()).rounded_sm().gap(Spacing::Base02.px())
                                 .child(Label::new(m.icon()).size(LabelSize::XSmall))
                                 .child(Label::new(m.label()).size(LabelSize::XSmall).color(LabelColor::Accent))
                         }))
@@ -210,10 +227,10 @@ impl Render for InputComposer {
                 div()
                     .id("input-composer-scroll")
                     .flex_1()
-                    .min_h(px(60.0))
-                    .max_h(px(200.0))
+                    .min_h(px(48.0))
+                    .max_h(px(160.0))
                     .overflow_y_scroll()
-                    .p(Spacing::Base06.px())
+                    .p(Spacing::Base04.px())
                     .bg(ThemeColors::bg_primary())
                     .border_1()
                     .border_color(if has_autocomplete { ThemeColors::border_focus() } else { ThemeColors::border() })
@@ -238,7 +255,13 @@ impl Render for InputComposer {
                                     .style(ButtonStyle::Ghost)
                                     .on_click(cx.listener(|this, _, window, cx| this.attach_selection(&(), window, cx)))
                             )
-                            .child(Label::new("@ mention | / command | Enter send | Shift+Enter newline").size(LabelSize::XSmall).color(LabelColor::Muted))
+                            .child(
+                                Button::new("voice-toggle", if self.is_voice_active { "🔴 Stop" } else { "🎙️ Voice" })
+                                    .style(if self.is_voice_active { ButtonStyle::Tinted(TintColor::Error) } else { ButtonStyle::Ghost })
+                                    .disabled(!voice_available)
+                                    .on_click(cx.listener(Self::toggle_voice))
+                            )
+                            .child(Label::new("@ mention | / command | Enter send").size(LabelSize::XSmall).color(LabelColor::Muted))
                     )
                     .child(
                         h_flex().gap(Spacing::Base04.px())

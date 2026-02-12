@@ -1,6 +1,7 @@
 //! Help标签页：文档地址 + 内嵌说明
 use crate::cunning_core::cda::CDAAsset;
 use bevy_egui::egui::{self, TextEdit, Ui};
+use cunning_syntax::LanguageId;
 
 pub fn draw(ui: &mut Ui, asset: &mut CDAAsset) {
     egui::ScrollArea::vertical().show(ui, |ui| {
@@ -35,11 +36,13 @@ pub fn draw(ui: &mut Ui, asset: &mut CDAAsset) {
         ui.add_space(4.0);
 
         let mut content = asset.help_content.clone().unwrap_or_default();
+        let mut layouter = cunning_syntax_egui::layouter(LanguageId::Markdown);
         let response = ui.add(
             TextEdit::multiline(&mut content)
                 .desired_width(w)
                 .desired_rows(20)
                 .font(egui::TextStyle::Monospace)
+                .layouter(&mut layouter)
                 .hint_text("# 标题\n\n描述这个CDA的用法..."),
         );
         if response.changed() {

@@ -230,19 +230,9 @@ fn set_bool(params: &mut [Parameter], name: &str, v: bool) -> bool {
 }
 
 fn load_gemini_key() -> String {
-    if let Ok(k) = std::env::var("GEMINI_API_KEY") {
-        if !k.trim().is_empty() {
-            return k;
-        }
-    }
-    let cwd = std::env::current_dir().ok();
-    let path = cwd
-        .as_ref()
-        .map(|p| p.join("settings/ai/providers.json"));
-    let raw = path
-        .as_ref()
-        .and_then(|p| std::fs::read_to_string(p).ok())
-        .unwrap_or_default();
+    let k = crate::cunning_core::ai_service::gemini::api_key::read_gemini_api_key_env();
+    if !k.trim().is_empty() { return k; }
+    let raw = std::fs::read_to_string(crate::runtime_paths::ai_providers_path()).unwrap_or_default();
     let v: Value = serde_json::from_str(&raw).unwrap_or(Value::Null);
     v.get("gemini")
         .and_then(|g| g.get("api_key"))
@@ -263,12 +253,7 @@ fn load_gemini_model_image() -> String {
             return m;
         }
     }
-    let cwd = std::env::current_dir().ok();
-    let path = cwd.as_ref().map(|p| p.join("settings/ai/providers.json"));
-    let raw = path
-        .as_ref()
-        .and_then(|p| std::fs::read_to_string(p).ok())
-        .unwrap_or_default();
+    let raw = std::fs::read_to_string(crate::runtime_paths::ai_providers_path()).unwrap_or_default();
     let v: Value = serde_json::from_str(&raw).unwrap_or(Value::Null);
     let s = v
         .get("gemini")

@@ -3,7 +3,7 @@
 use gpui::{AnyElement, App, Context, Entity, FocusHandle, Focusable, IntoElement, Render, Window, div, prelude::*, px};
 use crossbeam_channel::Sender;
 use std::path::PathBuf;
-use crate::ai_workspace_gpui::{ui::{h_flex, v_flex, ThemeColors, Label, LabelColor, LabelSize, Button, ButtonStyle, Spacing}, protocol::{OpenFileSnapshot, TextEdit, UiToHost}, components::CodeEditor};
+use crate::ai_workspace_gpui::{ui::{h_flex, v_flex, ThemeColors, Label, LabelColor, LabelSize, Button, ButtonStyle, Spacing}, protocol::{DiagnosticSnapshot, OpenFileSnapshot, TextEdit, UiToHost}, components::CodeEditor};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // EditorTabs
@@ -45,6 +45,26 @@ impl EditorTabs {
             .update(cx, |e, cx| e.apply_file_changed(path, version, edits, cx));
     }
 
+    pub fn tick(&mut self, cx: &mut Context<Self>) -> bool {
+        self.editor.update(cx, |e, cx| e.tick_external_playback(cx))
+    }
+
+    pub fn set_cursor(&mut self, path: PathBuf, line: u32, col: u32, cx: &mut Context<Self>) {
+        self.editor.update(cx, |e, cx| e.set_cursor_from_host(path, line as usize, col as usize, cx));
+    }
+
+    pub fn set_diagnostics(&mut self, path: PathBuf, diagnostics: Vec<DiagnosticSnapshot>, cx: &mut Context<Self>) {
+        self.editor.update(cx, |e, cx| e.set_diagnostics(path, diagnostics, cx));
+    }
+
+    pub fn set_completions(&mut self, path: PathBuf, items: Vec<String>, cx: &mut Context<Self>) {
+        self.editor.update(cx, |e, cx| e.set_completions(path, items, cx));
+    }
+
+    pub fn set_hover(&mut self, path: PathBuf, markdown: String, cx: &mut Context<Self>) {
+        self.editor.update(cx, |e, cx| e.set_hover(path, markdown, cx));
+    }
+
     pub fn mark_dirty(&mut self, path: &PathBuf, is_dirty: bool, cx: &mut Context<Self>) {
         if let Some(tab) = self.tabs.iter_mut().find(|t| &t.path == path) { tab.is_dirty = is_dirty; }
         if self.active_path.as_ref() == Some(path) {
@@ -71,8 +91,8 @@ impl EditorTabs {
 
         h_flex()
             .id(format!("tab-{}", tab.name))
-            .h(px(32.0))
-            .px(Spacing::Base06.px())
+            .h(px(28.0))
+            .px(Spacing::Base04.px())
             .gap(Spacing::Base04.px())
             .items_center()
             .cursor_pointer()
@@ -83,8 +103,8 @@ impl EditorTabs {
             .child(
                 div()
                     .id(format!("close-{}", tab.name))
-                    .w(px(16.0))
-                    .h(px(16.0))
+                    .w(px(14.0))
+                    .h(px(14.0))
                     .rounded_sm()
                     .flex()
                     .items_center()
@@ -109,7 +129,7 @@ impl Render for EditorTabs {
         let tab_bar = h_flex()
             .flex_none()
             .w_full()
-            .h(px(32.0))
+            .h(px(28.0))
             .bg(ThemeColors::bg_secondary())
             .border_b_1()
             .border_color(ThemeColors::border())
@@ -123,8 +143,8 @@ impl Render for EditorTabs {
 
                 h_flex()
                     .id(format!("tab-{}", tab.name))
-                    .h(px(32.0))
-                    .px(Spacing::Base06.px())
+                    .h(px(28.0))
+                    .px(Spacing::Base04.px())
                     .gap(Spacing::Base04.px())
                     .items_center()
                     .cursor_pointer()
@@ -136,8 +156,8 @@ impl Render for EditorTabs {
                     .child(
                         div()
                             .id(format!("close-{}", tab.name))
-                            .w(px(16.0))
-                            .h(px(16.0))
+                            .w(px(14.0))
+                            .h(px(14.0))
                             .rounded_sm()
                             .flex()
                             .items_center()

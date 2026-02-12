@@ -2,35 +2,16 @@ use std::path::Path;
 
 fn is_plugin_intent(s: &str) -> bool {
     let t = s.to_ascii_lowercase();
-    let kw = [
-        "nodespec",
-        "hostapi",
-        "abi",
-        "hud",
-        "gizmo",
-        "plugin",
-        "dll",
-        "cdylib",
-        "rust",
-        "交互",
-        "插件",
-        "节点",
-        "热加载",
-        "pick_id",
-        "viewport",
-        "handle",
-        "拖拽",
-        "点击",
-        "interaction",
-        "vtable",
-        "callback",
-        "draggable",
-        "clickable",
-        "keyboard",
-        "shortcut",
-        "快捷键",
+    // Keep auto-pack strongly plugin-oriented to avoid biasing normal "create node" chat into Rust code writing.
+    let strong = [
+        "nodespec", "hostapi", "abi", "hud", "gizmo", "plugin", "dll", "cdylib", "pick_id", "vtable", "callback", "热加载", "插件",
+        "rust节点", "插件节点",
     ];
-    kw.iter().any(|k| t.contains(k) || s.contains(k))
+    let rustish = ["rust", "wgsl", "shader", "compute", "gpu"];
+    let interaction = ["viewport", "handle", "drag", "click", "keyboard", "shortcut", "interaction", "draggable", "clickable", "拖拽", "点击", "快捷键", "交互"];
+    strong.iter().any(|k| t.contains(k) || s.contains(k))
+        || (rustish.iter().any(|k| t.contains(k) || s.contains(k))
+            && interaction.iter().any(|k| t.contains(k) || s.contains(k)))
 }
 
 fn excerpt_file(base: &Path, rel: &str, lang: &str, patterns: &[&str], max_lines: usize) -> String {

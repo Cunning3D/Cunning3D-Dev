@@ -32,6 +32,12 @@ use menus::context::*;
 use menus::radial::*;
 use state::NodeSnapshot;
 
+#[inline]
+fn hash_uuid_u64(id: uuid::Uuid) -> u64 {
+    let v = id.as_u128();
+    (v as u64) ^ ((v >> 64) as u64).rotate_left(17)
+}
+
 fn parse_first_json_value(raw: &str) -> Option<serde_json::Value> {
     use serde::Deserialize;
     let s = raw.trim();
@@ -350,15 +356,26 @@ impl EditorTab for NodeEditorTab {
                 let root_graph = &mut context.node_graph_res.0;
                 if cda::navigation::sync_current_cda_input_titles(root_graph, &self.cda_state) {
                     self.cached_nodes_rev = 0;
+                    self.cached_topo_key = 0;
                     context.graph_changed_writer.write_default();
                 }
             }
-            if self.cached_nodes.is_empty() || self.cached_nodes_rev != context.graph_revision || self.cached_cda_depth != cda_depth {
+            let topo_key = {
                 let root_graph = &context.node_graph_res.0;
-                let display_graph = cda::navigation::graph_snapshot_by_path(
-                    root_graph,
-                    &self.cda_state.breadcrumb(),
-                );
+                let display_graph = cda::navigation::graph_snapshot_by_path(root_graph, &self.cda_state.breadcrumb());
+                // NOTE: `context.graph_revision` is a coarse UI invalidation counter (includes parameter drags).
+                // For node editor layout caches, we want a key that ignores parameter churn and only changes when
+                // the graph topology/structure changes (nodes/edges/display node).
+                (display_graph.nodes.len() as u64)
+                    ^ ((display_graph.connections.len() as u64).rotate_left(11))
+                    ^ (display_graph.display_node.map(hash_uuid_u64).unwrap_or(0).rotate_left(23))
+                    ^ ((cda_depth as u64).rotate_left(3))
+                    ^ display_graph.graph_revision.rotate_left(7)
+            };
+            let need_rebuild_cache = self.cached_nodes.is_empty() || self.cached_topo_key != topo_key || self.cached_cda_depth != cda_depth;
+            if need_rebuild_cache {
+                let root_graph = &context.node_graph_res.0;
+                let display_graph = cda::navigation::graph_snapshot_by_path(root_graph, &self.cda_state.breadcrumb());
                 self.cached_nodes.clear();
                 let display_id = display_graph.display_node;
                 for n in display_graph.nodes.values() {
@@ -372,7 +389,34 @@ impl EditorTab for NodeEditorTab {
                     });
                 }
                 self.cached_nodes_rev = context.graph_revision;
+                self.cached_topo_key = topo_key;
                 self.cached_cda_depth = cda_depth;
+            } else {
+                // Fast refresh: update only cheap per-node fields that can change frequently (position, name, flags),
+                // without recomputing layout/ports for every GraphChanged tick (e.g. gizmo param drags).
+                //
+                // CRITICAL: do NOT overwrite cached positions while dragging nodes.
+                // Node dragging updates both the graph and `cached_nodes` during the gesture; clobbering here
+                // causes "jitter while dragging, snap on release".
+                let is_dragging_nodes = context.ui_state.dragged_node_id.is_some() || !self.drag_start_positions.is_empty();
+                let root_graph = &context.node_graph_res.0;
+                let display_graph = cda::navigation::graph_snapshot_by_path(root_graph, &self.cda_state.breadcrumb());
+                let display_id = display_graph.display_node;
+                for sn in self.cached_nodes.iter_mut() {
+                    if let Some(n) = display_graph.nodes.get(&sn.id) {
+                        sn.name = n.name.clone();
+                        if !is_dragging_nodes { sn.position = n.position; }
+                        sn.input_style = n.input_style;
+                        sn.style = n.style;
+                        sn.is_template = n.is_template;
+                        sn.is_bypassed = n.is_bypassed;
+                        sn.is_display_node = display_id == Some(n.id);
+                        sn.is_locked = n.is_locked;
+                    } else {
+                        // Node set changed unexpectedly; force rebuild next frame.
+                        self.cached_topo_key = 0;
+                    }
+                }
             }
 
             update_node_animations(self, ui, context);
@@ -405,7 +449,7 @@ impl EditorTab for NodeEditorTab {
             drawing::rebuild_port_locations(self, context.node_editor_settings, editor_rect);
 
             // Hit cache is graph-space (zoom/pan invariant): rebuild only when graph/geometry changes.
-            let hit_key = context.graph_revision ^ self.geometry_rev.rotate_left(1) ^ (self.cached_cda_depth as u64);
+            let hit_key = self.cached_topo_key ^ self.geometry_rev.rotate_left(1) ^ (self.cached_cda_depth as u64);
             drawing::rebuild_hit_cache(self, context.node_editor_settings, editor_rect, hit_key);
 
             // --- Box Selection Logic (event-driven; O(1) bucket lookup) ---

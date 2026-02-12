@@ -8,6 +8,7 @@ use gpui::{
 };
 use std::ops::Range;
 use unicode_segmentation::*;
+use super::UiMetrics;
 
 actions!(text_input, [Backspace, Delete, Left, Right, SelectLeft, SelectRight, SelectAll, Home, End, Paste, Cut, Copy]);
 
@@ -235,7 +236,8 @@ impl Render for TextInput {
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_move(cx.listener(Self::on_mouse_move))
             .size_full()
-            .min_h(px(24.0))
+            .min_h(px(22.0))
+            .text_size(px(UiMetrics::FONT_DEFAULT))
             .child(TextInputElement { input: cx.entity() })
     }
 }

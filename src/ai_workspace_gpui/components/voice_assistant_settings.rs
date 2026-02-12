@@ -3,7 +3,7 @@ use crossbeam_channel::Sender;
 use gpui::{App, Context, DismissEvent, Entity, EventEmitter, FocusHandle, Focusable, IntoElement, ParentElement, Render, Styled, Window, div, prelude::*, px};
 
 use crate::ai_workspace_gpui::{
-    protocol::{UiToHost, VoiceAssistantSettingsSnapshot},
+    protocol::{UiToHost, VoiceAssistantSettingsSnapshot, VoiceModel},
     ui::{h_flex, v_flex, Button, ButtonStyle, Label, LabelColor, LabelSize, Spacing, TextInput, ThemeColors, TintColor},
 };
 
@@ -11,7 +11,7 @@ pub struct VoiceAssistantSettings {
     focus_handle: FocusHandle,
     ui_tx: Sender<UiToHost>,
 
-    enabled: bool,
+    voice_model: VoiceModel,
     wake_phrases: Entity<TextInput>,
     cmd_input_phrases: Entity<TextInput>,
     cmd_send_phrases: Entity<TextInput>,
@@ -32,6 +32,16 @@ impl VoiceAssistantSettings {
         cx: &mut Context<Self>,
     ) -> Self {
         let focus_handle = cx.focus_handle();
+
+        let voice_model = if settings.enabled {
+            if settings.use_gemini_live {
+                VoiceModel::GeminiLive
+            } else {
+                VoiceModel::Legacy
+            }
+        } else {
+            VoiceModel::Off
+        };
 
         let wake_phrases = cx.new(|cx| {
             let mut input = TextInput::new(cx, "Wake phrases (separated by |)").multiline(false);
@@ -78,7 +88,7 @@ impl VoiceAssistantSettings {
         Self {
             focus_handle,
             ui_tx,
-            enabled: settings.enabled,
+            voice_model,
             wake_phrases,
             cmd_input_phrases,
             cmd_send_phrases,
@@ -100,8 +110,15 @@ impl VoiceAssistantSettings {
         let idle_timeout_secs = self.idle_timeout_secs.read(cx).text().trim().parse().unwrap_or(10);
         let auto_send_pause_secs = self.auto_send_pause_secs.read(cx).text().trim().parse().unwrap_or(3);
 
+        let (enabled, use_gemini_live) = match self.voice_model {
+            VoiceModel::Off => (false, false),
+            VoiceModel::Legacy => (true, false),
+            VoiceModel::GeminiLive => (true, true),
+        };
+
         let _ = self.ui_tx.send(UiToHost::UpdateVoiceAssistantSettings {
-            enabled: self.enabled,
+            enabled,
+            use_gemini_live,
             wake_phrases,
             cmd_input_phrases,
             cmd_send_phrases,
@@ -120,8 +137,18 @@ impl VoiceAssistantSettings {
         cx.emit(DismissEvent);
     }
 
-    fn toggle_enabled(&mut self, _: &gpui::ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
-        self.enabled = !self.enabled;
+    fn set_voice_off(&mut self, _: &gpui::ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
+        self.voice_model = VoiceModel::Off;
+        cx.notify();
+    }
+
+    fn set_voice_legacy(&mut self, _: &gpui::ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
+        self.voice_model = VoiceModel::Legacy;
+        cx.notify();
+    }
+
+    fn set_voice_gemini_live(&mut self, _: &gpui::ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
+        self.voice_model = VoiceModel::GeminiLive;
         cx.notify();
     }
 
@@ -149,8 +176,21 @@ impl Focusable for VoiceAssistantSettings {
 
 impl Render for VoiceAssistantSettings {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let enabled_label = if self.enabled { "🎙 Enabled" } else { "🔇 Disabled" };
-        let enabled_style = if self.enabled { ButtonStyle::Tinted(TintColor::Accent) } else { ButtonStyle::Ghost };
+        let off_style = if matches!(self.voice_model, VoiceModel::Off) {
+            ButtonStyle::Tinted(TintColor::Accent)
+        } else {
+            ButtonStyle::Ghost
+        };
+        let legacy_style = if matches!(self.voice_model, VoiceModel::Legacy) {
+            ButtonStyle::Tinted(TintColor::Accent)
+        } else {
+            ButtonStyle::Ghost
+        };
+        let gemini_live_style = if matches!(self.voice_model, VoiceModel::GeminiLive) {
+            ButtonStyle::Tinted(TintColor::Success)
+        } else {
+            ButtonStyle::Ghost
+        };
 
         v_flex()
             .id("voice-assistant-settings")
@@ -162,9 +202,23 @@ impl Render for VoiceAssistantSettings {
                     .justify_between()
                     .child(Label::new("Voice Assistant Settings").size(LabelSize::Large).color(LabelColor::Primary))
                     .child(
-                        Button::new("toggle-enabled", enabled_label)
-                            .style(enabled_style)
-                            .on_click(cx.listener(Self::toggle_enabled)),
+                        h_flex()
+                            .gap(Spacing::Base04.px())
+                            .child(
+                                Button::new("voice-off", "Off")
+                                    .style(off_style)
+                                    .on_click(cx.listener(Self::set_voice_off)),
+                            )
+                            .child(
+                                Button::new("voice-legacy", "Legacy (Whisper + TTS)")
+                                    .style(legacy_style)
+                                    .on_click(cx.listener(Self::set_voice_legacy)),
+                            )
+                            .child(
+                                Button::new("voice-gemini-live", "Gemini Live")
+                                    .style(gemini_live_style)
+                                    .on_click(cx.listener(Self::set_voice_gemini_live)),
+                            ),
                     ),
             )
             .child(Self::field_row("Wake Phrases (e.g. hello gemini|hi gemini|你好)", self.wake_phrases.clone()))

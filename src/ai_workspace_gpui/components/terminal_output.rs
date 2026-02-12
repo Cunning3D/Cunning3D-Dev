@@ -1,6 +1,6 @@
 //! Terminal output display component for tool execution results.
 use gpui::{AnyElement, ElementId, IntoElement, ParentElement, Styled, div, px, prelude::*};
-use crate::ai_workspace_gpui::ui::{h_flex, v_flex, ThemeColors, Label, LabelColor, LabelSize, Spacing};
+use crate::ai_workspace_gpui::ui::{h_flex, v_flex, ThemeColors, Label, LabelColor, LabelSize, Spacing, UiMetrics};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TerminalLine
@@ -60,7 +60,7 @@ impl IntoElement for TerminalOutput {
             };
             div()
                 .w_full()
-                .text_size(px(12.0))
+                .text_size(px(UiMetrics::FONT_DEFAULT))
                 .text_color(text_color)
                 .child(line.content.clone())
         }).collect();
@@ -72,13 +72,13 @@ impl IntoElement for TerminalOutput {
             .bg(ThemeColors::bg_elevated())
             .border_1()
             .border_color(ThemeColors::border())
-            .rounded_md()
+            .rounded_sm()
             .overflow_hidden()
             .child(
                 h_flex()
                     .w_full()
                     .px(Spacing::Base06.px())
-                    .py(Spacing::Base04.px())
+                    .py(Spacing::Base02.px())
                     .bg(ThemeColors::bg_secondary())
                     .border_b_1()
                     .border_color(ThemeColors::border())
@@ -97,7 +97,7 @@ impl IntoElement for TerminalOutput {
                         .w_full()
                         .max_h(px(200.0))
                         .overflow_y_scroll()
-                        .p(Spacing::Base06.px())
+                        .p(Spacing::Base04.px())
                         .children(line_elements)
                 )
             })

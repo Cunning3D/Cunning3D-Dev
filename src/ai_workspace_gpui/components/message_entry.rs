@@ -1,6 +1,7 @@
 //! Message entry component (User/Assistant bubbles with Markdown and context menu).
 use gpui::{ClipboardItem, ElementId, IntoElement, InteractiveElement, MouseButton, ParentElement, StatefulInteractiveElement, Styled, div, px, Div, prelude::*};
-use crate::ai_workspace_gpui::{ui::{h_flex, v_flex, ThemeColors, Label, LabelColor, LabelSize, Button, ButtonStyle, Spacing, Markdown}, protocol::{MessageStateSnapshot, ThinkingSnapshot}};
+use crate::ai_workspace_gpui::{ui::{h_flex, v_flex, ThemeColors, Label, LabelColor, LabelSize, Button, ButtonStyle, Spacing, UiMetrics, Markdown}, protocol::{MessageStateSnapshot, ThinkingSnapshot, UiToHost}};
+use crossbeam_channel::Sender;
 
 /// Message role for adaptive spacing
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -15,6 +16,7 @@ pub struct MessageEntry {
     thinking_collapsed: bool,
     prev_role: Option<MessageRole>,
     timestamp: Option<i64>,
+    ui_tx: Option<Sender<UiToHost>>,
 }
 
 /// Format relative time from unix timestamp
@@ -29,15 +31,16 @@ fn format_relative_time(ts: i64) -> String {
 
 impl MessageEntry {
     pub fn user(idx: usize, content: &str) -> Self {
-        Self { idx, role: MessageRole::User, content: content.to_string(), state: None, thinking: None, thinking_collapsed: true, prev_role: None, timestamp: None }
+        Self { idx, role: MessageRole::User, content: content.to_string(), state: None, thinking: None, thinking_collapsed: true, prev_role: None, timestamp: None, ui_tx: None }
     }
 
     pub fn assistant(idx: usize, content: &str, state: MessageStateSnapshot, thinking: Option<&ThinkingSnapshot>) -> Self {
-        Self { idx, role: MessageRole::Assistant, content: content.to_string(), state: Some(state), thinking: thinking.map(|t| t.content.clone()), thinking_collapsed: thinking.map(|t| t.collapsed).unwrap_or(true), prev_role: None, timestamp: None }
+        Self { idx, role: MessageRole::Assistant, content: content.to_string(), state: Some(state), thinking: thinking.map(|t| t.content.clone()), thinking_collapsed: thinking.map(|t| t.collapsed).unwrap_or(true), prev_role: None, timestamp: None, ui_tx: None }
     }
 
     pub fn with_prev_role(mut self, prev: Option<MessageRole>) -> Self { self.prev_role = prev; self }
     pub fn with_timestamp(mut self, ts: Option<i64>) -> Self { self.timestamp = ts; self }
+    pub fn with_ui_tx(mut self, ui_tx: Sender<UiToHost>) -> Self { self.ui_tx = Some(ui_tx); self }
 }
 
 impl IntoElement for MessageEntry {
@@ -74,7 +77,7 @@ impl IntoElement for MessageEntry {
                 .border_color(ThemeColors::border())
                 .rounded_sm()
                 .child(h_flex().gap(Spacing::Base04.px()).child(Label::new("Thinking").size(LabelSize::XSmall).color(LabelColor::Muted)))
-                .child(div().text_size(px(11.0)).text_color(ThemeColors::text_muted()).child(preview))
+                .child(div().text_size(px(UiMetrics::FONT_SMALL)).text_color(ThemeColors::text_muted()).child(preview))
         });
 
         // Content section (Markdown for assistant, plain text for user)
@@ -83,9 +86,9 @@ impl IntoElement for MessageEntry {
         } else if self.content.is_empty() && self.state == Some(MessageStateSnapshot::Streaming) {
             div().child(Label::new("...").color(LabelColor::Accent))
         } else if is_assistant {
-            div().text_size(px(14.0)).child(Markdown::new(&self.content))
+            div().text_size(px(UiMetrics::FONT_DEFAULT)).child(Markdown::new(&self.content))
         } else {
-            div().text_size(px(14.0)).text_color(ThemeColors::text_primary()).child(self.content.clone())
+            div().text_size(px(UiMetrics::FONT_DEFAULT)).text_color(ThemeColors::text_primary()).child(self.content.clone())
         };
 
         // Copy button (shown on hover for assistant messages)
@@ -97,6 +100,20 @@ impl IntoElement for MessageEntry {
             )
         } else { None };
 
+        let speak_button = if is_assistant && !self.content.is_empty() {
+            self.ui_tx.as_ref().map(|tx| {
+                let tx = tx.clone();
+                let text = self.content.clone();
+                Button::new(format!("speak-{idx}"), "Speak")
+                    .style(ButtonStyle::Ghost)
+                    .on_click(move |_: &gpui::ClickEvent, _: &mut gpui::Window, _: &mut gpui::App| {
+                        let _ = tx.send(UiToHost::SpeakText { text: text.clone() });
+                    })
+            })
+        } else {
+            None
+        };
+
         // Message bubble with hover actions (use relative max-width for responsive layout)
         let bubble = v_flex()
             .id(ElementId::NamedInteger("msg-bubble".into(), idx as u64))
@@ -104,11 +121,11 @@ impl IntoElement for MessageEntry {
             .relative()
             .max_w(gpui::relative(0.85))
             .min_w(px(80.0))
-            .p(Spacing::Base08.px())
+            .p(Spacing::Base06.px())
             .bg(bg)
             .border_1()
             .border_color(border_color)
-            .rounded_md()
+            .rounded_sm()
             .gap(Spacing::Base04.px())
             .overflow_hidden()
             .children(thinking_section)
@@ -119,9 +136,10 @@ impl IntoElement for MessageEntry {
                     .invisible()
                     .group_hover("message", |d| d.visible())
                     .absolute()
-                    .top(px(-8.0))
+                    .top(px(-6.0))
                     .right(px(4.0))
                     .gap(Spacing::Base02.px())
+                    .children(speak_button)
                     .children(copy_button)
             );
 
@@ -136,7 +154,7 @@ impl IntoElement for MessageEntry {
             .child(
                 h_flex().gap(Spacing::Base04.px())
                     .child(Label::new(avatar).size(LabelSize::Small))
-                    .child(Label::new(if matches!(self.role, MessageRole::User) { "You" } else { "Assistant" }).size(LabelSize::Small).color(name_color))
+                    .child(Label::new(match self.role { MessageRole::User => "You", MessageRole::Assistant => "Assistant", MessageRole::Tool => "Tool" }).size(LabelSize::Small).color(name_color))
                     .children(time_label)
             )
             .children(status_indicator.map(|(icon, color)| Label::new(icon).size(LabelSize::XSmall).color(color)));

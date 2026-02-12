@@ -1,0 +1,14 @@
+[package]
+name = "tree-sitter-markdown"
+version = "0.1.0"
+edition = "2021"
+build = "build.rs"
+license = "MIT"
+description = "Markdown grammar for tree-sitter (vendored for Cunning3D, tree-sitter 0.26)."
+
+[dependencies]
+tree-sitter = "0.26.3"
+tree-sitter-language = "0.1"
+
+[build-dependencies]
+cc = "1.1"

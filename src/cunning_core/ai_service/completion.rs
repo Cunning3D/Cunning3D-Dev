@@ -10,9 +10,7 @@ pub struct CompletionClient {
 }
 
 fn load_gemini_key_from_settings() -> Option<String> {
-    let cwd = std::env::current_dir().ok()?;
-    let path = cwd.join("settings/ai/providers.json");
-    let raw = std::fs::read_to_string(path).ok()?;
+    let raw = std::fs::read_to_string(crate::runtime_paths::ai_providers_path()).ok()?;
     let v: Value = serde_json::from_str(&raw).ok()?;
     v.get("gemini")
         .and_then(|g| g.get("api_key"))
@@ -28,12 +26,8 @@ impl Default for CompletionClient {
                 .timeout(Duration::from_secs(5)) // Fast timeout for completion
                 .build()
                 .unwrap_or_default(),
-            api_key: std::env::var("GEMINI_API_KEY")
-                .ok()
-                .filter(|s| !s.trim().is_empty())
-                .or_else(load_gemini_key_from_settings)
-                .unwrap_or_default(),
-            model_name: "gemini-2.0-flash".to_string(), // Use Flash for speed
+            api_key: load_gemini_key_from_settings().unwrap_or_default(),
+            model_name: "gemini-3-flash-preview".to_string(), // Use Flash for speed
         }
     }
 }

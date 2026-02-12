@@ -187,11 +187,11 @@ pub fn start() {
     #[cfg(not(target_arch = "wasm32"))]
     console_error_panic_hook::set_once();
     let render = bevy::render::RenderPlugin {
-        render_creation: bevy::render::settings::RenderCreation::Automatic(bevy::render::settings::WgpuSettings {
+        render_creation: bevy::render::settings::RenderCreation::Automatic(Box::new(bevy::render::settings::WgpuSettings {
             priority: bevy::render::settings::WgpuSettingsPriority::Compatibility,
             features: bevy::render::settings::WgpuFeatures::empty(),
             ..Default::default()
-        }),
+        })),
         ..Default::default()
     };
     App::new()

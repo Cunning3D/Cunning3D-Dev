@@ -169,34 +169,52 @@ impl WindowToEguiContextMap {
     /// Adds a context to the map on creation.
     pub fn on_egui_context_added_system(
         mut res: ResMut<Self>,
-        added_contexts: Query<(Entity, &bevy_camera::Camera, &mut EguiContext), Added<EguiContext>>,
+        added_contexts: Query<
+            (
+                Entity,
+                Option<&bevy_camera::Camera>,
+                Option<&bevy_window::Window>,
+                &mut EguiContext,
+            ),
+            Added<EguiContext>,
+        >,
         primary_window: Query<Entity, With<bevy_window::PrimaryWindow>>,
         event_loop_proxy: Res<bevy_winit::EventLoopProxyWrapper<bevy_winit::WakeUp>>,
     ) {
-        for (egui_context_entity, camera, mut egui_context) in added_contexts {
-            if let bevy_camera::RenderTarget::Window(window_ref) = camera.target
-                && let Some(window_ref) = window_ref.normalize(primary_window.single().ok())
-            {
-                res.window_to_contexts
-                    .entry(window_ref.entity())
-                    .or_default()
-                    .insert(egui_context_entity);
-                res.context_to_window
-                    .insert(egui_context_entity, window_ref.entity());
+        for (egui_context_entity, camera, window, mut egui_context) in added_contexts {
+            // Support both upstream bevy_egui layout (EguiContext on Camera) and Cunning3D layout
+            // (EguiContext attached directly to the Window entity for floating native windows).
+            let window_entity = camera
+                .and_then(|camera| {
+                    if let bevy_camera::RenderTarget::Window(window_ref) = camera.target {
+                        window_ref
+                            .normalize(primary_window.single().ok())
+                            .map(|wr| wr.entity())
+                    } else {
+                        None
+                    }
+                })
+                .or_else(|| window.map(|_| egui_context_entity));
+            let Some(window_entity) = window_entity else { continue; };
 
-                // The resource doesn't exist in the headless mode.
-                let message_loop_proxy = (*event_loop_proxy).clone();
-                egui_context
-                    .get_mut()
-                    .set_request_repaint_callback(move |repaint_info| {
-                        // TODO: find a lightweight async timer implementation that also works in WASM
-                        //  to support non-zero wake-ups as well.
-                        if repaint_info.delay.is_zero() {
-                            log::trace!("Sending the WakeUp message");
-                            let _ = message_loop_proxy.send_event(bevy_winit::WakeUp);
-                        }
-                    });
-            }
+            res.window_to_contexts
+                .entry(window_entity)
+                .or_default()
+                .insert(egui_context_entity);
+            res.context_to_window.insert(egui_context_entity, window_entity);
+
+            // The resource doesn't exist in the headless mode.
+            let message_loop_proxy = (*event_loop_proxy).clone();
+            egui_context
+                .get_mut()
+                .set_request_repaint_callback(move |repaint_info| {
+                    // TODO: find a lightweight async timer implementation that also works in WASM
+                    //  to support non-zero wake-ups as well.
+                    if repaint_info.delay.is_zero() {
+                        log::trace!("Sending the WakeUp message");
+                        let _ = message_loop_proxy.send_event(bevy_winit::WakeUp);
+                    }
+                });
         }
     }
 

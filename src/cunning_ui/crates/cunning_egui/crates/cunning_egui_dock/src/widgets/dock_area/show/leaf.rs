@@ -607,8 +607,8 @@ impl<'tree, Tab> DockArea<'tree, Tab> {
         let mut text_rect = tab_rect;
         text_rect.set_width(text_rect.width() - close_button_size);
         let text_pos = {
-            let pos = Align2::CENTER_CENTER.pos_in_rect(&text_rect.shrink2(vec2(x_spacing, 0.0)));
-            pos - galley.size() / 2.0
+            let r = text_rect.shrink2(vec2(x_spacing, 0.0));
+            pos2(r.min.x, r.center().y) - vec2(0.0, galley.size().y * 0.5)
         };
 
         ui.painter()

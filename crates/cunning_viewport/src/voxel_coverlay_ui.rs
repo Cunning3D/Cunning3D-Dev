@@ -134,11 +134,11 @@ pub fn draw_voxel_tools_panel(
     ow::panel_frame(ui, |ui| {
         ui.horizontal(|ui| {
             ow::toolbar(ui, false, |ui| {
-                ow::icon_select(ui, &mut st.mode, VoxelToolMode::Add, "➕", "Tool: Add (1)");
-                ow::icon_select(ui, &mut st.mode, VoxelToolMode::Select, "🔲", "Tool: Select (2)");
-                ow::icon_select(ui, &mut st.mode, VoxelToolMode::Move, "↔", "Tool: Move (3)");
-                ow::icon_select(ui, &mut st.mode, VoxelToolMode::Paint, "🖌", "Tool: Paint (4)");
-                ow::icon_select(ui, &mut st.mode, VoxelToolMode::Extrude, "⬆", "Tool: Extrude (5)");
+                ow::icon_select(ui, &mut st.mode, VoxelToolMode::Add, "add", "Tool: Add (1)");
+                ow::icon_select(ui, &mut st.mode, VoxelToolMode::Select, "select", "Tool: Select (2)");
+                ow::icon_select(ui, &mut st.mode, VoxelToolMode::Move, "move", "Tool: Move (3)");
+                ow::icon_select(ui, &mut st.mode, VoxelToolMode::Paint, "brush", "Tool: Paint (4)");
+                ow::icon_select(ui, &mut st.mode, VoxelToolMode::Extrude, "extrude", "Tool: Extrude (5)");
             });
         });
         ow::hsep(ui);
@@ -146,10 +146,10 @@ pub fn draw_voxel_tools_panel(
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             ow::group(ui, "Actions", true, |ui| {
                 ow::toolbar(ui, false, |ui| {
-                    if ow::icon_button(ui, "↩", false).on_hover_text("Undo (Z)").clicked() { backend.undo(); }
-                    if ow::icon_button(ui, "↪", false).on_hover_text("Redo (Y)").clicked() { backend.redo(); }
-                    if ow::icon_button(ui, "🗑", false).on_hover_text("Clear all voxels").clicked() { backend.push_op(DiscreteVoxelOp::ClearAll); }
-                    if ow::icon_button(ui, "✂", false).on_hover_text("Trim bounds to origin").clicked() { backend.push_op(DiscreteVoxelOp::TrimToOrigin); }
+                    if ow::icon_button(ui, "undo", false).on_hover_text("Undo (Z)").clicked() { backend.undo(); }
+                    if ow::icon_button(ui, "redo", false).on_hover_text("Redo (Y)").clicked() { backend.redo(); }
+                    if ow::icon_button(ui, "delete", false).on_hover_text("Clear all voxels").clicked() { backend.push_op(DiscreteVoxelOp::ClearAll); }
+                    if ow::icon_button(ui, "trim", false).on_hover_text("Trim bounds to origin").clicked() { backend.push_op(DiscreteVoxelOp::TrimToOrigin); }
                 });
             });
 
@@ -157,34 +157,34 @@ pub fn draw_voxel_tools_panel(
                 match st.mode {
                     VoxelToolMode::Add => {
                         ow::toolbar(ui, false, |ui| {
-                            ow::icon_select(ui, &mut st.add_type, VoxelAddType::Point, "•", "Add: Point");
-                            ow::icon_select(ui, &mut st.add_type, VoxelAddType::Line, "📏", "Add: Line");
-                            ow::icon_select(ui, &mut st.add_type, VoxelAddType::Region, "🧊", "Add: Region");
-                            ow::icon_select(ui, &mut st.add_type, VoxelAddType::Extrude, "⬆", "Add: Extrude");
-                            ow::icon_select(ui, &mut st.add_type, VoxelAddType::Clay, "☁️", "Add: Clay");
-                            ow::icon_select(ui, &mut st.add_type, VoxelAddType::Smooth, "🌀", "Add: Smooth");
-                            ow::icon_select(ui, &mut st.add_type, VoxelAddType::Clone, "📋", "Add: Clone");
+                            ow::icon_select(ui, &mut st.add_type, VoxelAddType::Point, "cube", "Add: Point");
+                            ow::icon_select(ui, &mut st.add_type, VoxelAddType::Line, "region", "Add: Line");
+                            ow::icon_select(ui, &mut st.add_type, VoxelAddType::Region, "region", "Add: Region");
+                            ow::icon_select(ui, &mut st.add_type, VoxelAddType::Extrude, "extrude", "Add: Extrude");
+                            ow::icon_select(ui, &mut st.add_type, VoxelAddType::Clay, "sphere", "Add: Clay");
+                            ow::icon_select(ui, &mut st.add_type, VoxelAddType::Smooth, "stamp", "Add: Smooth");
+                            ow::icon_select(ui, &mut st.add_type, VoxelAddType::Clone, "select", "Add: Clone");
                         });
                         ow::toggle_button(ui, &mut st.clone_overwrite, "Overwrite");
                     }
                     VoxelToolMode::Select => {
                         ow::toolbar(ui, false, |ui| {
-                            ow::icon_select(ui, &mut st.select_type, VoxelSelectType::Point, "•", "Select: Point");
-                            ow::icon_select(ui, &mut st.select_type, VoxelSelectType::Line, "📏", "Select: Line");
-                            ow::icon_select(ui, &mut st.select_type, VoxelSelectType::Region, "🧊", "Select: Region");
-                            ow::icon_select(ui, &mut st.select_type, VoxelSelectType::Face, "🧱", "Select: Face");
-                            ow::icon_select(ui, &mut st.select_type, VoxelSelectType::Rect, "🔳", "Select: Rect");
-                            ow::icon_select(ui, &mut st.select_type, VoxelSelectType::Color, "🎨", "Select: Color");
+                            ow::icon_select(ui, &mut st.select_type, VoxelSelectType::Point, "cube", "Select: Point");
+                            ow::icon_select(ui, &mut st.select_type, VoxelSelectType::Line, "region", "Select: Line");
+                            ow::icon_select(ui, &mut st.select_type, VoxelSelectType::Region, "region", "Select: Region");
+                            ow::icon_select(ui, &mut st.select_type, VoxelSelectType::Face, "cube", "Select: Face");
+                            ow::icon_select(ui, &mut st.select_type, VoxelSelectType::Rect, "select", "Select: Rect");
+                            ow::icon_select(ui, &mut st.select_type, VoxelSelectType::Color, "picker", "Select: Color");
                         });
                     }
                     VoxelToolMode::Paint => {
                         ow::toolbar(ui, false, |ui| {
-                            ow::icon_select(ui, &mut st.paint_type, VoxelPaintType::Point, "•", "Paint: Point");
-                            ow::icon_select(ui, &mut st.paint_type, VoxelPaintType::Line, "📏", "Paint: Line");
-                            ow::icon_select(ui, &mut st.paint_type, VoxelPaintType::Region, "🧊", "Paint: Region");
-                            ow::icon_select(ui, &mut st.paint_type, VoxelPaintType::Face, "🧱", "Paint: Face");
-                            ow::icon_select(ui, &mut st.paint_type, VoxelPaintType::ColorPick, "👁", "Paint: Pick");
-                            ow::icon_select(ui, &mut st.paint_type, VoxelPaintType::PromptStamp, "AI", "Paint: AI Stamp");
+                            ow::icon_select(ui, &mut st.paint_type, VoxelPaintType::Point, "cube", "Paint: Point");
+                            ow::icon_select(ui, &mut st.paint_type, VoxelPaintType::Line, "region", "Paint: Line");
+                            ow::icon_select(ui, &mut st.paint_type, VoxelPaintType::Region, "region", "Paint: Region");
+                            ow::icon_select(ui, &mut st.paint_type, VoxelPaintType::Face, "cube", "Paint: Face");
+                            ow::icon_select(ui, &mut st.paint_type, VoxelPaintType::ColorPick, "picker", "Paint: Pick");
+                            ow::icon_select(ui, &mut st.paint_type, VoxelPaintType::PromptStamp, "stamp", "Paint: AI Stamp");
                         });
                     }
                     _ => {}
@@ -193,12 +193,12 @@ pub fn draw_voxel_tools_panel(
 
             ow::group(ui, "Brush", true, |ui| {
                 ow::toolbar(ui, false, |ui| {
-                    ow::icon_select(ui, &mut st.shape, VoxelBrushShape::Sphere, "⚪", "Shape: Sphere");
-                    ow::icon_select(ui, &mut st.shape, VoxelBrushShape::Cube, "🧊", "Shape: Cube");
-                    ow::icon_select(ui, &mut st.shape, VoxelBrushShape::Cylinder, "🛢️", "Shape: Cylinder");
-                    ow::icon_select(ui, &mut st.shape, VoxelBrushShape::Cross, "➕", "Shape: Cross");
-                    ow::icon_select(ui, &mut st.shape, VoxelBrushShape::CrossWall, "🧱", "Shape: Cross Wall");
-                    ow::icon_select(ui, &mut st.shape, VoxelBrushShape::Diamond, "🔷", "Shape: Diamond");
+                    ow::icon_select(ui, &mut st.shape, VoxelBrushShape::Sphere, "sphere", "Shape: Sphere");
+                    ow::icon_select(ui, &mut st.shape, VoxelBrushShape::Cube, "cube", "Shape: Cube");
+                    ow::icon_select(ui, &mut st.shape, VoxelBrushShape::Cylinder, "cylinder", "Shape: Cylinder");
+                    ow::icon_select(ui, &mut st.shape, VoxelBrushShape::Cross, "cross", "Shape: Cross");
+                    ow::icon_select(ui, &mut st.shape, VoxelBrushShape::CrossWall, "cross", "Shape: Cross Wall");
+                    ow::icon_select(ui, &mut st.shape, VoxelBrushShape::Diamond, "sphere", "Shape: Diamond");
                 });
                 ow::axis_toggle(ui, &mut st.sym_x, &mut st.sym_y, &mut st.sym_z);
                 ow::styled_slider(ui, &mut st.brush_radius, 0.05..=5.0, "Radius");

@@ -783,10 +783,10 @@ fn draw_voxel_tools_panel(
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             overlay_widgets::group(ui, "Actions", true, |ui| {
                 overlay_widgets::toolbar(ui, false, |ui| {
-                    if overlay_widgets::icon_button(ui, "↶", false).on_hover_text("Undo (Z)").clicked() { do_undo_redo(ngr, gc, cda_inst, direct_node, true); }
-                    if overlay_widgets::icon_button(ui, "↷", false).on_hover_text("Redo (Y)").clicked() { do_undo_redo(ngr, gc, cda_inst, direct_node, false); }
-                    if overlay_widgets::icon_button(ui, "🗑", false).on_hover_text("Clear all voxels").clicked() { push_voxel_cmd(ngr, ui_state, key, gc, DiscreteVoxelOp::ClearAll); }
-                    if overlay_widgets::icon_button(ui, "✂", false).on_hover_text("Trim bounds to origin").clicked() { push_voxel_cmd(ngr, ui_state, key, gc, DiscreteVoxelOp::TrimToOrigin); }
+                    if overlay_widgets::icon_button(ui, "undo", false).on_hover_text("Undo (Z)").clicked() { do_undo_redo(ngr, gc, cda_inst, direct_node, true); }
+                    if overlay_widgets::icon_button(ui, "redo", false).on_hover_text("Redo (Y)").clicked() { do_undo_redo(ngr, gc, cda_inst, direct_node, false); }
+                    if overlay_widgets::icon_button(ui, "delete", false).on_hover_text("Clear all voxels").clicked() { push_voxel_cmd(ngr, ui_state, key, gc, DiscreteVoxelOp::ClearAll); }
+                    if overlay_widgets::icon_button(ui, "trim", false).on_hover_text("Trim bounds to origin").clicked() { push_voxel_cmd(ngr, ui_state, key, gc, DiscreteVoxelOp::TrimToOrigin); }
                 });
             });
 
@@ -969,9 +969,9 @@ fn draw_import_export_icons(
 ) {
     let import_id = ui.make_persistent_id(("import_popup", key));
     let export_id = ui.make_persistent_id(("export_popup", key));
-    let import_btn = overlay_widgets::icon_button(ui, "📥", false).on_hover_text("Import");
+    let import_btn = overlay_widgets::icon_button(ui, "stamp", false).on_hover_text("Import");
     if import_btn.clicked() { ui.memory_mut(|m| m.toggle_popup(import_id)); }
-    let export_btn = overlay_widgets::icon_button(ui, "📤", false).on_hover_text("Export");
+    let export_btn = overlay_widgets::icon_button(ui, "extrude", false).on_hover_text("Export");
     if export_btn.clicked() { ui.memory_mut(|m| m.toggle_popup(export_id)); }
     egui::popup_below_widget(ui, import_id, &import_btn, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
         ui.set_min_width(260.0);

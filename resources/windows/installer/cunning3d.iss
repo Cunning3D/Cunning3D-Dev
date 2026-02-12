@@ -1,4 +1,4 @@
-#define AppId "{8F8C9F7D-0B8C-4D37-9F9D-1A0B68C6C3D1}"
+#define AppId "{{8F8C9F7D-0B8C-4D37-9F9D-1A0B68C6C3D1}}"
 #define AppName "Cunning3D"
 #define AppExeName "Cunning3D"
 #define AppPublisher "Cunning3D"
@@ -6,10 +6,20 @@
 #define AppSupportURL "https://cunning3d.example"
 #define AppUpdatesURL "https://cunning3d.example"
 #define AppxPackageName "Cunning3D.Cunning3D"
-#define Version GetStringDef("Version", "0.10.0")
-#define OutputDir GetStringDef("OutputDir", "{#SourceDir}\..\target")
-#define OutputBaseFilename GetStringDef("OutputBaseFilename", "Cunning3D-x86_64")
-#define ResourcesDir GetStringDef("ResourcesDir", "{#SourceDir}")
+
+; Allow external override via ISCC /dName="Value" without requiring ISPP GetStringDef.
+#ifndef Version
+  #define Version "0.10.0"
+#endif
+#ifndef OutputDir
+  #define OutputDir "{#SourceDir}\..\target"
+#endif
+#ifndef OutputBaseFilename
+  #define OutputBaseFilename "Cunning3D-x86_64"
+#endif
+#ifndef ResourcesDir
+  #define ResourcesDir "{#SourceDir}"
+#endif
 
 [Setup]
 AppId={#AppId}
@@ -79,9 +89,17 @@ Root: HKCU; Subkey: "Software\Classes\{#AppName}.Project\DefaultIcon"; ValueType
 Root: HKCU; Subkey: "Software\Classes\{#AppName}.Project\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExeName}.exe"" ""%1"""; Tasks: associate_c3d
 
 [Code]
-function IsWindows11OrLater(): Boolean;
+function WizardNotSilent: Boolean;
 begin
-  Result := (GetWindowsVersion >= $0A000000) and (GetWindowsBuildNumber >= 22000);
+  Result := not WizardSilent;
+end;
+
+function IsWindows11OrLater(): Boolean;
+var
+  V: TWindowsVersion;
+begin
+  GetWindowsVersionEx(V);
+  Result := (V.Major >= 10) and (V.Build >= 22000);
 end;
 
 function IsWindows11OrLaterAndSelected(): Boolean;

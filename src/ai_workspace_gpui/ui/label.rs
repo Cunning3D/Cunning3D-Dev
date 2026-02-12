@@ -1,7 +1,7 @@
 //! Label component (Zed-style API)
 
 use gpui::{IntoElement, ParentElement, SharedString, Styled, div, px, Div, prelude::*};
-use super::ThemeColors;
+use super::{ThemeColors, UiMetrics};
 
 #[derive(Clone, Copy, Default, PartialEq)]
 pub enum LabelSize { XSmall, Small, #[default] Default, Large }
@@ -38,7 +38,10 @@ impl IntoElement for Label {
             LabelColor::Error => ThemeColors::text_error(),
         };
         let font_size = match self.size {
-            LabelSize::XSmall => px(10.0), LabelSize::Small => px(12.0), LabelSize::Default => px(14.0), LabelSize::Large => px(16.0),
+            LabelSize::XSmall => px(UiMetrics::FONT_XSMALL),
+            LabelSize::Small => px(UiMetrics::FONT_SMALL),
+            LabelSize::Default => px(UiMetrics::FONT_DEFAULT),
+            LabelSize::Large => px(UiMetrics::FONT_LARGE),
         };
         div().text_color(text_color).text_size(font_size).when(self.truncate, |d| d.truncate()).child(self.text.to_string()).into_element()
     }

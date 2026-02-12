@@ -1,6 +1,7 @@
 //! Bevy UI Timeline - 保留模式 Timeline 实现
 use crate::launcher::plugin::AppState;
 use crate::ui::TimelineState;
+use crate::app::window_frame::{WINDOW_SAFE_INSET_LP, WINDOW_UI_SURFACE_BG_SRGBA};
 use bevy::camera::visibility::RenderLayers;
 use bevy::camera::ClearColorConfig;
 use bevy::camera::{CameraOutputMode, MsaaWriteback};
@@ -191,14 +192,25 @@ fn spawn_timeline_ui(commands: &mut Commands, cam_q: &Query<Entity, With<Timelin
             bottom: Val::Px(0.0),
             left: Val::Px(0.0),
             right: Val::Px(0.0),
-            height: Val::Px(60.0),
+            height: Val::Px(60.0 + WINDOW_SAFE_INSET_LP),
             flex_direction: FlexDirection::Row,
             align_items: AlignItems::Center,
-            padding: UiRect::axes(Val::Px(8.0), Val::Px(4.0)),
+            // Full-width background, but keep contents aligned with egui safe inset.
+            padding: UiRect {
+                left: Val::Px(WINDOW_SAFE_INSET_LP + 12.0),
+                right: Val::Px(WINDOW_SAFE_INSET_LP + 12.0),
+                top: Val::Px(4.0),
+                bottom: Val::Px(WINDOW_SAFE_INSET_LP + 4.0),
+            },
             column_gap: Val::Px(8.0),
             ..default()
         })
-        .insert(BackgroundColor(Color::srgba(0.12, 0.12, 0.12, 0.95)))
+        .insert(BackgroundColor(Color::srgba(
+            WINDOW_UI_SURFACE_BG_SRGBA[0],
+            WINDOW_UI_SURFACE_BG_SRGBA[1],
+            WINDOW_UI_SURFACE_BG_SRGBA[2],
+            WINDOW_UI_SURFACE_BG_SRGBA[3],
+        )))
         .insert(Interaction::None)
         .insert(FocusPolicy::Pass)
         .id();

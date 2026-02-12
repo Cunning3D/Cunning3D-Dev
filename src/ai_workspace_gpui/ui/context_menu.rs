@@ -1,5 +1,5 @@
 //! Context menu component (Zed-style right-click menus with keyboard navigation).
-use gpui::{actions, AnyElement, App, ClickEvent, Context, DismissEvent, ElementId, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, KeyDownEvent, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window, anchored, deferred, div, prelude::*, px};
+use gpui::{actions, AnyElement, App, ClickEvent, Context, DismissEvent, ElementId, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, KeyDownEvent, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Subscription, Window, anchored, deferred, div, prelude::*, px};
 use std::sync::Arc;
 use super::{h_flex, v_flex, ThemeColors, Label, LabelColor, LabelSize, Spacing};
 
@@ -35,6 +35,7 @@ pub struct ContextMenu {
     items: Vec<ContextMenuItem>,
     selected_idx: Option<usize>,
     focus_handle: FocusHandle,
+    focus_out_subscription: Option<Subscription>,
 }
 
 impl EventEmitter<DismissEvent> for ContextMenu {}
@@ -43,7 +44,7 @@ impl ContextMenu {
     pub fn new(items: Vec<ContextMenuItem>, cx: &mut Context<Self>) -> Self {
         let focus_handle = cx.focus_handle();
         let selected = items.iter().position(|i| matches!(i, ContextMenuItem::Entry { disabled: false, .. }));
-        Self { items, selected_idx: selected, focus_handle }
+        Self { items, selected_idx: selected, focus_handle, focus_out_subscription: None }
     }
 
     fn entry_count(&self) -> usize { self.items.iter().filter(|i| matches!(i, ContextMenuItem::Entry { .. })).count() }
@@ -86,7 +87,14 @@ impl ContextMenu {
 impl Focusable for ContextMenu { fn focus_handle(&self, _: &App) -> FocusHandle { self.focus_handle.clone() } }
 
 impl Render for ContextMenu {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.focus_out_subscription.is_none() {
+            let sub = cx.on_focus_out(&self.focus_handle, window, |_this, _evt, _window, cx| {
+                cx.emit(DismissEvent);
+            });
+            self.focus_out_subscription = Some(sub);
+        }
+
         let items: Vec<AnyElement> = self.items.iter().enumerate().map(|(idx, item)| {
             match item {
                 ContextMenuItem::Entry { label, icon, shortcut, disabled, .. } => {
@@ -95,9 +103,9 @@ impl Render for ContextMenu {
                     h_flex()
                         .id(ElementId::NamedInteger("menu-item".into(), idx as u64))
                         .w_full()
-                        .px(Spacing::Base08.px())
-                        .py(Spacing::Base04.px())
-                        .gap(Spacing::Base08.px())
+                        .px(Spacing::Base06.px())
+                        .py(Spacing::Base02.px())
+                        .gap(Spacing::Base06.px())
                         .rounded_sm()
                         .cursor_pointer()
                         .when(is_selected && !disabled, |d| d.bg(ThemeColors::bg_selected()))
@@ -132,7 +140,7 @@ impl Render for ContextMenu {
             .bg(ThemeColors::bg_elevated())
             .border_1()
             .border_color(ThemeColors::border())
-            .rounded_md()
+            .rounded_sm()
             .shadow_lg()
             .children(items)
     }

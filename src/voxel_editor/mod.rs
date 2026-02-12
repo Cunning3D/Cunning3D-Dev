@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 use crate::camera::ViewportInteractionState;
 use crate::coverlay_bevy_ui::{read_voxel_cmds, resolve_voxel_edit_target, voxel_size_for_target, write_voxel_cmds, write_voxel_mask, CoverlayUiWantsInput, VoxelAddType, VoxelBrushShape, VoxelEditTarget, VoxelHudInfo, VoxelOverlaySettings, VoxelPaintType, VoxelSelectType, VoxelToolMode, VoxelToolState};
 use crate::input::NavigationInput;
-use crate::nodes::NodeGraphResource;
+use crate::nodes::{port_key, NodeGraphResource, NodeId, PortId};
 use crate::tabs_system::viewport_3d::ViewportLayout;
 use crate::ui::UiState;
 use crate::GraphChanged;
@@ -136,6 +136,7 @@ struct StrokeState {
 #[derive(Default)]
 struct VoxelCmdBakeCache {
     target: Option<VoxelEditTarget>,
+    base_node: Option<uuid::Uuid>,
     voxel_size: f32,
     cmds_len: usize,
     cmds_cursor: usize,
@@ -147,15 +148,16 @@ struct VoxelCmdBakeCache {
 
 impl VoxelCmdBakeCache {
     #[inline]
-    fn reset(&mut self, target: VoxelEditTarget, voxel_size: f32) {
+    fn reset(&mut self, target: VoxelEditTarget, base_node: Option<uuid::Uuid>, base_grid: Option<vox::DiscreteVoxelGrid>, voxel_size: f32) {
         let vs = voxel_size.max(0.001);
         self.target = Some(target);
+        self.base_node = base_node;
         self.voxel_size = vs;
         self.cmds_len = 0;
         self.cmds_cursor = 0;
         self.bake = vox::DiscreteBakeState { baked_cursor: 0 };
-        self.grid = vox::DiscreteVoxelGrid::new(vs);
-        self.bounds = None;
+        self.grid = base_grid.unwrap_or_else(|| vox::DiscreteVoxelGrid::new(vs));
+        self.bounds = self.grid.bounds();
         self.bounds_dirty = false;
     }
 
@@ -196,10 +198,10 @@ impl VoxelCmdBakeCache {
     }
 
     #[inline]
-    fn ensure_baked(&mut self, target: VoxelEditTarget, voxel_size: f32, cmds: &DiscreteVoxelCmdList) {
+    fn ensure_baked(&mut self, target: VoxelEditTarget, base_node: Option<uuid::Uuid>, base_grid: Option<vox::DiscreteVoxelGrid>, voxel_size: f32, cmds: &DiscreteVoxelCmdList) {
         let vs = voxel_size.max(0.001);
-        if self.target != Some(target) || (self.voxel_size - vs).abs() > 0.0 {
-            self.reset(target, vs);
+        if self.target != Some(target) || self.base_node != base_node || (self.voxel_size - vs).abs() > 0.0 {
+            self.reset(target, base_node, base_grid, vs);
         }
         let cur = cmds.cursor.min(cmds.ops.len());
         if self.cmds_len == cmds.ops.len() && self.cmds_cursor == cur { return; }
@@ -218,6 +220,38 @@ impl VoxelCmdBakeCache {
         self.bounds = self.grid.bounds();
         self.bounds_dirty = false;
     }
+}
+
+#[inline]
+fn first_src(graph: &crate::nodes::NodeGraph, to: NodeId, to_port: &PortId) -> Option<(NodeId, PortId)> {
+    let mut srcs: Vec<(crate::nodes::ConnectionId, NodeId, PortId)> = graph
+        .connections
+        .values()
+        .filter(|c| c.to_node == to && c.to_port.as_str() == to_port.as_str())
+        .map(|c| (c.id, c.from_node, c.from_port.clone()))
+        .collect();
+    srcs.sort_by(|a, b| a.0.cmp(&b.0));
+    srcs.into_iter().next().map(|(_, n, p)| (n, p))
+}
+
+#[inline]
+fn cached_output_geo(graph: &crate::nodes::NodeGraph, nid: NodeId, port: &PortId) -> Option<std::sync::Arc<crate::mesh::Geometry>> {
+    if port_key::is_cda_port_key(port) { graph.port_geometry_cache.get(&(nid, port.clone())).cloned() } else { graph.geometry_cache.get(&nid).cloned() }
+}
+
+#[inline]
+fn base_grid_for_target(graph: &crate::nodes::NodeGraph, target: VoxelEditTarget) -> (Option<uuid::Uuid>, Option<vox::DiscreteVoxelGrid>) {
+    let VoxelEditTarget::Direct(node_id) = target else { return (None, None); };
+    let in0 = port_key::in0();
+    let Some((src_n, src_p)) = first_src(graph, node_id, &in0) else { return (None, None); };
+    let Some(g) = cached_output_geo(graph, src_n, &src_p) else { return (None, None); };
+    let Some(nid) = g
+        .get_detail_attribute("__voxel_node")
+        .and_then(|a| a.as_slice::<String>())
+        .and_then(|v| v.first())
+        .and_then(|s| uuid::Uuid::parse_str(s.trim()).ok())
+    else { return (None, None); };
+    (Some(nid), cunning_kernel::nodes::voxel::voxel_edit::voxel_render_get_grid(nid))
 }
 
 pub struct VoxelEditorPlugin;
@@ -594,7 +628,8 @@ fn voxel_editor_input_system(
     let cmds_snapshot = {
         read_voxel_cmds(&node_graph_res.0, target)
     };
-    bake_cache.ensure_baked(target, voxel_size, &cmds_snapshot);
+    let (base_node, base_grid) = base_grid_for_target(&node_graph_res.0, target);
+    bake_cache.ensure_baked(target, base_node, base_grid, voxel_size, &cmds_snapshot);
     if (ov.show_volume_grid || ov.show_volume_bound) && bake_cache.bounds_dirty { bake_cache.ensure_bounds_exact(); }
 
     // Hit: CPU DDA raycast against baked discrete grid, fallback to ground plane.

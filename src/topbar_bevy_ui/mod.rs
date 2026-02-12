@@ -1,15 +1,21 @@
 //! Bevy UI Topbar (Desktop) - Replaces egui MenuBarTab
 use bevy::camera::visibility::RenderLayers;
+use bevy::math::CompassOctant;
 use bevy::prelude::*;
 
 use crate::console::ConsoleLog;
 use crate::cunning_core::cda::CdaLibrary;
+use crate::app::window_frame::{
+    WINDOW_CHROME_BTN_H_LP, WINDOW_CHROME_BTN_W_LP, WINDOW_CHROME_GLYPH_CLOSE,
+    WINDOW_CHROME_GLYPH_MAX, WINDOW_CHROME_GLYPH_MIN, WINDOW_CHROME_ICON_FONT_FAMILY,
+    WINDOW_SAFE_INSET_LP, WINDOW_TOPBAR_H_LP, WINDOW_UI_SURFACE_BG_SRGBA,
+};
 use crate::launcher::plugin::AppState;
 use crate::ui::{LayoutMode, OpenAiWorkspaceWindowEvent, OpenSettingsWindowEvent, UiState};
 use crate::{GraphChanged, NodeGraphResource};
 use bevy::ui::prelude as cgui;
 use bevy::ui::{FocusPolicy, UiSystems};
-use bevy::window::RequestRedraw;
+use bevy::window::{CursorIcon, PrimaryWindow, RequestRedraw, SystemCursorIcon, WindowLevel};
 use bevy_egui::EguiHole;
 
 #[derive(Component)]
@@ -28,6 +34,12 @@ struct TopbarPopupRoot;
 struct TopbarPopupPanel;
 #[derive(Component)]
 struct TopbarInteractive;
+#[derive(Component)]
+struct TopbarDragRegion;
+#[derive(Component)]
+struct TopbarWindowBtn(WindowBtnKind);
+#[derive(Component)]
+struct TopbarPinLabel;
 #[derive(Component)]
 pub struct TopbarUiCamera;
 
@@ -69,6 +81,26 @@ pub struct TopbarUiWantsInput(pub bool);
 #[derive(Resource, Default)]
 pub struct TopbarUiMenuOpen(pub bool);
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum WindowBtnKind {
+    Pin,
+    Min,
+    Max,
+    Close,
+}
+
+#[derive(Resource, Default)]
+struct TopbarWindowChromeState {
+    pinned: bool,
+    maximized: bool,
+    last_click_s: f64,
+}
+
+#[derive(Resource, Default)]
+struct WindowEdgeResizeState {
+    hover: Option<CompassOctant>,
+}
+
 /// Debug: automatically open one menu once to validate occlusion logging without relying on click.
 #[derive(Resource, Default)]
 struct TopbarDebugAutoOpen {
@@ -78,8 +110,15 @@ struct TopbarDebugAutoOpen {
 
 pub struct TopbarUiPlugin;
 
-const TOPBAR_H: f32 = 28.0;
+const TOPBAR_H: f32 = WINDOW_TOPBAR_H_LP;
 const UI_LAYER: usize = 31;
+const WINDOW_CORNER_RADIUS_VISUAL: f32 = 14.0;
+const WINDOW_CORNER_MASK_COLOR: Color = Color::srgba(
+    WINDOW_UI_SURFACE_BG_SRGBA[0],
+    WINDOW_UI_SURFACE_BG_SRGBA[1],
+    WINDOW_UI_SURFACE_BG_SRGBA[2],
+    WINDOW_UI_SURFACE_BG_SRGBA[3],
+);
 
 #[derive(Resource, Default)]
 struct TopbarUiSpawnGate {
@@ -95,6 +134,8 @@ impl Plugin for TopbarUiPlugin {
             .init_resource::<TopbarUiWantsInput>()
             .init_resource::<TopbarUiMenuOpen>()
             .init_resource::<TopbarUiSpawnGate>()
+            .init_resource::<TopbarWindowChromeState>()
+            .init_resource::<WindowEdgeResizeState>()
             .init_resource::<TopbarDebugAutoOpen>()
             .add_systems(OnEnter(AppState::Editor), reset_topbar_spawn_gate)
             // NOTE: Click/interaction relies on ui_focus_system (PreUpdate/UiSystems::Focus) to write Interaction;
@@ -103,6 +144,8 @@ impl Plugin for TopbarUiPlugin {
                 PreUpdate,
                 (
                     handle_topbar_buttons,
+                    handle_topbar_drag_region,
+                    handle_topbar_window_buttons,
                     #[cfg(debug_assertions)]
                     debug_auto_open_menu_once,
                     close_menu_on_backdrop,
@@ -121,6 +164,7 @@ impl Plugin for TopbarUiPlugin {
                     sync_topbar_popup,
                     topbar_visuals,
                     update_topbar_wants_input.after(sync_topbar_popup),
+                    window_edge_resize_system,
                 )
                     .run_if(in_state(AppState::Editor)),
             );
@@ -240,6 +284,62 @@ fn spawn_topbar_ui(
         })
         .id();
 
+    // Visual rounded-corner mask (pure UI, no native window style injection).
+    // This keeps startup stable while giving a rounded-corner appearance.
+    let corner_d = WINDOW_CORNER_RADIUS_VISUAL * 2.0;
+    let spawn_corner_mask = |commands: &mut Commands, root: Entity, left: Option<f32>, right: Option<f32>, top: Option<f32>, bottom: Option<f32>| {
+        let mut node = cgui::Node {
+            position_type: cgui::PositionType::Absolute,
+            width: cgui::Val::Px(corner_d),
+            height: cgui::Val::Px(corner_d),
+            border_radius: cgui::BorderRadius::all(cgui::Val::Px(corner_d)),
+            ..default()
+        };
+        if let Some(v) = left { node.left = cgui::Val::Px(v); }
+        if let Some(v) = right { node.right = cgui::Val::Px(v); }
+        if let Some(v) = top { node.top = cgui::Val::Px(v); }
+        if let Some(v) = bottom { node.bottom = cgui::Val::Px(v); }
+
+        let corner = commands
+            .spawn_empty()
+            .insert(RenderLayers::layer(UI_LAYER))
+            .insert(cgui::GlobalZIndex(20))
+            .insert(cgui::ZIndex(0))
+            .insert(FocusPolicy::Pass)
+            .insert(node)
+            .insert(cgui::BackgroundColor(WINDOW_CORNER_MASK_COLOR))
+            .id();
+        commands.entity(root).add_child(corner);
+    };
+    // Place circles partially outside viewport so only quarter-arcs remain visible.
+    spawn_corner_mask(commands, root, Some(-WINDOW_CORNER_RADIUS_VISUAL), None, Some(-WINDOW_CORNER_RADIUS_VISUAL), None); // top-left
+    spawn_corner_mask(commands, root, None, Some(-WINDOW_CORNER_RADIUS_VISUAL), Some(-WINDOW_CORNER_RADIUS_VISUAL), None); // top-right
+    spawn_corner_mask(commands, root, Some(-WINDOW_CORNER_RADIUS_VISUAL), None, None, Some(-WINDOW_CORNER_RADIUS_VISUAL)); // bottom-left
+    spawn_corner_mask(commands, root, None, Some(-WINDOW_CORNER_RADIUS_VISUAL), None, Some(-WINDOW_CORNER_RADIUS_VISUAL)); // bottom-right
+
+    // Top safe inset strip: keep content off the very top edge.
+    let top_strip = commands
+        .spawn_empty()
+        .insert(RenderLayers::layer(UI_LAYER))
+        .insert(cgui::GlobalZIndex(19))
+        .insert(cgui::ZIndex(0))
+        // Extend drag region into the top safe inset strip (easier window move at y=0).
+        .insert(TopbarDragRegion)
+        .insert(cgui::Button)
+        .insert(cgui::Interaction::None)
+        .insert(FocusPolicy::Pass)
+        .insert(cgui::Node {
+            position_type: cgui::PositionType::Absolute,
+            left: cgui::Val::Px(0.0),
+            right: cgui::Val::Px(0.0),
+            top: cgui::Val::Px(0.0),
+            height: cgui::Val::Px(WINDOW_SAFE_INSET_LP),
+            ..default()
+        })
+        .insert(cgui::BackgroundColor(WINDOW_CORNER_MASK_COLOR))
+        .id();
+    commands.entity(root).add_child(top_strip);
+
     let bar = commands
         .spawn_empty()
         .insert(TopbarBar)
@@ -249,15 +349,16 @@ fn spawn_topbar_ui(
             position_type: cgui::PositionType::Absolute,
             left: cgui::Val::Px(0.0),
             right: cgui::Val::Px(0.0),
-            top: cgui::Val::Px(0.0),
+            top: cgui::Val::Px(WINDOW_SAFE_INSET_LP),
             height: cgui::Val::Px(TOPBAR_H),
             flex_direction: cgui::FlexDirection::Row,
             align_items: cgui::AlignItems::Center,
-            padding: cgui::UiRect::horizontal(cgui::Val::Px(8.0)),
+            // Full-width background, but keep contents aligned with egui safe inset.
+            padding: cgui::UiRect::horizontal(cgui::Val::Px(WINDOW_SAFE_INSET_LP + 12.0)),
             column_gap: cgui::Val::Px(6.0),
             ..default()
         })
-        .insert(cgui::BackgroundColor(Color::srgba(0.10, 0.10, 0.10, 0.98)))
+        .insert(cgui::BackgroundColor(WINDOW_CORNER_MASK_COLOR))
         .id();
     commands.entity(root).add_child(bar);
 
@@ -299,6 +400,78 @@ fn spawn_topbar_ui(
         commands.entity(bar).add_child(btn);
     }
 
+    // Drag region (fills remaining space; used for window move + double-click maximize)
+    let drag = commands
+        .spawn_empty()
+        .insert(TopbarDragRegion)
+        .insert(RenderLayers::layer(UI_LAYER))
+        .insert(cgui::Button)
+        .insert(cgui::Interaction::None)
+        .insert(FocusPolicy::Pass)
+        .insert(cgui::Node {
+            flex_grow: 1.0,
+            height: cgui::Val::Px(TOPBAR_H - 6.0),
+            ..default()
+        })
+        .insert(cgui::BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.0)))
+        .id();
+    commands.entity(bar).add_child(drag);
+
+    // Window controls (right side)
+    let controls = commands
+        .spawn_empty()
+        .insert(RenderLayers::layer(UI_LAYER))
+        .insert(cgui::Node {
+            flex_direction: cgui::FlexDirection::Row,
+            align_items: cgui::AlignItems::Center,
+            column_gap: cgui::Val::Px(4.0),
+            ..default()
+        })
+        .id();
+    commands.entity(bar).add_child(controls);
+
+    let mk_btn = |id: WindowBtnKind, label: &str, commands: &mut Commands, controls: Entity| {
+        let b = commands
+            .spawn_empty()
+            .insert(TopbarWindowBtn(id))
+            .insert(RenderLayers::layer(UI_LAYER))
+            .insert(cgui::Button)
+            .insert(cgui::Interaction::None)
+            .insert(TopbarInteractive)
+            .insert(cgui::Node {
+                width: cgui::Val::Px(WINDOW_CHROME_BTN_W_LP),
+                height: cgui::Val::Px(WINDOW_CHROME_BTN_H_LP),
+                justify_content: cgui::JustifyContent::Center,
+                align_items: cgui::AlignItems::Center,
+                border_radius: cgui::BorderRadius::all(cgui::Val::Px(4.0)),
+                ..default()
+            })
+            .insert(cgui::BackgroundColor(Color::srgba(0.18, 0.18, 0.18, 1.0)))
+            .id();
+        let t = commands
+            .spawn_empty()
+            .insert(RenderLayers::layer(UI_LAYER))
+            .insert(cgui::Text::new(label))
+            .insert(TextFont { font_size: FontSize::Px(11.0), ..default() })
+            .insert(TextColor(Color::srgba(0.92, 0.92, 0.92, 1.0)))
+            .id();
+        commands.entity(b).add_child(t);
+        commands.entity(controls).add_child(b);
+        (b, t)
+    };
+    let (_pin_btn, pin_txt) = mk_btn(WindowBtnKind::Pin, "📍", commands, controls);
+    commands.entity(pin_txt).insert(TopbarPinLabel);
+    let (_min_btn, min_txt) = mk_btn(WindowBtnKind::Min, WINDOW_CHROME_GLYPH_MIN, commands, controls);
+    commands.entity(min_txt).insert(TextFont { font_size: FontSize::Px(11.0), font: WINDOW_CHROME_ICON_FONT_FAMILY.into(), ..default() });
+    let (_max_btn, max_txt) = mk_btn(WindowBtnKind::Max, WINDOW_CHROME_GLYPH_MAX, commands, controls);
+    commands.entity(max_txt).insert(TextFont { font_size: FontSize::Px(11.0), font: WINDOW_CHROME_ICON_FONT_FAMILY.into(), ..default() });
+    let (close_btn, close_txt) = mk_btn(WindowBtnKind::Close, WINDOW_CHROME_GLYPH_CLOSE, commands, controls);
+    commands.entity(close_txt).insert(TextFont { font_size: FontSize::Px(11.0), font: WINDOW_CHROME_ICON_FONT_FAMILY.into(), ..default() });
+    // Close button: subtle danger tint.
+    commands
+        .entity(close_btn)
+        .insert(cgui::BackgroundColor(Color::srgba(0.30, 0.10, 0.10, 1.0)));
+
     // popup root (initially empty)
     let popup = commands
         .spawn_empty()
@@ -312,7 +485,7 @@ fn spawn_topbar_ui(
             position_type: cgui::PositionType::Absolute,
             left: cgui::Val::Px(0.0),
             right: cgui::Val::Px(0.0),
-            top: cgui::Val::Px(TOPBAR_H),
+            top: cgui::Val::Px(WINDOW_SAFE_INSET_LP + TOPBAR_H),
             bottom: cgui::Val::Px(0.0),
             ..default()
         })
@@ -357,27 +530,139 @@ fn topbar_visuals(
             &mut BackgroundColor,
             Option<&TopbarMenuBtn>,
             Option<&TopbarAction>,
+            Option<&TopbarWindowBtn>,
             Option<&TopbarBackdrop>,
         ),
         (Changed<Interaction>, With<TopbarInteractive>),
     >,
 ) {
-    for (i, mut bg, is_menu, is_act, is_backdrop) in &mut q {
+    for (i, mut bg, is_menu, is_act, is_win, is_backdrop) in &mut q {
         if is_backdrop.is_some() {
             continue;
         }
-        let base = if is_menu.is_some() {
-            Color::srgba(0.18, 0.18, 0.18, 1.0)
-        } else if is_act.is_some() {
-            Color::srgba(0.18, 0.18, 0.18, 1.0)
-        } else {
-            Color::srgba(0.18, 0.18, 0.18, 1.0)
+        let base = match (is_menu.is_some(), is_act.is_some(), is_win.map(|w| w.0)) {
+            (_, _, Some(WindowBtnKind::Close)) => Color::srgba(0.30, 0.10, 0.10, 1.0),
+            _ => Color::srgba(0.18, 0.18, 0.18, 1.0),
         };
         *bg = match *i {
             Interaction::None => BackgroundColor(base),
-            Interaction::Hovered => BackgroundColor(Color::srgba(0.26, 0.26, 0.26, 1.0)),
-            Interaction::Pressed => BackgroundColor(Color::srgba(0.36, 0.36, 0.36, 1.0)),
+            Interaction::Hovered => BackgroundColor(if matches!(is_win.map(|w| w.0), Some(WindowBtnKind::Close)) { Color::srgba(0.38, 0.14, 0.14, 1.0) } else { Color::srgba(0.26, 0.26, 0.26, 1.0) }),
+            Interaction::Pressed => BackgroundColor(if matches!(is_win.map(|w| w.0), Some(WindowBtnKind::Close)) { Color::srgba(0.48, 0.18, 0.18, 1.0) } else { Color::srgba(0.36, 0.36, 0.36, 1.0) }),
         };
+    }
+}
+
+fn handle_topbar_drag_region(
+    mut chrome: ResMut<TopbarWindowChromeState>,
+    time: Res<Time>,
+    mut w_q: Query<&mut Window, With<PrimaryWindow>>,
+    q: Query<&Interaction, (With<TopbarDragRegion>, Changed<Interaction>)>,
+    mut redraw: MessageWriter<RequestRedraw>,
+) {
+    let Ok(mut w) = w_q.single_mut() else { return; };
+    for i in &q {
+        if *i != Interaction::Pressed {
+            continue;
+        }
+        let now = time.elapsed_secs_f64();
+        let dbl = (now - chrome.last_click_s) <= 0.35;
+        chrome.last_click_s = now;
+        if dbl {
+            chrome.maximized = !chrome.maximized;
+            w.set_maximized(chrome.maximized);
+        } else {
+            w.start_drag_move();
+        }
+        redraw.write(RequestRedraw);
+    }
+}
+
+fn handle_topbar_window_buttons(
+    mut chrome: ResMut<TopbarWindowChromeState>,
+    mut w_q: Query<&mut Window, With<PrimaryWindow>>,
+    mut exit: MessageWriter<bevy::app::AppExit>,
+    q: Query<(&TopbarWindowBtn, &Interaction), Changed<Interaction>>,
+    mut pin_txt: Query<&mut cgui::Text, With<TopbarPinLabel>>,
+    mut redraw: MessageWriter<RequestRedraw>,
+) {
+    let Ok(mut w) = w_q.single_mut() else { return; };
+    for (b, i) in &q {
+        if *i != Interaction::Pressed {
+            continue;
+        }
+        match b.0 {
+            WindowBtnKind::Pin => {
+                chrome.pinned = !chrome.pinned;
+                w.window_level = if chrome.pinned { WindowLevel::AlwaysOnTop } else { WindowLevel::Normal };
+                for mut t in &mut pin_txt {
+                    *t = cgui::Text::new(if chrome.pinned { "📌" } else { "📍" });
+                }
+            }
+            WindowBtnKind::Min => w.set_minimized(true),
+            WindowBtnKind::Max => {
+                chrome.maximized = !chrome.maximized;
+                w.set_maximized(chrome.maximized);
+            }
+            WindowBtnKind::Close => { exit.write(bevy::app::AppExit::Success); }
+        }
+        redraw.write(RequestRedraw);
+    }
+}
+
+fn window_edge_resize_system(
+    mut commands: Commands,
+    mut st: ResMut<WindowEdgeResizeState>,
+    mouse: Res<ButtonInput<MouseButton>>,
+    mut w_q: Query<(Entity, &mut Window), With<PrimaryWindow>>,
+) {
+    let Ok((e, mut w)) = w_q.single_mut() else { return; };
+    if w.decorations {
+        st.hover = None;
+        return;
+    }
+    let Some(p) = w.cursor_position() else {
+        st.hover = None;
+        return;
+    };
+    let s = w.size();
+    let b = 6.0;
+    let l = p.x <= b;
+    let r = p.x >= s.x - b;
+    let t = p.y <= b;
+    let bt = p.y >= s.y - b;
+    let dir = match (l, r, t, bt) {
+        (true, _, true, _) => Some(CompassOctant::NorthWest),
+        (_, true, true, _) => Some(CompassOctant::NorthEast),
+        (true, _, _, true) => Some(CompassOctant::SouthWest),
+        (_, true, _, true) => Some(CompassOctant::SouthEast),
+        (_, _, true, _) => Some(CompassOctant::North),
+        (_, _, _, true) => Some(CompassOctant::South),
+        (true, _, _, _) => Some(CompassOctant::West),
+        (_, true, _, _) => Some(CompassOctant::East),
+        _ => None,
+    };
+    if dir != st.hover {
+        st.hover = dir;
+        if let Some(d) = dir {
+            let cur = match d {
+                CompassOctant::North => SystemCursorIcon::NResize,
+                CompassOctant::NorthEast => SystemCursorIcon::NeResize,
+                CompassOctant::East => SystemCursorIcon::EResize,
+                CompassOctant::SouthEast => SystemCursorIcon::SeResize,
+                CompassOctant::South => SystemCursorIcon::SResize,
+                CompassOctant::SouthWest => SystemCursorIcon::SwResize,
+                CompassOctant::West => SystemCursorIcon::WResize,
+                CompassOctant::NorthWest => SystemCursorIcon::NwResize,
+            };
+            commands.entity(e).insert(CursorIcon::from(cur));
+        } else {
+            commands.entity(e).insert(CursorIcon::from(SystemCursorIcon::Default));
+        }
+    }
+    if mouse.just_pressed(MouseButton::Left) {
+        if let Some(d) = dir {
+            w.start_drag_resize(d);
+        }
     }
 }
 

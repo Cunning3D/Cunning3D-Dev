@@ -146,7 +146,10 @@ pub fn draw_top_bar(editor: &mut NodeEditorTab, ui: &mut egui::Ui, context: &mut
                         .selected_text(match editor.copilot_backend {
                             CopilotBackend::LocalTiny => "Copilot: Local 1.7B",
                             CopilotBackend::LocalThink => "Copilot: Local 4B (Think)",
-                            CopilotBackend::Gemini => "Copilot: Gemini",
+                            CopilotBackend::Gemini => match editor.gemini_cloud_model {
+                                crate::tabs_system::node_editor::state::GeminiCloudModel::Fast => "Copilot: Gemini Fast",
+                                crate::tabs_system::node_editor::state::GeminiCloudModel::Pro => "Copilot: Gemini Pro",
+                            },
                         })
                         .show_ui(ui, |ui| {
                             ui.selectable_value(
@@ -159,11 +162,32 @@ pub fn draw_top_bar(editor: &mut NodeEditorTab, ui: &mut egui::Ui, context: &mut
                                 CopilotBackend::LocalThink,
                                 "Local 4B (Think, Slow)",
                             );
-                            ui.selectable_value(
-                                &mut editor.copilot_backend,
-                                CopilotBackend::Gemini,
-                                "Gemini (Cloud)",
-                            );
+                            if ui
+                                .selectable_label(
+                                    editor.copilot_backend == CopilotBackend::Gemini
+                                        && editor.gemini_cloud_model
+                                            == crate::tabs_system::node_editor::state::GeminiCloudModel::Fast,
+                                    "Gemini Fast (gemini-3-flash-preview)",
+                                )
+                                .clicked()
+                            {
+                                editor.copilot_backend = CopilotBackend::Gemini;
+                                editor.gemini_cloud_model =
+                                    crate::tabs_system::node_editor::state::GeminiCloudModel::Fast;
+                            }
+                            if ui
+                                .selectable_label(
+                                    editor.copilot_backend == CopilotBackend::Gemini
+                                        && editor.gemini_cloud_model
+                                            == crate::tabs_system::node_editor::state::GeminiCloudModel::Pro,
+                                    "Gemini Pro (gemini-3-pro-preview)",
+                                )
+                                .clicked()
+                            {
+                                editor.copilot_backend = CopilotBackend::Gemini;
+                                editor.gemini_cloud_model =
+                                    crate::tabs_system::node_editor::state::GeminiCloudModel::Pro;
+                            }
                         });
                     let _ = ui.button("⚄");
                     let _ = ui.button("⛶");

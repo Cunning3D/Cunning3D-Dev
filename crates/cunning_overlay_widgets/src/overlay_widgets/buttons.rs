@@ -1,5 +1,6 @@
 //! Button widgets for coverlay panels.
 use super::style::{animate_hover, animate_select, paint_gpu_text, paint_sdf_rect, OverlayTheme};
+use super::icons::{get_icon_texture, get_icon_uv};
 use bevy_egui::egui::{self, Color32, CursorIcon, Response, Sense, Ui};
 
 #[inline]
@@ -14,8 +15,21 @@ pub fn icon_button(ui: &mut Ui, icon: &str, selected: bool) -> Response {
     let base = if selected { OverlayTheme::lerp_color(theme.bg_input, theme.accent, 0.82) } else { theme.bg_input };
     let mut fill = OverlayTheme::lerp_color(base, theme.hover, hover_t * (1.0 - sel_t * 0.35));
     if resp.is_pointer_button_down_on() { fill = OverlayTheme::lerp_color(fill, theme.press, 0.92); }
+    
+    // Background
     paint_sdf_rect(ui, rect, theme.radius_md, fill, Color32::TRANSPARENT, 0.0);
-    paint_gpu_text(ui, rect.center(), egui::Align2::CENTER_CENTER, icon, 16.0 * s, theme.fg_primary);
+    
+    // Icon (Image from Atlas)
+    let texture = get_icon_texture(ui.ctx());
+    let uv = get_icon_uv(icon);
+    // Tint the white icon with the primary foreground color
+    ui.painter().image(
+        texture.id(),
+        rect.shrink(4.0 * s), // Padding inside the button
+        uv,
+        theme.fg_primary
+    );
+    
     resp
 }
 
@@ -40,9 +54,22 @@ pub fn tool_button(ui: &mut Ui, icon: &str, label: &str, selected: bool) -> Resp
     let base = if selected { OverlayTheme::lerp_color(theme.bg_input, theme.accent, 0.82) } else { theme.bg_input };
     let mut fill = OverlayTheme::lerp_color(base, theme.hover, hover_t * (1.0 - sel_t * 0.35));
     if resp.is_pointer_button_down_on() { fill = OverlayTheme::lerp_color(fill, theme.press, 0.92); }
+    
     paint_sdf_rect(ui, rect, theme.radius_md, fill, Color32::TRANSPARENT, 0.0);
+    
     let icon_rect = egui::Rect::from_min_size(rect.min + egui::vec2(10.0 * s, (rect.height() - theme.icon_size.y) * 0.5), theme.icon_size);
-    paint_gpu_text(ui, icon_rect.center(), egui::Align2::CENTER_CENTER, icon, 16.0 * s, theme.fg_primary);
+    
+    // Icon (Image from Atlas)
+    let texture = get_icon_texture(ui.ctx());
+    let uv = get_icon_uv(icon);
+    ui.painter().image(
+        texture.id(),
+        icon_rect, // tool_button usually has explicit spacing, no shrink needed or adjust as per taste
+        uv,
+        theme.fg_primary
+    );
+
+    // Label (Text)
     let text_pos = egui::pos2(icon_rect.max.x + 10.0 * s, rect.center().y);
     paint_gpu_text(ui, text_pos, egui::Align2::LEFT_CENTER, label, 13.5 * s, theme.fg_primary);
     resp

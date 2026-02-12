@@ -1,5 +1,6 @@
 //! Host↔UI protocol: Zed-like action/event driven architecture.
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::path::PathBuf;
 use uuid::Uuid;
 
@@ -7,7 +8,15 @@ use uuid::Uuid;
 #[derive(Debug, Clone)]
 pub enum HostToBevy {
     VoiceSpeak { text: String },
+    VoiceStopSpeaking,
     VoiceSetAssistantEnabled { enabled: bool },
+    VoiceStartListening,
+    VoiceStopListening,
+    // Gemini Live
+    StartGeminiLive { api_key: String, system_instruction: Option<String>, tools: Option<Value> },
+    StopGeminiLive,
+    SendGeminiLiveText { text: String },
+    SendGeminiLiveToolResponse { id: String, name: String, response: Value },
 }
 
 /// Backend type for LLM provider selection
@@ -16,6 +25,15 @@ pub enum BackendType {
     #[default]
     Gemini,
     OpenAiCompat,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum VoiceModel {
+    #[default]
+    Off,
+    Legacy,
+    GeminiLive,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -36,6 +54,10 @@ pub enum UiToHost {
     SendMessageToActive { text: String, mentions: Vec<MentionSnapshot>, images: Vec<ImageSnapshot> },
     AbortSession { session_id: Uuid },
     LocalAssistantMessageToActive { text: String },
+    /// Set text in the chat composer (UI convenience).
+    SetComposerText { session_id: Uuid, text: String },
+
+    SpeakText { text: String },
 
     // Tool control
     CancelTool { session_id: Uuid, request_id: u64 },
@@ -48,15 +70,17 @@ pub enum UiToHost {
     SelectModel { profile_idx: usize, model: String },
 
     // Provider settings (persisted to settings/ai/providers.json)
-    UpdateGeminiSettings { api_key: String, model_pro: String, model_flash: String, model_image: String },
+    UpdateGeminiSettings { api_key: String, model: String, model_image: String },
     UpdateOpenAiCompatProfile { profile_idx: usize, name: String, base_url: String, api_key: String, models: Vec<String>, selected_model: String },
     AddOpenAiCompatProfile,
     DeleteOpenAiCompatProfile { profile_idx: usize },
 
     // Voice assistant
     SetVoiceAssistantEnabled { enabled: bool },
+    SetVoiceModel { model: VoiceModel },
     UpdateVoiceAssistantSettings {
         enabled: bool,
+        use_gemini_live: bool,
         wake_phrases: String,
         cmd_input_phrases: String,
         cmd_send_phrases: String,
@@ -67,6 +91,16 @@ pub enum UiToHost {
         auto_send_pause_secs: i64,
     },
     RequestVoiceAssistantSettings,
+
+    /// Unified voice start: host decides Gemini Live or Whisper based on settings
+    StartVoice,
+    StopVoice,
+
+    // Gemini Live (real-time voice) - explicit control
+    StartGeminiLive,
+    StopGeminiLive,
+    SendGeminiLiveText { text: String },
+    GeminiLiveToolCall { id: String, name: String, args: Value },
 
     // Misc
     RequestSnapshot,
@@ -91,6 +125,11 @@ pub enum UiToHost {
     IdeSaveAllFiles,
     IdeSetActiveFile { path: PathBuf },
     IdeEditFile { path: PathBuf, version: u64, edits: Vec<TextEdit> },
+    /// Open/activate a file and move the editor cursor (0-based).
+    IdeGotoLine { path: PathBuf, line: u32, col: u32 },
+    IdeRequestCompletion { path: PathBuf, line: u32, col: u32 },
+    IdeRequestDefinition { path: PathBuf, line: u32, col: u32 },
+    IdeRequestHover { path: PathBuf, line: u32, col: u32 },
 
     IdeUndo { path: PathBuf },
     IdeRedo { path: PathBuf },
@@ -129,6 +168,16 @@ pub enum HostToUi {
     ProvidersUpdated { profiles: Vec<ProviderSnapshot>, active_idx: usize },
     /// Voice assistant settings updated
     VoiceAssistantSettingsUpdated(VoiceAssistantSettingsSnapshot),
+    /// Gemini Live state changed
+    GeminiLiveStateChanged { active: bool },
+    /// Gemini Live transcription (what user said)
+    GeminiLiveTranscript { text: String },
+    /// Gemini Live model response text
+    GeminiLiveResponse { text: String },
+    /// Voice listening state changed (for Whisper mode)
+    VoiceListeningChanged { listening: bool },
+    /// UI convenience: set the chat composer text for a session.
+    ComposerTextSet { session_id: Uuid, text: String },
     /// Shutdown acknowledged
     Shutdown,
 
@@ -150,6 +199,8 @@ pub struct WorkspaceSnapshot {
     pub active_provider_idx: usize,
     pub tool_allow_always: Vec<String>,
     pub voice_assistant_enabled: bool,
+    pub voice_model: VoiceModel,
+    pub gemini_live_active: bool,
     pub ide: IdeSnapshot,
 }
 
@@ -326,6 +377,7 @@ pub struct ProviderSnapshot {
 #[derive(Debug, Clone, Default)]
 pub struct VoiceAssistantSettingsSnapshot {
     pub enabled: bool,
+    pub use_gemini_live: bool,
     pub wake_phrases: String,
     pub cmd_input_phrases: String,
     pub cmd_send_phrases: String,
@@ -453,6 +505,11 @@ pub enum IdeEvent {
     FileSaved { path: PathBuf, version: u64 },
     FileDirtyChanged { path: PathBuf, is_dirty: bool },
     ActiveFileChanged { path: Option<PathBuf> },
+    CursorMoved { path: PathBuf, line: u32, col: u32 },
+    DiagnosticsUpdated { path: PathBuf, diagnostics: Vec<DiagnosticSnapshot> },
+    CompletionItems { path: PathBuf, items: Vec<String> },
+    HoverText { path: PathBuf, markdown: String },
+    DefinitionLocation { from: PathBuf, to: PathBuf, line: u32, col: u32 },
     FileError { path: PathBuf, error: String },
 
     // Search / Quick Open
@@ -462,6 +519,16 @@ pub enum IdeEvent {
 
     // Errors
     Error { message: String },
+}
+
+#[derive(Debug, Clone)]
+pub struct DiagnosticSnapshot {
+    pub message: String,
+    pub severity: u8, // 1=Error,2=Warning,3=Info,4=Hint
+    pub start_line: u32,
+    pub start_col: u32,
+    pub end_line: u32,
+    pub end_col: u32,
 }
 
 /// Quick Open result item

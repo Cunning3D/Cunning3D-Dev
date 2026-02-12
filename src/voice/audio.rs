@@ -167,27 +167,36 @@ impl AudioCapture {
 pub struct AudioPlayer;
 
 impl AudioPlayer {
+    pub fn stop() {
+        #[cfg(feature = "voice_rodio")]
+        {
+            RODIO.with(|cell| *cell.borrow_mut() = None);
+        }
+    }
+
     pub fn play_file(path: &str) {
         #[cfg(feature = "voice_rodio")]
         {
-            use rodio::{Decoder, OutputStream, Sink};
+            use rodio::Decoder;
             use std::fs::File;
             use std::io::BufReader;
-            let (_stream, handle) = match OutputStream::try_default() {
+            let sink = match get_sink() {
                 Ok(s) => s,
-                Err(_) => return,
-            };
-            let sink = match Sink::try_new(&handle) {
-                Ok(s) => s,
-                Err(_) => return,
+                Err(e) => { eprintln!("[AudioPlayer] Sink init error: {e}"); return; }
             };
             let file = match File::open(path) {
                 Ok(f) => f,
-                Err(_) => return,
+                Err(e) => {
+                    eprintln!("[AudioPlayer] Failed to open file: {path} ({e})");
+                    return;
+                }
             };
             let source = match Decoder::new(BufReader::new(file)) {
                 Ok(s) => s,
-                Err(_) => return,
+                Err(e) => {
+                    eprintln!("[AudioPlayer] Decode error: {path} ({e})");
+                    return;
+                }
             };
             sink.append(source);
             sink.sleep_until_end();
@@ -202,14 +211,10 @@ impl AudioPlayer {
     pub fn play_bytes(data: &[u8], sample_rate: u32) {
         #[cfg(feature = "voice_rodio")]
         {
-            use rodio::{buffer::SamplesBuffer, OutputStream, Sink};
-            let (_stream, handle) = match OutputStream::try_default() {
+            use rodio::buffer::SamplesBuffer;
+            let sink = match get_sink() {
                 Ok(s) => s,
-                Err(_) => return,
-            };
-            let sink = match Sink::try_new(&handle) {
-                Ok(s) => s,
-                Err(_) => return,
+                Err(_) => { return; }
             };
             let samples: Vec<i16> = data
                 .chunks_exact(2)
@@ -224,4 +229,22 @@ impl AudioPlayer {
             let _ = (data, sample_rate);
         }
     }
+}
+
+#[cfg(feature = "voice_rodio")]
+struct RodioState { _stream: rodio::OutputStream, handle: rodio::OutputStreamHandle }
+
+#[cfg(feature = "voice_rodio")]
+thread_local! { static RODIO: std::cell::RefCell<Option<RodioState>> = const { std::cell::RefCell::new(None) }; }
+
+#[cfg(feature = "voice_rodio")]
+fn get_sink() -> Result<rodio::Sink, String> {
+    RODIO.with(|cell| {
+        let mut g = cell.borrow_mut();
+        if g.is_none() {
+            let (stream, handle) = rodio::OutputStream::try_default().map_err(|e| format!("OutputStream error: {e}"))?;
+            *g = Some(RodioState { _stream: stream, handle });
+        }
+        rodio::Sink::try_new(&g.as_ref().unwrap().handle).map_err(|e| format!("Sink error: {e}"))
+    })
 }

@@ -27,6 +27,7 @@ use uuid::Uuid;
 pub struct ToolRequestMeta {
     pub tool_name: String,
     pub args: serde_json::Value,
+    pub live_call_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

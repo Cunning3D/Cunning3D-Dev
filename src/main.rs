@@ -26,12 +26,12 @@ use crate::{
     },
 };
 use bevy::asset::AssetPlugin;
-use bevy::render::sync_world::SyncToRenderWorld;
 #[cfg(feature = "virtual_geometry_meshlet")]
 use bevy::pbr::experimental::meshlet::{
     MeshToMeshletMeshConversionError, MeshletMesh, MeshletMesh3d, MeshletPlugin,
     MESHLET_DEFAULT_VERTEX_POSITION_QUANTIZATION_FACTOR,
 };
+use bevy::render::sync_world::SyncToRenderWorld;
 #[cfg(feature = "virtual_geometry_meshlet")]
 use bevy::tasks::{futures::future, AsyncComputeTaskPool, Task};
 use bevy::{
@@ -96,31 +96,31 @@ mod ui;
 mod ui_settings;
 mod viewport_options;
 pub use cunning_kernel::volume;
+mod app;
+mod app_jobs;
 mod gpu_text;
 mod input;
 mod invalidator;
 mod render;
 mod scene;
-mod app;
-mod app_jobs;
 
 mod runtime_paths;
 
 pub mod coverlay_bevy_ui; // Bevy UI Coverlay (Viewport Overlay)
-pub mod voxel_editor;
 mod launcher;
+pub mod libs;
 pub mod shelf_bevy_ui;
 pub mod timeline_bevy_ui; // Bevy UI Timeline
 pub mod topbar_bevy_ui; // Bevy UI Topbar (Desktop) // Bevy UI Shelf (Desktop)
 mod voice;
 mod voice_assistant;
-pub mod libs;
+pub mod voxel_editor;
 
 // --- V5.0 Architecture Modules ---
 pub mod cunning_core;
 use crate::cunning_core::ai_service::native_candle::NativeAiPlugin;
-pub mod tabs_registry;
 pub mod ai_workspace_gpui;
+pub mod tabs_registry;
 
 // mod cunning_shelf; // Not implemented yet
 
@@ -136,7 +136,7 @@ fn auto_switch_mobile_mode(
             if matches!(ui_state.layout_mode, crate::ui::LayoutMode::Desktop) {
                 ui_state.layout_mode = crate::ui::LayoutMode::Phone;
                 ui_state.mobile_active_tab = crate::ui::MobileTab::Viewport;
-                
+
                 #[cfg(target_arch = "wasm32")]
                 info!(
                     "Auto-switched to Phone Mode based on window width: {}",
@@ -170,10 +170,7 @@ fn sync_meshlet_virtual_geometry_system(
             Without<MeshletConversionTask>,
         ),
     >,
-    query_meshlet: Query<
-        (Entity, &MeshletOriginalMesh),
-        (With<FinalMeshTag>, With<MeshletMesh3d>),
-    >,
+    query_meshlet: Query<(Entity, &MeshletOriginalMesh), (With<FinalMeshTag>, With<MeshletMesh3d>)>,
     query_pending: Query<Entity, (With<FinalMeshTag>, With<MeshletConversionTask>)>,
 ) {
     let enabled = display_options.meshlet_virtual_geometry;
@@ -191,7 +188,9 @@ fn sync_meshlet_virtual_geometry_system(
             if *msaa == Msaa::Off {
                 *msaa = orig.0.clone();
             }
-            commands.entity(cam_entity).remove::<OriginalMainCameraMsaa>();
+            commands
+                .entity(cam_entity)
+                .remove::<OriginalMainCameraMsaa>();
         }
     }
 
@@ -248,9 +247,10 @@ fn sync_meshlet_virtual_geometry_system(
                 MESHLET_DEFAULT_VERTEX_POSITION_QUANTIZATION_FACTOR,
             )
         });
-        commands
-            .entity(e)
-            .insert((MeshletOriginalMesh(mesh_3d.0.clone()), MeshletConversionTask(task)));
+        commands.entity(e).insert((
+            MeshletOriginalMesh(mesh_3d.0.clone()),
+            MeshletConversionTask(task),
+        ));
         spawned += 1;
     }
 }
@@ -258,7 +258,10 @@ fn sync_meshlet_virtual_geometry_system(
 #[cfg(feature = "virtual_geometry_meshlet")]
 fn poll_meshlet_conversion_tasks_system(
     mut commands: Commands,
-    mut tasks: Query<(Entity, &mut MeshletConversionTask, &MeshletOriginalMesh), With<FinalMeshTag>>,
+    mut tasks: Query<
+        (Entity, &mut MeshletConversionTask, &MeshletOriginalMesh),
+        With<FinalMeshTag>,
+    >,
     mut meshlet_mesh_assets: ResMut<Assets<MeshletMesh>>,
 ) {
     for (e, mut task, _orig) in tasks.iter_mut() {
@@ -443,7 +446,9 @@ fn main() {
         .add_plugins(invalidator::InvalidatorPlugin)
         .add_plugins(NativeAiPlugin)
         .add_plugins(crate::cunning_core::ai_service::native_tiny_model::NativeTinyModelPlugin)
-        .insert_resource(crate::cunning_core::ai_service::gemini::copilot_host::GeminiCopilotHost::new())
+        .insert_resource(
+            crate::cunning_core::ai_service::gemini::copilot_host::GeminiCopilotHost::new(),
+        )
         // Connection hint removed (feature disabled).
         .add_plugins(crate::voice::VoiceServicePlugin)
         .add_plugins(crate::voice_assistant::AiVoiceAssistantPlugin)
@@ -488,6 +493,7 @@ fn main() {
         .init_resource::<settings::SettingsStores>()
         .init_resource::<crate::app::windowing::PendingNaiveWindows>()
         .init_resource::<crate::app::windowing::GpuiAiWorkspaceState>()
+        .init_resource::<crate::app::windowing::WinCornerClipState>()
         .init_resource::<AsyncComputeState>() // Phase 3: Async Compute
         .init_resource::<CookThrottleState>() // Cook throttle for interaction (10-15Hz during drag)
         .insert_resource(theme::ModernTheme::dark()) // Use dark theme by default
@@ -499,10 +505,10 @@ fn main() {
             OnEnter(AppState::Editor),
             (
                 crate::app::startup::setup_3d_scene,
-                setup_theme,
                 console::init_global_console,
                 crate::cunning_core::cda::library::init_global_cda_library,
                 crate::app::startup::register_voxel_coverlay_pressure_test_cda,
+                crate::app::startup::auto_open_ai_workspace_if_missing_api,
                 bridge_startup::import_bridge_on_enter,
                 tabs_system::viewport_3d::gizmo_systems::configure_gizmos_system,
                 crate::render::grid_plane::setup_grid_plane_system,
@@ -554,6 +560,15 @@ fn main() {
         )
         .add_systems(
             Update,
+            (
+                setup_theme.run_if(run_once),
+                install_egui_image_loaders.run_if(run_once),
+            )
+                .run_if(in_state(AppState::Editor))
+                .before(show_editor_ui),
+        )
+        .add_systems(
+            Update,
             tabs_system::timeline::timeline_playback_system
                 .run_if(in_state(AppState::Editor))
                 .before(show_editor_ui),
@@ -569,12 +584,15 @@ fn main() {
         // Phase 3: Non-blocking Compute Pipeline
         .add_systems(Update, dispatch_compute_tasks)
         .add_systems(Update, receive_compute_results)
-        .add_systems(Update, crate::scene::systems::update_3d_scene_from_node_graph)
+        .add_systems(
+            Update,
+            crate::scene::systems::update_3d_scene_from_node_graph,
+        )
         .add_systems(Update, sync_active_group_toggle_system) // [NEW] Sync active group when toggle changes
         .add_systems(
             Update,
             tabs_system::viewport_3d::group_highlight::update_group_highlight_system,
-            )
+        )
         // Viewport render texture and grid (Editor only)
         .add_systems(
             Update,
@@ -588,7 +606,7 @@ fn main() {
         )
         // Handle camera view change events from viewport gizmo
         .add_systems(Startup, crate::app::startup::setup_registries)
-        .add_systems(Startup, install_egui_image_loaders) // [FIX] Install svg loaders
+        .add_systems(Startup, crate::app::startup::init_bevy_text_system_fonts)
         // Initialize fonts for newly spawned windows at the correct egui stage boundary (prevents "No fonts loaded" crash).
         .add_systems(
             PreUpdate,
@@ -611,7 +629,17 @@ fn main() {
         .add_systems(Update, handle_camera_view_events)
         .add_systems(Update, crate::camera::handle_camera_rotate_events)
         .add_systems(Update, crate::camera::camera_transition_system)
-        .add_systems(Update, crate::camera::turntable_camera_system.run_if(in_state(AppState::Editor)).after(crate::camera::camera_transition_system))
+        .add_systems(
+            Update,
+            crate::camera::turntable_camera_system
+                .run_if(in_state(AppState::Editor))
+                .after(crate::camera::camera_transition_system),
+        )
+        .add_systems(
+            Update,
+            crate::app::windowing::apply_win_round_corners_system
+                .run_if(in_state(AppState::Editor)),
+        )
         // Camera parameters and multi-window management
         .add_systems(
             Update,
@@ -623,21 +651,36 @@ fn main() {
             ),
         )
         // Must run before Bevy's `camera_system` (CameraUpdateSystems is in PostUpdate).
-        .add_systems(PostUpdate, crate::camera::sanitize_camera_window_targets_system)
+        .add_systems(
+            PostUpdate,
+            crate::camera::sanitize_camera_window_targets_system,
+        )
         .add_systems(
             Update,
             (
                 crate::app::windowing::spawn_naive_window_system,
-                crate::app::windowing::handle_float_tab_window_system,
-                crate::app::windowing::handle_open_settings_window_system,
                 crate::app::windowing::handle_open_ai_workspace_window_system,
                 crate::app::windowing::gpui_ai_workspace_voice_bridge_system,
                 crate::app::windowing::handle_open_node_info_window_system,
                 crate::app::windowing::cleanup_floating_windows_on_close_system,
             ),
         )
+        // IMPORTANT: floating egui windows must be spawned AFTER `EguiSet::ProcessOutput`,
+        // otherwise they can hit `end_frame/tessellate` in the same frame without a prior `begin_frame`,
+        // causing `egui` to panic with "No fonts loaded".
+        .add_systems(
+            PostUpdate,
+            (
+                crate::app::windowing::handle_float_tab_window_system,
+                crate::app::windowing::handle_open_settings_window_system,
+            )
+                .after(EguiSet::ProcessOutput),
+        )
         // Spawn cameras for newly-created windows only after the Window component is applied.
-        .add_systems(PostUpdate, crate::app::windowing::spawn_naive_camera_after_window_ready_system)
+        .add_systems(
+            PostUpdate,
+            crate::app::windowing::spawn_naive_camera_after_window_ready_system,
+        )
         // NOTE: Desktop top/bottom reserved by egui spacer panels in tabs_system/mod.rs
         // DisplayOptions-dependent visibility/material systems
         .add_systems(
@@ -729,7 +772,7 @@ fn sync_active_group_toggle_system(
     if !display_options.is_changed() {
         return;
     }
-    
+
     if !display_options.overlays.highlight_active_group {
         return;
     }
@@ -750,19 +793,19 @@ fn sync_active_group_toggle_system(
 
             if let Some(ParameterValue::String(name)) = find_param("group_name") {
                 if !name.is_empty() {
-                     if let Some(ParameterValue::Int(type_idx)) = find_param("group_type") {
-                         match type_idx {
-                             0 => point_group = Some(name.clone()),
+                    if let Some(ParameterValue::Int(type_idx)) = find_param("group_type") {
+                        match type_idx {
+                            0 => point_group = Some(name.clone()),
                             2 => vertex_group = Some(name.clone()),
                             3 => edge_group = Some(name.clone()),
-                             _ => {}
-                         }
-                     }
+                            _ => {}
+                        }
+                    }
                 }
             }
         }
     }
-    
+
     // Update if different
     if display_options.overlays.point_group_viz != point_group {
         display_options.overlays.point_group_viz = point_group;

@@ -15,6 +15,7 @@ pub struct GeminiCopilotHost {
 pub struct GeminiCopilotRequest {
     pub id: String,
     pub prompt: String,
+    pub model: Option<String>,
 }
 #[derive(Clone, Debug)]
 pub struct GeminiCopilotResponse {
@@ -65,9 +66,7 @@ impl GeminiCopilotHost {
                 }
             }
             fn load_gemini_key_from_settings() -> Option<String> {
-                let cwd = std::env::current_dir().ok()?;
-                let path = cwd.join("settings/ai/providers.json");
-                let raw = std::fs::read_to_string(path).ok()?;
+                let raw = std::fs::read_to_string(crate::runtime_paths::ai_providers_path()).ok()?;
                 let v: Value = serde_json::from_str(&raw).ok()?;
                 v.get("gemini")
                     .and_then(|g| g.get("api_key"))
@@ -75,26 +74,8 @@ impl GeminiCopilotHost {
                     .map(str::to_string)
                     .filter(|s| !s.trim().is_empty())
             }
-            fn load_gemini_models_from_settings() -> (Option<String>, Option<String>) {
-                let Some(cwd) = std::env::current_dir().ok() else { return (None, None); };
-                let path = cwd.join("settings/ai/providers.json");
-                let Ok(raw) = std::fs::read_to_string(path) else { return (None, None); };
-                let Ok(v) = serde_json::from_str::<Value>(&raw) else { return (None, None); };
-                let Some(g) = v.get("gemini") else { return (None, None); };
-                let pro = g
-                    .get("model_pro")
-                    .or_else(|| g.get("model"))
-                    .and_then(|x| x.as_str())
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty());
-                let flash = g
-                    .get("model_flash")
-                    .or_else(|| g.get("model_text"))
-                    .and_then(|x| x.as_str())
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty());
-                (pro, flash)
-            }
+            const MODEL_PRO: &str = "gemini-3-pro-preview";
+            const MODEL_FAST: &str = "gemini-3-flash-preview";
             let client = Client::builder()
                 .connect_timeout(Duration::from_secs(10))
                 .timeout(Duration::from_secs(60))
@@ -103,31 +84,21 @@ impl GeminiCopilotHost {
                 error!("GeminiCopilotHost: failed to build reqwest client: {}", e);
                 Client::new()
             });
-            let api_key = std::env::var("GEMINI_API_KEY")
-                .ok()
-                .filter(|s| !s.trim().is_empty())
-                .or_else(load_gemini_key_from_settings)
-                .unwrap_or_default();
-            let (pro_cfg, flash_cfg) = load_gemini_models_from_settings();
-            let model_pro = std::env::var("CUNNING_GEMINI_MODEL_PRO")
-                .ok()
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .or(pro_cfg)
-                .unwrap_or_else(|| "gemini-3-pro-preview".to_string());
-            let model_flash = std::env::var("CUNNING_GEMINI_MODEL_FLASH")
-                .ok()
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .or(flash_cfg)
-                .unwrap_or_else(|| "gemini-3-flash".to_string());
+            let api_key = {
+                let env = crate::cunning_core::ai_service::gemini::api_key::read_gemini_api_key_env();
+                if !env.is_empty() { Some(env) } else { None }
+            }
+            .or_else(load_gemini_key_from_settings)
+            .unwrap_or_default();
+            let model_pro = MODEL_PRO.to_string();
+            let model_fast = MODEL_FAST.to_string();
             const MAX_INFLIGHT: usize = 8;
             while let Ok(req) = rx_req.recv() {
                 let inflight = inflight.clone();
                 let client = client.clone();
                 let api_key = api_key.clone();
                 let model_pro = model_pro.clone();
-                let model_flash = model_flash.clone();
+                let model_fast = model_fast.clone();
                 let tx_res = tx_res.clone();
                 {
                     let (m, cv) = &*inflight;
@@ -138,9 +109,11 @@ impl GeminiCopilotHost {
                     *n += 1;
                 }
                 thread::spawn(move || {
+                    let chosen_model = req.model.as_deref().unwrap_or(model_fast.as_str());
                     info!(
-                        "GeminiCopilotHost: request id={} prompt_len={}",
+                        "GeminiCopilotHost: request id={} model={} prompt_len={}",
                         req.id,
+                        chosen_model,
                         req.prompt.len()
                     );
                     let do_req = |prompt: &str, max_tokens: i64| -> Result<(Value, String), String> {
@@ -156,9 +129,11 @@ impl GeminiCopilotHost {
                         let try_model = |m: &str| -> Result<(u16, String), String> {
                             post_json_with_retry(&client, &api_key, m, &body, 3)
                         };
-                        // Speed-first: Flash by default; fallback to Pro only when model is missing (404).
-                        let (status, txt) = match try_model(&model_flash) {
-                            Ok((404, _)) => try_model(&model_pro)?,
+                        let primary = req.model.as_deref().unwrap_or(model_fast.as_str());
+                        let secondary = if primary == model_fast.as_str() { model_pro.as_str() } else { model_fast.as_str() };
+                        // Node Editor chooses Fast/Pro by model name; fallback to the other only on 404.
+                        let (status, txt) = match try_model(primary) {
+                            Ok((404, _)) => try_model(secondary)?,
                             Ok(v) => v,
                             Err(e) => return Err(e),
                         };
@@ -276,6 +251,15 @@ impl GeminiCopilotHost {
         let _ = self.tx.send(GeminiCopilotRequest {
             id: id.to_string(),
             prompt: prompt.to_string(),
+            model: None,
+        });
+    }
+
+    pub fn request_with_model(&self, id: &str, prompt: &str, model: Option<&str>) {
+        let _ = self.tx.send(GeminiCopilotRequest {
+            id: id.to_string(),
+            prompt: prompt.to_string(),
+            model: model.map(|m| m.to_string()),
         });
     }
     pub fn poll(&self) -> Vec<GeminiCopilotResponse> {

@@ -14,7 +14,7 @@ use crate::nodes::structs::{NodeGraphResource, NodeId, NodeType, PortId};
 use crate::nodes::port_key;
 use crate::register_node;
 
-use crate::nodes::voxel::voxel_edit::{voxel_render_register_chunks, ATTR_VOXEL_SIZE_DETAIL};
+use crate::nodes::voxel::voxel_edit::ATTR_VOXEL_SIZE_DETAIL;
 use cunning_kernel::algorithms::algorithms_editor::voxel as vox;
 
 use super::nano_to_3d_common::*;
@@ -274,7 +274,7 @@ Rules:
             let (chunks, solid) = raster_points_to_voxel_chunks(&points3, spec.voxel_size, spec.pi);
             let node_uuid = uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_URL, format!("c3d:nano_to_voxel:{}:{}", spec.node_id, spec.gen.max(0)).as_bytes());
             let palette = vox::DiscreteVoxelGrid::new(spec.voxel_size.max(0.001)).palette;
-            voxel_render_register_chunks(node_uuid, spec.voxel_size.max(0.001), palette, chunks, solid);
+            cunning_kernel::nodes::voxel::voxel_edit::voxel_render_register_chunks(node_uuid, spec.voxel_size.max(0.001), palette, chunks, solid);
             Ok((rel, node_uuid.to_string()))
         })();
         let (depth_atlas_rel, voxel_node, err) = match r {

@@ -44,7 +44,7 @@ pub(crate) fn import_vox_bytes(bytes: &[u8], node_id: Uuid, voxel_size: f32) -> 
         let p = p - mn;
         grid.set(p.x, p.y, p.z, vox::DiscreteVoxel { palette_index: pi, color_override: None });
     }
-    crate::nodes::voxel::voxel_edit::voxel_render_register_grid(node_id, voxel_size, grid);
+    cunning_kernel::nodes::voxel::voxel_edit::voxel_render_register_grid(node_id, voxel_size, grid);
     let mut geo = Geometry::new();
     geo.set_detail_attribute(ATTR_VOXEL_SIZE_DETAIL, vec![voxel_size]);
     geo.set_detail_attribute("__voxel_pure", vec![1.0f32]);

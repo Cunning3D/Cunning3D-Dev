@@ -1,6 +1,7 @@
 #![cfg(target_os = "windows")]
 
 use std::{os::windows::ffi::OsStringExt, path::PathBuf};
+use windows_core::Interface;
 use windows::{
     Win32::{
         Foundation::{

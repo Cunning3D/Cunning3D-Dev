@@ -127,12 +127,12 @@ impl<D: PickerDelegate> Render for Picker<D> {
             .bg(ThemeColors::bg_elevated())
             .border_1()
             .border_color(ThemeColors::border())
-            .rounded_md()
+            .rounded_sm()
             .shadow_lg()
             .overflow_hidden()
             .child(
                 div()
-                    .p(Spacing::Base06.px())
+                    .p(Spacing::Base04.px())
                     .border_b_1()
                     .border_color(ThemeColors::border())
                     .child(self.query_editor.clone())
@@ -144,9 +144,9 @@ impl<D: PickerDelegate> Render for Picker<D> {
                         .flex_1()
                         .when_some(self.max_height, |d, h| d.max_h(px(h)))
                         .overflow_y_scroll()
-                        .p(Spacing::Base04.px());
+                        .p(Spacing::Base02.px());
                     let base = if items.is_empty() {
-                        base.child(div().p(Spacing::Base08.px()).child(Label::new("No matches").color(LabelColor::Muted)))
+                        base.child(div().p(Spacing::Base06.px()).child(Label::new("No matches").color(LabelColor::Muted)))
                     } else {
                         base
                     };

@@ -1,6 +1,7 @@
 //! Simple Markdown renderer for chat messages (code blocks, bold, italic, links).
-use gpui::{AnyElement, IntoElement, ParentElement, SharedString, Styled, div, prelude::*, px};
-use super::{v_flex, ThemeColors, Label, LabelColor, LabelSize, Spacing};
+use gpui::{AnyElement, IntoElement, ParentElement, Styled, div, prelude::*, px};
+use super::{v_flex, ThemeColors, Label, LabelColor, LabelSize, Spacing, UiMetrics};
+use crate::ai_workspace_gpui::components::CodeBlock;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Markdown Parser
@@ -171,8 +172,11 @@ impl IntoElement for Markdown {
     type Element = <gpui::Div as IntoElement>::Element;
 
     fn into_element(self) -> Self::Element {
-        let children: Vec<AnyElement> = self.blocks.into_iter().map(|block| {
-            match block {
+        let children: Vec<AnyElement> = self
+            .blocks
+            .into_iter()
+            .enumerate()
+            .map(|(idx, block)| match block {
                 MarkdownBlock::Paragraph(spans) => {
                     let span_elements: Vec<AnyElement> = spans.into_iter().map(|span| {
                         match span {
@@ -186,28 +190,12 @@ impl IntoElement for Markdown {
                     div().flex().flex_wrap().gap(px(2.0)).children(span_elements).into_any_element()
                 }
                 MarkdownBlock::CodeBlock { language, code } => {
-                    v_flex()
-                        .w_full()
-                        .my(Spacing::Base04.px())
-                        .bg(ThemeColors::bg_elevated())
-                        .border_1()
-                        .border_color(ThemeColors::border())
-                        .rounded_md()
-                        .overflow_hidden()
-                        .child(
-                            div().w_full().px(Spacing::Base06.px()).py(Spacing::Base02.px()).bg(ThemeColors::bg_secondary()).border_b_1().border_color(ThemeColors::border())
-                                .child(Label::new(language.unwrap_or_else(|| "code".into())).size(LabelSize::XSmall).color(LabelColor::Muted))
-                        )
-                        .child(
-                            div().id("markdown-code-scroll").w_full().p(Spacing::Base06.px()).overflow_x_scroll()
-                                .text_size(px(12.0))
-                                .text_color(ThemeColors::text_primary())
-                                .child(code)
-                        )
-                        .into_any_element()
+                    let mut cb = CodeBlock::new(idx, code);
+                    if let Some(l) = language { cb = cb.language(l); }
+                    cb.into_any_element()
                 }
                 MarkdownBlock::Heading { level, text } => {
-                    let size = match level { 1 => px(24.0), 2 => px(20.0), 3 => px(18.0), _ => px(16.0) };
+                    let size = match level { 1 => px(18.0), 2 => px(16.0), 3 => px(14.0), _ => px(13.0) };
                     div().w_full().my(Spacing::Base04.px()).text_size(size).font_weight(gpui::FontWeight::BOLD).text_color(ThemeColors::text_primary()).child(text).into_any_element()
                 }
                 MarkdownBlock::List { ordered, items } => {
@@ -229,8 +217,8 @@ impl IntoElement for Markdown {
                 MarkdownBlock::HorizontalRule => {
                     div().w_full().h(px(1.0)).my(Spacing::Base08.px()).bg(ThemeColors::border()).into_any_element()
                 }
-            }
-        }).collect();
+            })
+            .collect();
 
         v_flex().w_full().gap(Spacing::Base02.px()).children(children).into_element()
     }

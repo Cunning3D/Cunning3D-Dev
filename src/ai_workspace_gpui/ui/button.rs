@@ -1,6 +1,6 @@
 //! Button component (Zed-style API, refined dark theme)
 use gpui::{AnyElement, App, ClickEvent, ElementId, IntoElement, ParentElement, SharedString, Styled, Window, div, prelude::*, px};
-use super::{ThemeColors, Spacing};
+use super::{ThemeColors, Spacing, UiMetrics};
 
 #[derive(Clone, Copy, Default, PartialEq)]
 pub enum ButtonStyle { #[default] Ghost, Filled, Tinted(TintColor), Icon, Subtle }
@@ -37,7 +37,7 @@ impl IntoElement for Button {
     fn into_element(self) -> Self::Element {
         let is_icon = matches!(self.style, ButtonStyle::Icon);
         let (bg, text_color, border, hover_bg) = match self.style {
-            ButtonStyle::Ghost => (ThemeColors::bg_elevated(), ThemeColors::text_secondary(), true, ThemeColors::bg_hover()),
+            ButtonStyle::Ghost => (gpui::transparent_black(), ThemeColors::text_secondary(), false, ThemeColors::bg_hover()),
             ButtonStyle::Filled => (ThemeColors::bg_active(), ThemeColors::text_primary(), true, ThemeColors::bg_selected()),
             ButtonStyle::Icon => (gpui::transparent_black(), ThemeColors::text_muted(), false, ThemeColors::bg_hover()),
             ButtonStyle::Subtle => (gpui::transparent_black(), ThemeColors::text_secondary(), false, ThemeColors::bg_elevated()),
@@ -53,12 +53,13 @@ impl IntoElement for Button {
         } else {
             match self.size {
                 ButtonSize::Compact => (Spacing::Base04.px(), Spacing::Base02.px()),
-                ButtonSize::Default => (Spacing::Base08.px(), Spacing::Base04.px()),
-                ButtonSize::Large => (Spacing::Base12.px(), Spacing::Base06.px()),
+                ButtonSize::Default => (Spacing::Base06.px(), Spacing::Base02.px()),
+                ButtonSize::Large => (Spacing::Base08.px(), Spacing::Base04.px()),
             }
         };
-        let base = div().id(self.id).flex_none().items_center().justify_center().px(px_h).py(px_v).bg(bg).text_color(text_color).rounded_md().cursor_pointer()
-            .when(is_icon, |d| d.text_size(px(16.0)).min_w(px(28.0)).min_h(px(28.0)))
+        let base = div().id(self.id).flex_none().items_center().justify_center().px(px_h).py(px_v).bg(bg).text_color(text_color).rounded_sm().cursor_pointer()
+            .text_size(px(UiMetrics::BUTTON_TEXT))
+            .when(is_icon, |d| d.text_size(px(UiMetrics::BUTTON_ICON_TEXT)).min_w(px(UiMetrics::BUTTON_ICON_MIN)).min_h(px(UiMetrics::BUTTON_ICON_MIN)))
             .when(border, |d| d.border_1().border_color(ThemeColors::border()))
             .when(!self.disabled, |d| d.hover(|s| s.bg(hover_bg).text_color(ThemeColors::text_primary())).active(|s| s.opacity(0.85)))
             .when(self.disabled, |d| d.opacity(0.5).cursor_default())

@@ -30,11 +30,11 @@ impl Render for Popover {
             .id("popover")
             .track_focus(&self.focus_handle)
             .on_mouse_down_out(cx.listener(|_, _, _, cx| cx.emit(DismissEvent)))
-            .p(Spacing::Base04.px())
+            .p(Spacing::Base02.px())
             .bg(ThemeColors::bg_elevated())
             .border_1()
             .border_color(ThemeColors::border())
-            .rounded_md()
+            .rounded_sm()
             .shadow_lg()
             .child(content)
     }

@@ -61,7 +61,7 @@ impl PickerDelegate for CommandPaletteDelegate {
         h_flex()
             .w_full()
             .px(Spacing::Base06.px())
-            .py(Spacing::Base04.px())
+            .py(Spacing::Base02.px())
             .justify_between()
             .items_center()
             .rounded_sm()
@@ -116,7 +116,7 @@ impl Render for CommandPalette {
             .bg(ThemeColors::bg_secondary())
             .border_1()
             .border_color(ThemeColors::border())
-            .rounded_md()
+            .rounded_sm()
             .shadow_lg()
             .child(self.picker.clone())
     }

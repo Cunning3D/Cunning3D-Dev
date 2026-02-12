@@ -5,15 +5,21 @@
 - **Prereqs**: Visual Studio 2022 (MSVC), Rust, Windows SDK (makeAppx), Inno Setup 6.
 - **Optional signing (CI)**: Azure Trusted Signing `Invoke-TrustedSigning` available on runner.
 
-Run from repo root:
+Run from `Cunning3D_1.0` repo root:
 
 ```powershell
+# From workspace root:
+cd .\Cunning3D_1.0
+
 # Optional: embed encrypted knowledge.pack into assets/ (requires CUNNING_KNOWLEDGE_KEY)
 $env:CUNNING_KNOWLEDGE_KEY="***"
 .\script\bundle-windows.ps1 -Architecture x86_64 -BuildKnowledgePack
 
-# Without knowledge.pack (dev build)
+# Without knowledge.pack (default release build features: no CUDA, no whisper)
 .\script\bundle-windows.ps1 -Architecture x86_64
+
+# Full default features (may require CUDA toolkit + CMake)
+.\script\bundle-windows.ps1 -Architecture x86_64 -UseDefaultFeatures
 ```
 
 Outputs:

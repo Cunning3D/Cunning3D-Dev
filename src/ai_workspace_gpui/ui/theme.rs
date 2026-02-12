@@ -11,7 +11,7 @@ impl ThemeColors {
     pub fn bg_hover() -> Hsla { rgb(0x2f2f2f).into() }
     pub fn bg_active() -> Hsla { rgb(0x3a3a3a).into() }
     pub fn bg_selected() -> Hsla { rgb(0x264f78).into() }
-    pub fn border() -> Hsla { rgb(0x2a2a2a).into() }
+    pub fn border() -> Hsla { rgb(0x252525).into() }
     pub fn border_focus() -> Hsla { rgb(0x007acc).into() }
     pub fn text_primary() -> Hsla { rgb(0xffffff).into() }
     pub fn text_secondary() -> Hsla { rgb(0xa0a0a0).into() }

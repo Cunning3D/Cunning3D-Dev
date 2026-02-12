@@ -1,0 +1,11 @@
+node_modules
+build
+/*.wgsl
+/*.txt
+/parser.exp
+/parser.lib
+/parser.obj
+/scanner.obj
+target
+.ccls-cache
+Cargo.lock

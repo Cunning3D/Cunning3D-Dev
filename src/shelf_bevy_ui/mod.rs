@@ -1,5 +1,8 @@
 //! Bevy UI Shelf (Desktop) - cgui-based Houdini-style shelf toolbar
 use crate::launcher::plugin::AppState;
+use crate::app::window_frame::{
+    WINDOW_SAFE_INSET_LP, WINDOW_SHELF_H_LP, WINDOW_TOPBAR_H_LP, WINDOW_UI_SURFACE_BG_SRGBA,
+};
 use crate::timeline_bevy_ui::TimelineUiCamera;
 use crate::ui::{ShelfCommand, ShelfTab, UiState};
 use bevy::camera::visibility::RenderLayers;
@@ -71,8 +74,8 @@ struct ShelfUiSpawnGate {
 pub struct ShelfUiPlugin;
 
 const UI_LAYER: usize = 31;
-const TOPBAR_H: f32 = 28.0;
-const SHELF_H: f32 = 80.0;
+const TOPBAR_H: f32 = WINDOW_TOPBAR_H_LP;
+const SHELF_H: f32 = WINDOW_SHELF_H_LP;
 
 impl Plugin for ShelfUiPlugin {
     fn build(&self, app: &mut App) {
@@ -126,8 +129,8 @@ fn spawn_shelf_ui_once(
             position_type: cgui::PositionType::Absolute,
             left: cgui::Val::Px(0.0),
             right: cgui::Val::Px(0.0),
-            top: cgui::Val::Px(0.0),
-            height: cgui::Val::Px(TOPBAR_H + SHELF_H),
+            top: cgui::Val::Px(WINDOW_SAFE_INSET_LP + TOPBAR_H),
+            height: cgui::Val::Px(SHELF_H),
             ..default()
         })
         .id();
@@ -143,13 +146,19 @@ fn spawn_shelf_ui_once(
             position_type: cgui::PositionType::Absolute,
             left: cgui::Val::Px(0.0),
             right: cgui::Val::Px(0.0),
-            top: cgui::Val::Px(TOPBAR_H),
+            top: cgui::Val::Px(0.0),
             height: cgui::Val::Px(SHELF_H),
             flex_direction: cgui::FlexDirection::Row,
             align_items: cgui::AlignItems::Stretch,
+            padding: cgui::UiRect::horizontal(cgui::Val::Px(WINDOW_SAFE_INSET_LP)),
             ..default()
         })
-        .insert(cgui::BackgroundColor(Color::srgba(0.18, 0.18, 0.20, 0.98)))
+        .insert(cgui::BackgroundColor(Color::srgba(
+            WINDOW_UI_SURFACE_BG_SRGBA[0],
+            WINDOW_UI_SURFACE_BG_SRGBA[1],
+            WINDOW_UI_SURFACE_BG_SRGBA[2],
+            WINDOW_UI_SURFACE_BG_SRGBA[3],
+        )))
         .id();
 
     commands.entity(root).add_child(bar);
@@ -631,19 +640,27 @@ fn tools_for_tab(tab: ShelfTab) -> &'static [ShelfTool] {
 
 fn tool_label(t: ShelfTool) -> (&'static str, &'static str) {
     match t {
-        ShelfTool::Cube => ("[=]", "Cube"),
-        ShelfTool::Sphere => ("( )", "Sphere"),
-        ShelfTool::Transform => ("<+>", "Transform"),
-        ShelfTool::Promote => ("[^]", "Promote"),
-        ShelfTool::Merge => ("[+]", "Merge"),
+        // Shelf icons are Unicode placeholders; replace with textures later.
+        ShelfTool::Cube => ("⬛", "Cube"),
+        ShelfTool::Sphere => ("●", "Sphere"),
+        ShelfTool::Transform => ("✥", "Transform"),
+        ShelfTool::Promote => ("⬆", "Promote"),
+        ShelfTool::Merge => ("⋈", "Merge"),
         ShelfTool::Dummy(s) => match s {
-            "Grid" => ("[#]", s),
-            "Torus" => ("(O)", s),
-            "Tube" => ("[|]", s),
-            "Bend" => ("[~]", s),
-            "Twist" => ("[%]", s),
-            "Bone" => ("[I]", s),
-            _ => ("[ ]", s),
+            "Grid" => ("▦", s),
+            "Torus" => ("◎", s),
+            "Tube" => ("▯", s),
+            "Bend" => ("⤴", s),
+            "Twist" => ("⟲", s),
+            "Noise" => ("≈", s),
+            "Bone" => ("🦴", s),
+            "Edit" => ("✎", s),
+            "Clip" => ("✂", s),
+            "Extrude" => ("⤒", s),
+            "Facet" => ("◇", s),
+            "IK" => ("⛓", s),
+            "Weight" => ("⚖", s),
+            _ => ("□", s),
         },
     }
 }

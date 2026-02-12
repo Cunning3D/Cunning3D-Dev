@@ -33,6 +33,7 @@ pub const ATTR_VOXEL_PI_U8: &str = "__voxel_pi_u8";
 pub const ATTR_VOXEL_PALETTE_JSON: &str = "__voxel_palette_json";
 pub const ATTR_VOXEL_MASK_CELLS_I32: &str = "__voxel_mask_cells_i32";
 const ATTR_VOXEL_CHUNK_PRIM: &str = "__voxel_chunk";
+const ATTR_VOXEL_BASE_SIG: &str = "__voxel_base_sig";
 
 #[derive(Default)]
 pub struct VoxelEditNode;
@@ -106,7 +107,7 @@ fn read_voxel_node_id(g: &Geometry) -> Option<uuid::Uuid> {
 
 #[inline]
 fn read_base_grid_from_input(input: &Geometry, voxel_size: f32) -> Option<vox::DiscreteVoxelGrid> {
-    read_discrete_payload(input, voxel_size).or_else(|| read_voxel_node_id(input).and_then(voxel_edit_cache_get_grid))
+    read_discrete_payload(input, voxel_size).or_else(|| read_voxel_node_id(input).and_then(|id| cunning_kernel::nodes::voxel::voxel_edit::voxel_render_get_grid(id)))
 }
 
 #[inline]
@@ -445,6 +446,15 @@ pub fn voxel_render_clear_all() {
     }
 }
 
+/// Compute the instance-salted cache key for a CDA-contained voxel node.
+#[inline]
+pub fn voxel_render_key_for_instance(inst_id: uuid::Uuid, node_id: uuid::Uuid) -> uuid::Uuid {
+    let mut b = [0u8; 32];
+    b[..16].copy_from_slice(inst_id.as_bytes());
+    b[16..].copy_from_slice(node_id.as_bytes());
+    uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, &b)
+}
+
 /// Incrementally sync a cmdlist into the voxel render cache (GPU preview path).
 /// Returns the cache-keyed node id used by the render pipeline (instance-salted).
 #[inline]
@@ -454,10 +464,7 @@ pub fn voxel_render_sync_cmds_for_instance(
     voxel_size: f32,
     cmds: &vox::DiscreteVoxelCmdList,
 ) -> uuid::Uuid {
-    let mut b = [0u8; 32];
-    b[..16].copy_from_slice(inst_id.as_bytes());
-    b[16..].copy_from_slice(node_id.as_bytes());
-    let keyed = uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, &b);
+    let keyed = voxel_render_key_for_instance(inst_id, node_id);
     voxel_render_sync_cmds(keyed, voxel_size, cmds);
     keyed
 }
@@ -679,86 +686,79 @@ pub fn compute_voxel_edit_cached(
         return compute_voxel_edit(prev_cached.as_deref(), input, params);
     }
 
-    // --- Grid cache (avoid O(voxel_count) payload decode every cook) ---
-    let cache_map = VOXEL_EDIT_COOK_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    let mut cache_map = cache_map.lock().unwrap();
-    let cache = cache_map
-        .entry(node_id)
-        .or_insert_with(|| VoxelEditCookCache::new(voxel_size, want_input));
+    // --- Kernel-side voxel render cache (single source of truth for viewport rendering) ---
+    let prev_base_sig = prev_cached
+        .as_deref()
+        .and_then(|g| g.get_detail_attribute(ATTR_VOXEL_BASE_SIG))
+        .and_then(|a| a.as_slice::<String>())
+        .and_then(|v| v.first())
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(0);
 
-    if (cache.voxel_size - voxel_size).abs() > 0.0 || cache.want_input != want_input || cache.base_sig != base_sig {
-        // Reset on mode switch (input-driven vs history-driven) or voxel-size change.
-        let base = base_grid.unwrap_or_else(|| vox::DiscreteVoxelGrid::new(voxel_size));
-        cache.reset_from_grid(voxel_size, want_input, base);
-        cache.base_sig = base_sig;
-    }
-
-    // Palette (hash-gated)
     let pal_h = hash64(palette_json);
-    if cache.palette_hash != pal_h {
-        puffin::profile_scope!("VoxelEdit::parse_palette");
-        if let Ok(p) = serde_json::from_str::<Vec<vox::discrete::PaletteEntry>>(palette_json) {
-            if !p.is_empty() {
-                for (i, e) in p.into_iter().enumerate() {
-                    if i < cache.grid.palette.len() {
-                        cache.grid.palette[i] = e;
-                    }
-                }
-            }
-        }
-        cache.palette_hash = pal_h;
-        cache.palette_dirty = true;
-    }
+    let prev_pal_h = prev_cached
+        .as_deref()
+        .and_then(|g| g.get_detail_attribute("__voxel_pal_hash"))
+        .and_then(|a| a.as_slice::<String>())
+        .and_then(|v| v.first())
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(0);
 
-    let cur_cursor = cmds.cursor.min(cmds.ops.len());
-    {
-        puffin::profile_scope!("VoxelEdit::apply_ops_incremental");
-        if cur_cursor < cache.applied_cursor {
-            cache.restore_working_from_base();
-        }
-        if cache.applied_cursor == 0 {
-            for op in cmds.ops.iter().take(cur_cursor) {
-                apply_op_cached(cache, op);
-            }
-            cache.applied_cursor = cur_cursor;
-            // First build -> everything dirty.
-            let keys: Vec<IVec3> = cache.chunks.keys().copied().collect();
-            for ck in keys { cache.mark_dirty_chunk_and_neighbors(ck); }
-        } else if cache.applied_cursor < cur_cursor {
-            // Mark dirty chunks for the appended ops (cheap AABB-based range).
-            let cs = CHUNK_SIZE.max(4);
-            let dc_opt = dirty_chunks_from_ops(&cmds, cache.voxel_size, cs, cache.applied_cursor, cur_cursor);
-            let full_dirty = dc_opt.is_none();
-            if let Some(dc) = dc_opt {
-                for ck in dc { cache.mark_dirty_chunk_and_neighbors(ck); }
-            } else {
-                cache.dirty_chunks.clear();
-            }
-            for op in cmds.ops[cache.applied_cursor..cur_cursor].iter() {
-                apply_op_cached(cache, op);
-            }
-            cache.applied_cursor = cur_cursor;
-            if full_dirty {
-                let keys: Vec<IVec3> = cache.chunks.keys().copied().collect();
-                for ck in keys { cache.mark_dirty_chunk_and_neighbors(ck); }
-            }
+    // Seed/refresh base grid when upstream changes.
+    if base_sig != prev_base_sig {
+        if let Some(bg) = base_grid.clone() {
+            cunning_kernel::nodes::voxel::voxel_edit::voxel_render_register_grid(node_id, voxel_size, bg);
         }
     }
+    // Apply palette edits.
+    if pal_h != prev_pal_h {
+        cunning_kernel::nodes::voxel::voxel_edit::voxel_render_set_palette_from_json(node_id, palette_json);
+    }
+    // Apply cmdlist edits (incremental).
+    cunning_kernel::nodes::voxel::voxel_edit::voxel_render_sync_cmds(node_id, voxel_size, &cmds);
 
     // Extreme path: skip CPU surface meshing entirely (hot path).
     // Viewport uses GPU chunk rendering. Downstream geometry nodes should use a dedicated "Voxel To Surface" node later.
+    let cur_cursor = cmds.cursor.min(cmds.ops.len());
     let mut out = Geometry::new();
     out.set_detail_attribute(ATTR_VOXEL_SIZE_DETAIL, vec![voxel_size]);
     out.set_detail_attribute("__voxel_pure", vec![1.0f32]);
     out.set_detail_attribute("__voxel_node", vec![node_id.to_string()]);
-    out.set_detail_attribute("__voxel_pal_hash", vec![cache.palette_hash.to_string()]);
+    out.set_detail_attribute("__voxel_pal_hash", vec![pal_h.to_string()]);
+    out.set_detail_attribute(ATTR_VOXEL_BASE_SIG, vec![base_sig.to_string()]);
     write_baked_cursor(&mut out, cur_cursor);
     write_base_from_input(&mut out, want_input);
     if let Ok(v) = serde_json::from_str::<Vec<i32>>(mask_json) { if !v.is_empty() { out.set_detail_attribute(ATTR_VOXEL_MASK_CELLS_I32, v); } }
-
-    // Performance: do NOT write the full discrete payload every cook (O(voxel_count)).
-    // The authoritative state is the cmdlist in node parameters; runtime uses an in-memory cache.
     out
+}
+
+/// Read the authoritative discrete voxel grid from the voxel render cache (GPU preview path).
+pub fn voxel_render_get_grid(node_id: uuid::Uuid) -> Option<vox::DiscreteVoxelGrid> {
+    let cache_map = VOXEL_EDIT_COOK_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let cache_map = cache_map.lock().ok()?;
+    cache_map.get(&node_id).map(|c| c.grid.clone())
+}
+
+/// Apply palette edits (JSON) into the voxel render cache, marking palette as dirty for RenderApp upload.
+pub fn voxel_render_set_palette_from_json(node_id: uuid::Uuid, palette_json: &str) {
+    let cache_map = VOXEL_EDIT_COOK_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut cache_map = cache_map.lock().unwrap();
+    let cache = cache_map.entry(node_id).or_insert_with(|| VoxelEditCookCache::new(0.1, false));
+    let pal_h = hash64(palette_json);
+    if cache.palette_hash == pal_h {
+        return;
+    }
+    if let Ok(p) = serde_json::from_str::<Vec<vox::discrete::PaletteEntry>>(palette_json) {
+        if !p.is_empty() {
+            for (i, e) in p.into_iter().enumerate() {
+                if i < cache.grid.palette.len() {
+                    cache.grid.palette[i] = e;
+                }
+            }
+        }
+    }
+    cache.palette_hash = pal_h;
+    cache.palette_dirty = true;
 }
 
 /// Read the authoritative discrete voxel grid from the VoxelEdit cook cache (interactive path).

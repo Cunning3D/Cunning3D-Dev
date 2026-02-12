@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
+use bevy::text::CosmicFontSystem;
 
 use crate::{
     camera::CameraController,
@@ -9,6 +10,33 @@ use crate::{
     MainCamera,
 };
 use crate::cunning_core::registries::{node_registry::NodeRegistry, tab_registry::TabRegistry};
+
+/// One-time init: load OS fonts into bevy_text (fix missing glyph/tofu on Windows).
+pub(crate) fn init_bevy_text_system_fonts(
+    mut done: Local<bool>,
+    mut font_system: ResMut<CosmicFontSystem>,
+) {
+    if *done {
+        return;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        font_system.0.db_mut().load_system_fonts();
+    }
+    *done = true;
+}
+
+pub(crate) fn auto_open_ai_workspace_if_missing_api(mut ui_state: ResMut<crate::ui::UiState>) {
+    if !crate::cunning_core::ai_service::gemini::api_key::read_gemini_api_key_env().trim().is_empty() {
+        return;
+    }
+    let raw = std::fs::read_to_string(crate::runtime_paths::ai_providers_path()).unwrap_or_default();
+    let v: serde_json::Value = serde_json::from_str(&raw).unwrap_or(serde_json::Value::Null);
+    let k = v.get("gemini").and_then(|g| g.get("api_key")).and_then(|x| x.as_str()).unwrap_or("").trim();
+    if k.is_empty() {
+        ui_state.pending_open_ai_workspace = true;
+    }
+}
 
 pub(crate) fn setup_registries(
     mut commands: Commands,

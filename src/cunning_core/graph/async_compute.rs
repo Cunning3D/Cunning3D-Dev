@@ -87,37 +87,18 @@ pub fn dispatch_compute_tasks(
         || viewport_interaction.is_middle_button_dragged
         || viewport_interaction.is_alt_left_button_dragged;
 
-    let is_interacting = ui_dragging || viewport_busy;
-    let now = Instant::now();
-    
-    // Throttle logic: during interaction, allow cook at reduced rate (10-15Hz) instead of blocking completely.
-    // When interaction ends, immediately allow a cook for responsive "release" update.
-    let throttle_passed = if is_interacting {
-        if let Some(last) = throttle_state.last_dispatch {
-            let elapsed_ms = now.duration_since(last).as_millis() as u64;
-            elapsed_ms >= throttle_state.throttle_interval_ms
-        } else {
-            true // No previous dispatch, allow first one
-        }
-    } else {
-        // Not interacting: if we WERE interacting last frame, immediately allow a cook (release update)
-        // Otherwise, full speed.
-        true
-    };
-    
-    // Update interaction state for next frame
-    throttle_state.was_interacting = is_interacting;
+    // NOTE: We intentionally do NOT throttle cook dispatch during interaction.
+    // Users expect full real-time feedback while dragging gizmos / adjusting params.
+    let _is_interacting = ui_dragging || viewport_busy;
+    let _now = Instant::now();
+    throttle_state.was_interacting = _is_interacting;
 
     // 1. Check if task already running / pending result not applied yet
     if async_state.task.is_some() || async_state.pending_result.is_some() {
         return; // Wait for current task to finish
     }
     
-    // Throttle check: skip this frame if throttle hasn't passed
-    if is_interacting && !throttle_passed {
-        puffin::profile_scope!("throttled_skip");
-        return;
-    }
+    // No throttled-skip: cook can dispatch every frame if needed.
 
     let root = &mut node_graph_res.0;
     let mut graph_snapshot: Option<NodeGraph> = None;
@@ -292,8 +273,8 @@ pub fn dispatch_compute_tasks(
 
     async_state.task = Some(task);
     async_state.is_computing = true;
-    // Record dispatch time for throttle tracking
-    throttle_state.last_dispatch = Some(now);
+    // Record dispatch time for diagnostics only
+    throttle_state.last_dispatch = Some(_now);
 }
 
 pub fn receive_compute_results(
@@ -313,7 +294,6 @@ pub fn receive_compute_results(
         && nav_input.orbit_delta.length_squared() == 0.0
         && nav_input.pan_delta.length_squared() == 0.0
         && nav_input.fly_vector.length_squared() == 0.0
-        && !viewport_interaction.is_gizmo_dragging
         && !viewport_interaction.is_right_button_dragged
         && !viewport_interaction.is_middle_button_dragged
         && !viewport_interaction.is_alt_left_button_dragged
@@ -323,6 +303,16 @@ pub fn receive_compute_results(
             let path = async_state.computing_path.clone();
             cda_nav::with_graph_by_path_mut(root, &path, |graph| {
                 for node_id in &async_state.computing_nodes {
+                    if let Some(geo) = computed_graph.geometry_cache.get(node_id) {
+                        graph.geometry_cache.insert(*node_id, geo.clone());
+                    }
+                }
+                // Template nodes must stay cook-visible even when not "dirty".
+                // Viewport template wireframes read from `graph.geometry_cache` keyed by node id.
+                for (node_id, n) in &computed_graph.nodes {
+                    if !n.is_template {
+                        continue;
+                    }
                     if let Some(geo) = computed_graph.geometry_cache.get(node_id) {
                         graph.geometry_cache.insert(*node_id, geo.clone());
                     }
@@ -356,7 +346,6 @@ pub fn receive_compute_results(
                 || nav_input.orbit_delta.length_squared() != 0.0
                 || nav_input.pan_delta.length_squared() != 0.0
                 || nav_input.fly_vector.length_squared() != 0.0
-                || viewport_interaction.is_gizmo_dragging
                 || viewport_interaction.is_right_button_dragged
                 || viewport_interaction.is_middle_button_dragged
                 || viewport_interaction.is_alt_left_button_dragged
@@ -376,6 +365,16 @@ pub fn receive_compute_results(
             let path = async_state.computing_path.clone();
             cda_nav::with_graph_by_path_mut(root, &path, |graph| {
                 for node_id in &async_state.computing_nodes {
+                    if let Some(geo) = computed_graph.geometry_cache.get(node_id) {
+                        graph.geometry_cache.insert(*node_id, geo.clone());
+                    }
+                }
+                // Template nodes must stay cook-visible even when not "dirty".
+                // Viewport template wireframes read from `graph.geometry_cache` keyed by node id.
+                for (node_id, n) in &computed_graph.nodes {
+                    if !n.is_template {
+                        continue;
+                    }
                     if let Some(geo) = computed_graph.geometry_cache.get(node_id) {
                         graph.geometry_cache.insert(*node_id, geo.clone());
                     }

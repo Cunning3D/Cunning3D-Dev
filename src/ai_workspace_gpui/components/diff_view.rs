@@ -1,6 +1,9 @@
 //! Diff view component for displaying code changes.
-use gpui::{AnyElement, ElementId, IntoElement, ParentElement, Styled, div, px, prelude::*};
-use crate::ai_workspace_gpui::ui::{h_flex, v_flex, ThemeColors, Label, LabelColor, LabelSize, Spacing};
+use gpui::{AnyElement, ElementId, IntoElement, MouseButton, MouseDownEvent, ParentElement, Styled, div, px, prelude::*};
+use crossbeam_channel::Sender;
+use std::path::PathBuf;
+use crate::ai_workspace_gpui::protocol::UiToHost;
+use crate::ai_workspace_gpui::ui::{h_flex, v_flex, ThemeColors, Label, LabelColor, LabelSize, Spacing, UiMetrics};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DiffLine
@@ -49,16 +52,24 @@ pub struct DiffHunk {
 pub struct DiffView {
     id: usize,
     file_path: String,
+    jump_path: PathBuf,
     hunks: Vec<DiffHunk>,
     additions: usize,
     deletions: usize,
+    jump_tx: Option<Sender<UiToHost>>,
 }
 
 impl DiffView {
     pub fn new(id: usize, file_path: impl Into<String>, hunks: Vec<DiffHunk>) -> Self {
+        let file_path = file_path.into();
         let additions = hunks.iter().flat_map(|h| &h.lines).filter(|l| matches!(l.kind, DiffLineKind::Added)).count();
         let deletions = hunks.iter().flat_map(|h| &h.lines).filter(|l| matches!(l.kind, DiffLineKind::Removed)).count();
-        Self { id, file_path: file_path.into(), hunks, additions, deletions }
+        Self { id, jump_path: PathBuf::from(file_path.clone()), file_path, hunks, additions, deletions, jump_tx: None }
+    }
+
+    pub fn with_jump(mut self, tx: Sender<UiToHost>) -> Self {
+        self.jump_tx = Some(tx);
+        self
     }
 }
 
@@ -66,8 +77,30 @@ impl IntoElement for DiffView {
     type Element = AnyElement;
 
     fn into_element(self) -> Self::Element {
-        let line_elements: Vec<_> = self.hunks.iter().flat_map(|hunk| {
-            hunk.lines.iter().enumerate().map(|(idx, line)| {
+        let jump_tx = self.jump_tx.clone();
+        let jump_path = self.jump_path.clone();
+        let line_elements: Vec<_> = self.hunks.iter().enumerate().flat_map(|(hunk_ix, hunk)| {
+            let mut out: Vec<AnyElement> = Vec::with_capacity(hunk.lines.len() + 1);
+            out.push(
+                h_flex()
+                    .id(ElementId::NamedInteger("diff-hunk".into(), hunk_ix as u64))
+                    .w_full()
+                    .bg(ThemeColors::bg_secondary())
+                    .border_b_1()
+                    .border_color(ThemeColors::border())
+                    .px(Spacing::Base06.px())
+                    .py(Spacing::Base02.px())
+                    .child(
+                        Label::new(format!(
+                            "@@ -{},{} +{},{} @@",
+                            hunk.old_start, hunk.old_count, hunk.new_start, hunk.new_count
+                        ))
+                        .size(LabelSize::XSmall)
+                        .color(LabelColor::Muted),
+                    )
+                    .into_any_element(),
+            );
+            out.extend(hunk.lines.iter().map(|line| {
                 let (bg, prefix, text_color) = match line.kind {
                     DiffLineKind::Context => (ThemeColors::bg_primary(), " ", ThemeColors::text_secondary()),
                     DiffLineKind::Added => (ThemeColors::diff_added_bg(), "+", ThemeColors::diff_added_text()),
@@ -75,16 +108,30 @@ impl IntoElement for DiffView {
                 };
                 let old_num = line.line_num_old.map(|n| format!("{:4}", n)).unwrap_or_else(|| "    ".into());
                 let new_num = line.line_num_new.map(|n| format!("{:4}", n)).unwrap_or_else(|| "    ".into());
+                let target_line = line
+                    .line_num_new
+                    .or(line.line_num_old)
+                    .unwrap_or(1)
+                    .saturating_sub(1) as u32;
 
                 h_flex()
                     .w_full()
                     .bg(bg)
-                    .text_size(px(12.0))
+                    .text_size(px(UiMetrics::FONT_DEFAULT))
                     .child(div().w(px(40.0)).flex_none().text_color(ThemeColors::text_muted()).child(old_num))
                     .child(div().w(px(40.0)).flex_none().text_color(ThemeColors::text_muted()).child(new_num))
                     .child(div().w(px(16.0)).flex_none().text_color(text_color).child(prefix))
                     .child(div().flex_1().text_color(text_color).child(line.content.clone()))
-            }).collect::<Vec<_>>()
+                    .when(jump_tx.is_some(), |d| {
+                        let tx = jump_tx.clone().unwrap();
+                        let p = jump_path.clone();
+                        d.cursor_pointer()
+                            .hover(|s| s.bg(ThemeColors::bg_hover()))
+                            .on_mouse_down(MouseButton::Left, move |_: &MouseDownEvent, _, _| { let _ = tx.send(UiToHost::IdeGotoLine { path: p.clone(), line: target_line, col: 0 }); })
+                    })
+                    .into_any_element()
+            }));
+            out
         }).collect();
 
         v_flex()
@@ -94,13 +141,13 @@ impl IntoElement for DiffView {
             .bg(ThemeColors::bg_elevated())
             .border_1()
             .border_color(ThemeColors::border())
-            .rounded_md()
+            .rounded_sm()
             .overflow_hidden()
             .child(
                 h_flex()
                     .w_full()
                     .px(Spacing::Base06.px())
-                    .py(Spacing::Base04.px())
+                    .py(Spacing::Base02.px())
                     .bg(ThemeColors::bg_secondary())
                     .border_b_1()
                     .border_color(ThemeColors::border())

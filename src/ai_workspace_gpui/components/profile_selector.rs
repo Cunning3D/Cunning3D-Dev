@@ -85,7 +85,7 @@ impl PickerDelegate for ProfileSelectorDelegate {
         v_flex()
             .w_full()
             .px(Spacing::Base06.px())
-            .py(Spacing::Base04.px())
+            .py(Spacing::Base02.px())
             .gap(Spacing::Base02.px())
             .rounded_sm()
             .when(selected, |d| d.bg(ThemeColors::bg_selected()))

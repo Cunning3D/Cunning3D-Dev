@@ -53,12 +53,12 @@ impl Render for QueuedMessagesView {
 
         v_flex()
             .w_full()
-            .p(Spacing::Base06.px())
+            .p(Spacing::Base04.px())
             .gap(Spacing::Base04.px())
             .bg(ThemeColors::bg_elevated())
             .border_1()
             .border_color(ThemeColors::border())
-            .rounded_md()
+            .rounded_sm()
             .child(
                 h_flex().w_full().justify_between()
                     .child(Label::new(format!("{} message(s) queued", self.messages.len())).size(LabelSize::Small).color(LabelColor::Muted))

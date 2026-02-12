@@ -1,11 +1,10 @@
 [package]
-name = "demo_jitter"
-version = "0.1.0"
-edition = "2021"
+name = "demo_jitter" # The name of the package
+version = "0.1.0" # The version of the package
+edition = "2021" # The Rust edition to use
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib"] # Creates a dynamic library (plugin)
 
 [dependencies]
-cunning_plugin_sdk = { path = "../../crates/cunning_plugin_sdk" }
-
+cunning_plugin_sdk = { path = "../../crates/cunning_plugin_sdk" } # Dependency on the Cunning3D plugin SDK

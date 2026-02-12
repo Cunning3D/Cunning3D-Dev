@@ -15,7 +15,7 @@ use crate::nodes::parameter::{Parameter, ParameterUIType, ParameterValue};
 use crate::nodes::structs::{NodeGraphResource, NodeId, NodeType};
 use crate::register_node;
 
-use crate::nodes::voxel::voxel_edit::{discrete_to_surface_mesh, read_discrete_payload, voxel_edit_cache_get_grid, write_discrete_payload, ATTR_VOXEL_SIZE_DETAIL, ATTR_VOXEL_SRC_PRIM};
+use crate::nodes::voxel::voxel_edit::{discrete_to_surface_mesh, read_discrete_payload, write_discrete_payload, ATTR_VOXEL_SIZE_DETAIL, ATTR_VOXEL_SRC_PRIM};
 use cunning_kernel::algorithms::algorithms_editor::voxel as vox;
 
 pub const NODE_NANO_VOXEL_POINT_SCATTER: &str = "Nano Voxel Point Scatter";
@@ -159,17 +159,16 @@ fn set_bool(params: &mut [Parameter], name: &str, v: bool) -> bool {
 }
 
 fn load_gemini_key() -> String {
-    if let Ok(k) = std::env::var("GEMINI_API_KEY") { if !k.trim().is_empty() { return k; } }
-    let path = std::env::current_dir().ok().map(|p| p.join("settings/ai/providers.json"));
-    let raw = path.as_ref().and_then(|p| std::fs::read_to_string(p).ok()).unwrap_or_default();
+    let k = crate::cunning_core::ai_service::gemini::api_key::read_gemini_api_key_env();
+    if !k.trim().is_empty() { return k; }
+    let raw = std::fs::read_to_string(crate::runtime_paths::ai_providers_path()).unwrap_or_default();
     let v: Value = serde_json::from_str(&raw).unwrap_or(Value::Null);
     v.get("gemini").and_then(|g| g.get("api_key")).and_then(|x| x.as_str()).unwrap_or("").trim().to_string()
 }
 fn load_gemini_model_image() -> String {
     if let Ok(m) = std::env::var("CUNNING_GEMINI_MODEL_IMAGE") { if !m.trim().is_empty() { return m; } }
     if let Ok(m) = std::env::var("CUNNING_GEMINI_IMAGE_MODEL") { if !m.trim().is_empty() { return m; } }
-    let path = std::env::current_dir().ok().map(|p| p.join("settings/ai/providers.json"));
-    let raw = path.as_ref().and_then(|p| std::fs::read_to_string(p).ok()).unwrap_or_default();
+    let raw = std::fs::read_to_string(crate::runtime_paths::ai_providers_path()).unwrap_or_default();
     let v: Value = serde_json::from_str(&raw).unwrap_or(Value::Null);
     v.get("gemini").and_then(|g| g.get("model_image").or_else(|| g.get("image_model"))).and_then(|x| x.as_str()).unwrap_or("gemini-3-pro-image-preview").trim().to_string()
 }
@@ -366,7 +365,7 @@ fn read_voxel_size(g: &Geometry) -> f32 {
 fn read_grid_from_input(g: &Geometry) -> Option<vox::DiscreteVoxelGrid> {
     if let Some(grid) = read_discrete_payload(g, read_voxel_size(g)) { return Some(grid); }
     let nid = g.get_detail_attribute("__voxel_node").and_then(|a| a.as_slice::<String>()).and_then(|v| v.first()).and_then(|s| uuid::Uuid::parse_str(s.trim()).ok())?;
-    voxel_edit_cache_get_grid(nid)
+    cunning_kernel::nodes::voxel::voxel_edit::voxel_render_get_grid(nid)
 }
 
 #[inline]

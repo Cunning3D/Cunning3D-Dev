@@ -9,3 +9,7 @@ crate-type = ["cdylib"]
 [dependencies]
 cunning_plugin_sdk = { path = "../../../crates/cunning_plugin_sdk" }
 
+# I am testing the tool, adding it again
+# I am testing the tool, adding it again
+# I am testing the tool, adding it again
+# I am testing the tool, adding it again

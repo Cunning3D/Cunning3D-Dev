@@ -58,7 +58,26 @@ fn decode_bool(p: &CParamValue) -> bool { p.a != 0 }
 fn decode_vec3(p: &CParamValue) -> (f32,f32,f32) { (f32::from_bits(p.a as u32), f32::from_bits((p.a>>32) as u32), f32::from_bits(p.b as u32)) }
 
 // === USER_CODE_BEGIN ===
-// (Generated USER_CODE placeholder removed)
+
+
+    let amount = *params.get(0).unwrap_unchecked().float_value.unwrap_unchecked();
+    let seed = *params.get(1).unwrap_unchecked().int_value.unwrap_unchecked() as u64;
+
+    let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+
+    let geometry = in_0.geometry;
+    let mut output_geometry = geometry.clone();
+
+    if let Some(positions) = output_geometry.get_point_positions_mut() {
+        for position in positions.iter_mut() {
+            position.x += (rng.gen::<f32>() - 0.5) * amount;
+            position.y += (rng.gen::<f32>() - 0.5) * amount;
+            position.z += (rng.gen::<f32>() - 0.5) * amount;
+        }
+    }
+
+    let out_0 = CNodeIo { geometry: output_geometry };
+    vec![out_0]
 // === USER_CODE_END ===
 
 extern "C" fn compute(_instance: *mut c_void, host: *const CHostApi, _ctx: *const CExecutionCtx, inputs: *const GeoHandle, inputs_len: u32, params: *const CParamValue, params_len: u32, out: *mut GeoHandle) -> i32 {
@@ -66,21 +85,9 @@ extern "C" fn compute(_instance: *mut c_void, host: *const CHostApi, _ctx: *cons
         if host.is_null() || out.is_null() { return 1; }
         let host = &*host;
         let in0 = if inputs.is_null() || inputs_len == 0 { 0 } else { *inputs };
-        let ps = if params.is_null() || params_len == 0 { &[][..] } else { core::slice::from_raw_parts(params, params_len as usize) };
-        let amount = ps.get(0).filter(|p| matches!(p.tag, CParamTag::Float)).map(decode_f32).unwrap_or(0.5);
-        let _seed = ps.get(1).filter(|p| matches!(p.tag, CParamTag::Int)).map(decode_i32).unwrap_or(42);
-
+        let _params = if params.is_null() || params_len == 0 { &[][..] } else { core::slice::from_raw_parts(params, params_len as usize) };
+        // Default behavior: passthrough/clone input.
         let g = if in0 != 0 { (host.geo_clone)(host.userdata, in0) } else { (host.geo_create)(host.userdata) };
-        if g != 0 {
-            let n = (host.geo_point_count)(host.userdata, g);
-            let mut xyz = [0.0f32; 3];
-            for i in 0..n {
-                if (host.geo_get_point_position)(host.userdata, g, i, xyz.as_mut_ptr()) != 0 {
-                    xyz[0] += amount;
-                    let _ = (host.geo_set_point_position)(host.userdata, g, i, xyz.as_ptr());
-                }
-            }
-        }
         *out = g;
         0
     }

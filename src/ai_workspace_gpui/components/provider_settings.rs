@@ -12,8 +12,7 @@ pub struct ProviderSettings {
     ui_tx: Sender<UiToHost>,
 
     gemini_key: Entity<TextInput>,
-    gemini_pro: Entity<TextInput>,
-    gemini_flash: Entity<TextInput>,
+    gemini_model: Entity<TextInput>,
     gemini_image: Entity<TextInput>,
 
     openai_idx: Option<usize>, // index into openai_compat_profiles (0-based)
@@ -46,22 +45,15 @@ impl ProviderSettings {
             "Gemini API key (stored in providers.json)"
         };
         let gemini_key = cx.new(|cx| TextInput::new(cx, gemini_key_ph).multiline(false));
-        let gemini_pro = cx.new(|cx| {
-            TextInput::new(cx, "Gemini model_pro (e.g. gemini-3-pro-preview)")
+        let gemini_model = cx.new(|cx| {
+            TextInput::new(cx, "Gemini model (text, e.g. gemini-3-pro-preview)")
                 .multiline(false)
                 .on_submit(|_, _, _| {})
         });
-        let gemini_flash = cx.new(|cx| TextInput::new(cx, "Gemini model_flash (optional)").multiline(false));
         let gemini_image = cx.new(|cx| TextInput::new(cx, "Gemini model_image (e.g. gemini-3-pro-image-preview)").multiline(false));
 
         if let Some(g) = gemini {
-            gemini_pro.update(cx, |i, cx| i.set_text(g.selected_model.clone(), cx));
-            if let Some(first) = g.models.get(0) {
-                gemini_pro.update(cx, |i, cx| i.set_text(first.clone(), cx));
-            }
-            if let Some(second) = g.models.get(1) {
-                gemini_flash.update(cx, |i, cx| i.set_text(second.clone(), cx));
-            }
+            gemini_model.update(cx, |i, cx| i.set_text(g.selected_model.clone(), cx));
             if let Some(im) = g.image_model.clone().filter(|s| !s.trim().is_empty()) {
                 gemini_image.update(cx, |i, cx| i.set_text(im, cx));
             }
@@ -90,8 +82,7 @@ impl ProviderSettings {
             focus_handle,
             ui_tx,
             gemini_key,
-            gemini_pro,
-            gemini_flash,
+            gemini_model,
             gemini_image,
             openai_idx,
             openai_name,
@@ -113,13 +104,11 @@ impl ProviderSettings {
 
     fn save(&mut self, _: &gpui::ClickEvent, _window: &mut Window, cx: &mut Context<Self>) {
         let gemini_api_key = self.gemini_key.read(cx).text().trim().to_string();
-        let gemini_pro = self.gemini_pro.read(cx).text().trim().to_string();
-        let gemini_flash = self.gemini_flash.read(cx).text().trim().to_string();
+        let gemini_model = self.gemini_model.read(cx).text().trim().to_string();
         let gemini_image = self.gemini_image.read(cx).text().trim().to_string();
         let _ = self.ui_tx.send(UiToHost::UpdateGeminiSettings {
             api_key: gemini_api_key,
-            model_pro: gemini_pro,
-            model_flash: gemini_flash,
+            model: gemini_model,
             model_image: gemini_image,
         });
 
@@ -179,19 +168,17 @@ impl Render for ProviderSettings {
         v_flex()
             .id("provider-settings")
             .w(px(520.0))
-            .gap(Spacing::Base08.px())
+            .gap(Spacing::Base06.px())
             .child(Self::section_header("Gemini"))
             .child(
                 v_flex()
-                    .gap(Spacing::Base06.px())
+                    .gap(Spacing::Base04.px())
                     .child(Label::new("api_key").size(LabelSize::XSmall).color(LabelColor::Muted))
-                    .child(div().p(Spacing::Base06.px()).bg(ThemeColors::bg_primary()).border_1().border_color(ThemeColors::border()).rounded_sm().child(self.gemini_key.clone()))
-                    .child(Label::new("model_pro").size(LabelSize::XSmall).color(LabelColor::Muted))
-                    .child(div().p(Spacing::Base06.px()).bg(ThemeColors::bg_primary()).border_1().border_color(ThemeColors::border()).rounded_sm().child(self.gemini_pro.clone()))
-                    .child(Label::new("model_flash").size(LabelSize::XSmall).color(LabelColor::Muted))
-                    .child(div().p(Spacing::Base06.px()).bg(ThemeColors::bg_primary()).border_1().border_color(ThemeColors::border()).rounded_sm().child(self.gemini_flash.clone()))
+                    .child(div().p(Spacing::Base04.px()).bg(ThemeColors::bg_primary()).border_1().border_color(ThemeColors::border()).rounded_sm().child(self.gemini_key.clone()))
+                    .child(Label::new("model").size(LabelSize::XSmall).color(LabelColor::Muted))
+                    .child(div().p(Spacing::Base04.px()).bg(ThemeColors::bg_primary()).border_1().border_color(ThemeColors::border()).rounded_sm().child(self.gemini_model.clone()))
                     .child(Label::new("model_image").size(LabelSize::XSmall).color(LabelColor::Muted))
-                    .child(div().p(Spacing::Base06.px()).bg(ThemeColors::bg_primary()).border_1().border_color(ThemeColors::border()).rounded_sm().child(self.gemini_image.clone()))
+                    .child(div().p(Spacing::Base04.px()).bg(ThemeColors::bg_primary()).border_1().border_color(ThemeColors::border()).rounded_sm().child(self.gemini_image.clone()))
             )
             .child(
                 h_flex()
@@ -222,17 +209,17 @@ impl Render for ProviderSettings {
             .when(has_openai, |d| {
                 d.child(
                     v_flex()
-                        .gap(Spacing::Base06.px())
+                        .gap(Spacing::Base04.px())
                         .child(Label::new("name").size(LabelSize::XSmall).color(LabelColor::Muted))
-                        .child(div().p(Spacing::Base06.px()).bg(ThemeColors::bg_primary()).border_1().border_color(ThemeColors::border()).rounded_sm().child(self.openai_name.clone()))
+                        .child(div().p(Spacing::Base04.px()).bg(ThemeColors::bg_primary()).border_1().border_color(ThemeColors::border()).rounded_sm().child(self.openai_name.clone()))
                         .child(Label::new("base_url").size(LabelSize::XSmall).color(LabelColor::Muted))
-                        .child(div().p(Spacing::Base06.px()).bg(ThemeColors::bg_primary()).border_1().border_color(ThemeColors::border()).rounded_sm().child(self.openai_base_url.clone()))
+                        .child(div().p(Spacing::Base04.px()).bg(ThemeColors::bg_primary()).border_1().border_color(ThemeColors::border()).rounded_sm().child(self.openai_base_url.clone()))
                         .child(Label::new("api_key").size(LabelSize::XSmall).color(LabelColor::Muted))
-                        .child(div().p(Spacing::Base06.px()).bg(ThemeColors::bg_primary()).border_1().border_color(ThemeColors::border()).rounded_sm().child(self.openai_key.clone()))
+                        .child(div().p(Spacing::Base04.px()).bg(ThemeColors::bg_primary()).border_1().border_color(ThemeColors::border()).rounded_sm().child(self.openai_key.clone()))
                         .child(Label::new("models").size(LabelSize::XSmall).color(LabelColor::Muted))
-                        .child(div().h(px(110.0)).p(Spacing::Base06.px()).bg(ThemeColors::bg_primary()).border_1().border_color(ThemeColors::border()).rounded_sm().child(self.openai_models.clone()))
+                        .child(div().h(px(96.0)).p(Spacing::Base04.px()).bg(ThemeColors::bg_primary()).border_1().border_color(ThemeColors::border()).rounded_sm().child(self.openai_models.clone()))
                         .child(Label::new("selected_model").size(LabelSize::XSmall).color(LabelColor::Muted))
-                        .child(div().p(Spacing::Base06.px()).bg(ThemeColors::bg_primary()).border_1().border_color(ThemeColors::border()).rounded_sm().child(self.openai_selected_model.clone()))
+                        .child(div().p(Spacing::Base04.px()).bg(ThemeColors::bg_primary()).border_1().border_color(ThemeColors::border()).rounded_sm().child(self.openai_selected_model.clone()))
                 )
             })
             .child(

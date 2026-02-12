@@ -53,6 +53,7 @@ impl NodeOp for NativeNodeWrapper {
             V3(Vec<Vec3>),
             V4(Vec<Vec4>),
             Str(Vec<String>),
+            #[allow(dead_code)]
             Curve(Vec<c_api::CCurveControlPoint>, Box<c_api::CCurveData>),
         }
         let mut scratch: Vec<Scratch> = Vec::new();

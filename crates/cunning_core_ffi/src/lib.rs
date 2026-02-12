@@ -22,6 +22,8 @@ use cunning_kernel::libs::geometry::mesh::{BezierCurvePrim, PolylinePrim};
 use cunning_kernel::traits::parameter::ParameterValue;
 use cunning_kernel::io::blob_store::{BlobStore, global_store};
 use bevy::math::{Mat4, Mat3, Quat};
+use egui::{self, Context as EguiContext, Event as EguiEvent, Key as EguiKey, PointerButton as EguiPointerButton, Pos2 as EguiPos2, RawInput as EguiRawInput, Rect as EguiRect, Vec2 as EguiVec2};
+use cunning_kernel::algorithms::algorithms_editor::voxel::{DiscreteVoxelCmdList, DiscreteVoxelOp};
 
 // Runtime CDA Asset (Unity-facing): eval via shared runtime core.
 
@@ -302,6 +304,644 @@ fn get_engine_context() -> &'static Mutex<EngineContext> {
     ENGINE_CONTEXT.get_or_init(|| Mutex::new(EngineContext { asset: None, output_geo: Arc::new(Geometry::new()) }))
 }
 
+// --- Coverlay B1 (host-agnostic draw list output) ---
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CoverlayStatus {
+    Ok = 0,
+    InvalidArg = 1,
+    NotFound = 2,
+    InternalError = 3,
+    BufferTooSmall = 4,
+}
+
+impl Default for CoverlayStatus {
+    fn default() -> Self { Self::Ok }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct CoverlayInputPacket {
+    pub width_px: u32,
+    pub height_px: u32,
+    pub pixels_per_point: f32,
+    pub delta_seconds: f32,
+    pub pointer_x_px: f32,
+    pub pointer_y_px: f32,
+    pub wheel_x: f32,
+    pub wheel_y: f32,
+    pub pointer_buttons: u32, // bit0 left, bit1 right, bit2 middle
+    pub modifiers: u32,       // bit0 shift, bit1 ctrl, bit2 alt, bit3 cmd
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct CoverlayVertex {
+    pub x: f32,
+    pub y: f32,
+    pub u: f32,
+    pub v: f32,
+    pub color_rgba_u32: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct CoverlayDrawListInfo {
+    pub texture_id: u64,
+    pub clip_min_x: f32,
+    pub clip_min_y: f32,
+    pub clip_max_x: f32,
+    pub clip_max_y: f32,
+    pub vertex_count: u32,
+    pub index_count: u32,
+}
+
+#[derive(Default)]
+struct CoverlayDrawList {
+    texture_id: u64,
+    clip: [f32; 4],
+    vertices: Vec<CoverlayVertex>,
+    indices: Vec<u32>,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct CoverlayTextureDeltaInfo {
+    pub texture_id: u64,
+    pub pos_x: u32,
+    pub pos_y: u32,
+    pub width: u32,
+    pub height: u32,
+    pub bytes_len: u32,
+    pub is_update: u32,
+}
+
+#[derive(Default)]
+struct CoverlayTextureDelta {
+    texture_id: u64,
+    pos: Option<[usize; 2]>,
+    width: usize,
+    height: usize,
+    bytes_rgba: Vec<u8>,
+}
+
+struct CoverlayCtx {
+    egui: EguiContext,
+    input: CoverlayInputPacket,
+    prev_buttons: u32,
+    pending_text: Vec<String>,
+    pending_keys: Vec<(u32, bool, u32)>,
+    draw_lists: Vec<CoverlayDrawList>,
+    tex_set: Vec<CoverlayTextureDelta>,
+    tex_free: Vec<u64>,
+    bound_cda_id: u64,
+    bound_instance_id: u64,
+    style_inited: bool,
+    coverlay_order: Vec<Uuid>,
+    coverlay_on: HashMap<Uuid, bool>,
+    voxel_ui: VoxelUiState,
+    param_overrides: HashMap<String, ParameterValue>,
+    params_dirty: bool,
+    params_json_cache: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum VoxelToolMode { Add, Select, Move, Paint, Extrude }
+
+#[derive(Clone, Debug)]
+struct VoxelUiState {
+    mode: VoxelToolMode,
+    brush_radius: f32,
+    palette_index: u8,
+    clone_overwrite: bool,
+    sym_x: bool,
+    sym_y: bool,
+    sym_z: bool,
+}
+
+impl Default for VoxelUiState {
+    fn default() -> Self {
+        Self { mode: VoxelToolMode::Paint, brush_radius: 0.35, palette_index: 1, clone_overwrite: true, sym_x: false, sym_y: false, sym_z: false }
+    }
+}
+
+impl CoverlayCtx {
+    fn new(width_px: u32, height_px: u32, pixels_per_point: f32) -> Self {
+        Self {
+            egui: EguiContext::default(),
+            input: CoverlayInputPacket {
+                width_px: width_px.max(1),
+                height_px: height_px.max(1),
+                pixels_per_point: pixels_per_point.max(0.25),
+                delta_seconds: 0.0,
+                pointer_x_px: 0.0,
+                pointer_y_px: 0.0,
+                wheel_x: 0.0,
+                wheel_y: 0.0,
+                pointer_buttons: 0,
+                modifiers: 0,
+            },
+            prev_buttons: 0,
+            pending_text: Vec::new(),
+            pending_keys: Vec::new(),
+            draw_lists: Vec::new(),
+            tex_set: Vec::new(),
+            tex_free: Vec::new(),
+            bound_cda_id: 0,
+            bound_instance_id: 0,
+            style_inited: false,
+            coverlay_order: Vec::new(),
+            coverlay_on: HashMap::new(),
+            voxel_ui: VoxelUiState::default(),
+            param_overrides: HashMap::new(),
+            params_dirty: false,
+            params_json_cache: "{}".to_string(),
+        }
+    }
+
+    fn init_style(&mut self) {
+        if self.style_inited {
+            return;
+        }
+        let mut s = (*self.egui.style()).clone();
+        s.visuals = egui::Visuals::dark();
+        s.visuals.window_fill = egui::Color32::from_rgba_unmultiplied(24, 28, 36, 230);
+        s.visuals.panel_fill = egui::Color32::from_rgba_unmultiplied(24, 28, 36, 200);
+        s.visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgba_unmultiplied(24, 28, 36, 180);
+        s.visuals.widgets.inactive.bg_fill = egui::Color32::from_rgba_unmultiplied(32, 38, 50, 220);
+        s.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgba_unmultiplied(44, 62, 86, 235);
+        s.visuals.widgets.active.bg_fill = egui::Color32::from_rgba_unmultiplied(60, 120, 220, 245);
+        s.visuals.window_corner_radius = egui::CornerRadius::same(10);
+        s.visuals.menu_corner_radius = egui::CornerRadius::same(8);
+        s.visuals.widgets.inactive.corner_radius = egui::CornerRadius::same(8);
+        s.visuals.widgets.hovered.corner_radius = egui::CornerRadius::same(8);
+        s.visuals.widgets.active.corner_radius = egui::CornerRadius::same(8);
+        s.spacing.item_spacing = egui::vec2(8.0, 6.0);
+        s.spacing.window_margin = egui::Margin::same(10);
+        self.egui.set_style(s);
+        self.style_inited = true;
+    }
+
+    fn update_params_json_cache(&mut self) {
+        self.params_json_cache = serde_json::to_string(&self.param_overrides).unwrap_or_else(|_| "{}".to_string());
+    }
+
+    fn frame(&mut self) {
+        self.init_style();
+        let ppp = self.input.pixels_per_point.max(0.25);
+        let size_points = EguiVec2::new(self.input.width_px as f32 / ppp, self.input.height_px as f32 / ppp);
+        let pointer_pos = EguiPos2::new(self.input.pointer_x_px / ppp, self.input.pointer_y_px / ppp);
+        let mods = decode_mods(self.input.modifiers);
+
+        let mut raw = EguiRawInput {
+            screen_rect: Some(EguiRect::from_min_size(EguiPos2::new(0.0, 0.0), size_points)),
+            ..Default::default()
+        };
+        raw.predicted_dt = if self.input.delta_seconds > 0.0 { self.input.delta_seconds } else { 1.0 / 60.0 };
+        raw.modifiers = mods;
+        raw.events.push(EguiEvent::PointerMoved(pointer_pos));
+        if self.input.wheel_x != 0.0 || self.input.wheel_y != 0.0 {
+            raw.events.push(EguiEvent::MouseWheel { unit: egui::MouseWheelUnit::Point, delta: EguiVec2::new(self.input.wheel_x / ppp, self.input.wheel_y / ppp), modifiers: mods });
+        }
+        for (mask, btn) in [(1u32, EguiPointerButton::Primary), (2u32, EguiPointerButton::Secondary), (4u32, EguiPointerButton::Middle)] {
+            let now_down = (self.input.pointer_buttons & mask) != 0;
+            let was_down = (self.prev_buttons & mask) != 0;
+            if now_down == was_down { continue; }
+            raw.events.push(EguiEvent::PointerButton {
+                pos: pointer_pos,
+                button: btn,
+                pressed: now_down,
+                modifiers: mods,
+            });
+        }
+        self.prev_buttons = self.input.pointer_buttons;
+        for text in self.pending_text.drain(..) {
+            if !text.is_empty() { raw.events.push(EguiEvent::Text(text)); }
+        }
+        for (key, pressed, mods_raw) in self.pending_keys.drain(..) {
+            if let Some(k) = decode_key(key) {
+                raw.events.push(EguiEvent::Key { key: k, physical_key: None, pressed, repeat: false, modifiers: decode_mods(mods_raw) });
+            }
+        }
+
+        let bound_cda_id = self.bound_cda_id;
+        let bound_instance_id = self.bound_instance_id;
+        let entry = if bound_cda_id == 0 { None } else { cda_reg().lock().unwrap().get(&bound_cda_id).cloned() };
+        let mut overrides = self.param_overrides.clone();
+        let mut params_changed = false;
+        let coverlay_order = self.coverlay_order.clone();
+        let mut coverlay_on = self.coverlay_on.clone();
+        let mut coverlay_changed = false;
+        let mut voxel_ui = self.voxel_ui.clone();
+        let mut voxel_ui_changed = false;
+        let full = self.egui.run(raw, |ctx| {
+            render_cda_coverlay_ui(
+                ctx,
+                bound_instance_id,
+                entry.as_ref(),
+                &coverlay_order,
+                &mut coverlay_on,
+                &mut coverlay_changed,
+                &mut voxel_ui,
+                &mut voxel_ui_changed,
+                &mut overrides,
+                &mut params_changed,
+            );
+        });
+        if coverlay_changed {
+            self.coverlay_on = coverlay_on;
+        }
+        if voxel_ui_changed {
+            self.voxel_ui = voxel_ui;
+        }
+        if params_changed {
+            self.param_overrides = overrides;
+            self.params_dirty = true;
+            self.update_params_json_cache();
+        }
+
+        let clipped = self.egui.tessellate(full.shapes, full.pixels_per_point);
+        self.draw_lists.clear();
+        self.draw_lists.reserve(clipped.len());
+        self.tex_set.clear();
+        self.tex_free.clear();
+
+        for cp in clipped {
+            let clip = [cp.clip_rect.min.x, cp.clip_rect.min.y, cp.clip_rect.max.x, cp.clip_rect.max.y];
+            match cp.primitive {
+                egui::epaint::Primitive::Mesh(m) => {
+                    let mut dl = CoverlayDrawList {
+                        texture_id: encode_texture_id(m.texture_id),
+                        clip,
+                        vertices: Vec::with_capacity(m.vertices.len()),
+                        indices: Vec::with_capacity(m.indices.len()),
+                    };
+                    for v in &m.vertices {
+                        dl.vertices.push(CoverlayVertex {
+                            x: v.pos.x,
+                            y: v.pos.y,
+                            u: v.uv.x,
+                            v: v.uv.y,
+                            color_rgba_u32: u32::from_le_bytes([v.color.r(), v.color.g(), v.color.b(), v.color.a()]),
+                        });
+                    }
+                    for &i in &m.indices {
+                        dl.indices.push(i);
+                    }
+                    self.draw_lists.push(dl);
+                }
+                egui::epaint::Primitive::Callback(_) => {}
+            }
+        }
+
+        for (tid, delta) in &full.textures_delta.set {
+            let [w, h] = delta.image.size();
+            let rgba = match &delta.image {
+                egui::ImageData::Color(img) => {
+                    let mut out = Vec::with_capacity(img.pixels.len() * 4);
+                    for p in &img.pixels {
+                        out.push(p.r());
+                        out.push(p.g());
+                        out.push(p.b());
+                        out.push(p.a());
+                    }
+                    out
+                }
+            };
+            self.tex_set.push(CoverlayTextureDelta {
+                texture_id: encode_texture_id(*tid),
+                pos: delta.pos,
+                width: w,
+                height: h,
+                bytes_rgba: rgba,
+            });
+        }
+        for tid in &full.textures_delta.free {
+            self.tex_free.push(encode_texture_id(*tid));
+        }
+    }
+}
+
+fn encode_texture_id(t: egui::TextureId) -> u64 {
+    match t {
+        egui::TextureId::Managed(v) => v & 0x7fff_ffff_ffff_ffff,
+        egui::TextureId::User(v) => v | (1u64 << 63),
+    }
+}
+
+fn decode_mods(bits: u32) -> egui::Modifiers {
+    egui::Modifiers {
+        alt: (bits & (1 << 2)) != 0,
+        ctrl: (bits & (1 << 1)) != 0,
+        shift: (bits & (1 << 0)) != 0,
+        mac_cmd: (bits & (1 << 3)) != 0,
+        command: (bits & ((1 << 1) | (1 << 3))) != 0,
+    }
+}
+
+fn decode_key(k: u32) -> Option<EguiKey> {
+    match k {
+        8 => Some(EguiKey::Backspace),
+        9 => Some(EguiKey::Tab),
+        13 => Some(EguiKey::Enter),
+        27 => Some(EguiKey::Escape),
+        32 => Some(EguiKey::Space),
+        37 => Some(EguiKey::ArrowLeft),
+        38 => Some(EguiKey::ArrowUp),
+        39 => Some(EguiKey::ArrowRight),
+        40 => Some(EguiKey::ArrowDown),
+        45 => Some(EguiKey::Insert),
+        46 => Some(EguiKey::Delete),
+        36 => Some(EguiKey::Home),
+        35 => Some(EguiKey::End),
+        33 => Some(EguiKey::PageUp),
+        34 => Some(EguiKey::PageDown),
+        v @ 48..=57 => Some(match v {
+            48 => EguiKey::Num0, 49 => EguiKey::Num1, 50 => EguiKey::Num2, 51 => EguiKey::Num3, 52 => EguiKey::Num4,
+            53 => EguiKey::Num5, 54 => EguiKey::Num6, 55 => EguiKey::Num7, 56 => EguiKey::Num8, _ => EguiKey::Num9
+        }),
+        v @ 65..=90 => Some(match v {
+            65 => EguiKey::A, 66 => EguiKey::B, 67 => EguiKey::C, 68 => EguiKey::D, 69 => EguiKey::E, 70 => EguiKey::F, 71 => EguiKey::G, 72 => EguiKey::H, 73 => EguiKey::I, 74 => EguiKey::J, 75 => EguiKey::K, 76 => EguiKey::L, 77 => EguiKey::M, 78 => EguiKey::N, 79 => EguiKey::O, 80 => EguiKey::P, 81 => EguiKey::Q, 82 => EguiKey::R, 83 => EguiKey::S, 84 => EguiKey::T, 85 => EguiKey::U, 86 => EguiKey::V, 87 => EguiKey::W, 88 => EguiKey::X, 89 => EguiKey::Y, _ => EguiKey::Z
+        }),
+        _ => None,
+    }
+}
+
+fn render_param_value(ui: &mut egui::Ui, name: &str, v: &mut ParameterValue) -> bool {
+    match v {
+        ParameterValue::Float(x) => ui.add(egui::Slider::new(x, -2048.0..=2048.0).text(name)).changed(),
+        ParameterValue::Int(x) => { let mut t = *x; let ch = ui.add(egui::DragValue::new(&mut t).speed(1.0).prefix(format!("{}: ", name))).changed(); if ch { *x = t; } ch }
+        ParameterValue::Bool(x) => ui.checkbox(x, name).changed(),
+        ParameterValue::String(s) => ui.text_edit_singleline(s).changed(),
+        ParameterValue::Vec2(v2) => {
+            let mut changed = false;
+            ui.horizontal(|ui| {
+                ui.label(name);
+                changed |= ui.add(egui::DragValue::new(&mut v2.x).speed(0.01)).changed();
+                changed |= ui.add(egui::DragValue::new(&mut v2.y).speed(0.01)).changed();
+            });
+            changed
+        }
+        ParameterValue::Vec3(v3) | ParameterValue::Color(v3) => {
+            let mut changed = false;
+            ui.horizontal(|ui| {
+                ui.label(name);
+                changed |= ui.add(egui::DragValue::new(&mut v3.x).speed(0.01)).changed();
+                changed |= ui.add(egui::DragValue::new(&mut v3.y).speed(0.01)).changed();
+                changed |= ui.add(egui::DragValue::new(&mut v3.z).speed(0.01)).changed();
+            });
+            changed
+        }
+        ParameterValue::Vec4(v4) | ParameterValue::Color4(v4) => {
+            let mut changed = false;
+            ui.horizontal(|ui| {
+                ui.label(name);
+                changed |= ui.add(egui::DragValue::new(&mut v4.x).speed(0.01)).changed();
+                changed |= ui.add(egui::DragValue::new(&mut v4.y).speed(0.01)).changed();
+                changed |= ui.add(egui::DragValue::new(&mut v4.z).speed(0.01)).changed();
+                changed |= ui.add(egui::DragValue::new(&mut v4.w).speed(0.01)).changed();
+            });
+            changed
+        }
+        _ => false,
+    }
+}
+
+fn render_cda_coverlay_ui(
+    ctx: &egui::Context,
+    bound_instance_id: u64,
+    entry: Option<&CdaEntry>,
+    coverlay_order: &[Uuid],
+    coverlay_on: &mut HashMap<Uuid, bool>,
+    coverlay_changed: &mut bool,
+    voxel_ui: &mut VoxelUiState,
+    voxel_ui_changed: &mut bool,
+    param_overrides: &mut HashMap<String, ParameterValue>,
+    params_changed: &mut bool,
+) {
+    egui::Area::new("cunning_coverlay_root".into())
+        .movable(false)
+        .fixed_pos(EguiPos2::new(14.0, 14.0))
+        .show(ctx, |ui| {
+            egui::Frame::window(ui.style()).show(ui, |ui| {
+                if entry.is_none() {
+                    ui.label("No CDA bound");
+                    return;
+                }
+                let e = entry.expect("entry checked");
+                ui.heading(format!("{}", e.def.meta.name));
+                ui.label(format!("Instance: {}", bound_instance_id));
+
+                if !e.def.coverlay_units.is_empty() {
+                    ui.add_space(6.0);
+                    ui.label("Coverlay (multi-select)");
+                    ui.horizontal_wrapped(|ui| {
+                        let mut units: Vec<_> = e.def.coverlay_units.iter().collect();
+                        units.sort_by_key(|u| u.order);
+                        for u in units {
+                            let on = coverlay_on.get(&u.node_id).copied().unwrap_or(u.default_on);
+                            let txt = if let Some(ic) = &u.icon { format!("{} {}", ic, u.label) } else { u.label.clone() };
+                            let resp = ui.selectable_label(on, txt);
+                            if resp.clicked() {
+                                coverlay_on.insert(u.node_id, !on);
+                                *coverlay_changed = true;
+                            }
+                        }
+                    });
+                }
+            });
+        });
+
+    if let Some(e) = entry {
+        let _ = coverlay_order; // already stored for future docking parity
+        let mut units: Vec<_> = e.def.coverlay_units.iter().collect();
+        units.sort_by_key(|u| u.order);
+        let mut has_voxel_edit = false;
+        for (ix, u) in units.iter().enumerate() {
+            if !coverlay_on.get(&u.node_id).copied().unwrap_or(u.default_on) {
+                continue;
+            }
+            let node_ty = e.def.nodes.iter().find(|n| n.id == u.node_id).map(|n| n.type_id.as_str()).unwrap_or("");
+            if node_ty == "cunning.voxel.edit" {
+                has_voxel_edit = true;
+                continue;
+            }
+            let title = if let Some(ic) = &u.icon { format!("{} {}", ic, u.label) } else { u.label.clone() };
+            let pos = egui::pos2(14.0 + 300.0 * (ix as f32), 160.0);
+            egui::Window::new(title)
+                .id(egui::Id::new(("cunning_coverlay_unit", u.node_id)))
+                .default_pos(pos)
+                .default_size(egui::vec2(320.0, 520.0))
+                .resizable(true)
+                .collapsible(false)
+                .show(ctx, |ui| { ui.label(format!("Node: {} ({})", u.node_id, node_ty)); });
+        }
+        if has_voxel_edit {
+            render_voxel_overlay_native(ctx, voxel_ui, voxel_ui_changed, param_overrides, params_changed);
+        }
+    }
+}
+
+#[inline]
+fn palette_color32(i: u8) -> egui::Color32 {
+    if i == 0 { return egui::Color32::TRANSPARENT; }
+    let h = (i as f32 * 0.618_033_988_75) % 1.0;
+    let (s, v) = (0.65, 0.90);
+    let h6 = h * 6.0;
+    let c = v * s;
+    let x = c * (1.0 - ((h6 % 2.0) - 1.0).abs());
+    let m = v - c;
+    let (r, g, b) = match h6 as i32 { 0 => (c, x, 0.0), 1 => (x, c, 0.0), 2 => (0.0, c, x), 3 => (0.0, x, c), 4 => (x, 0.0, c), _ => (c, 0.0, x) };
+    egui::Color32::from_rgb(((r + m) * 255.0) as u8, ((g + m) * 255.0) as u8, ((b + m) * 255.0) as u8)
+}
+
+fn get_string_param(overrides: &HashMap<String, ParameterValue>, key: &str, d: &str) -> String {
+    overrides.get(key).and_then(|v| if let ParameterValue::String(s) = v { Some(s.clone()) } else { None }).unwrap_or_else(|| d.to_string())
+}
+
+fn set_string_param(overrides: &mut HashMap<String, ParameterValue>, key: &str, val: String, changed: &mut bool) {
+    overrides.insert(key.to_string(), ParameterValue::String(val));
+    *changed = true;
+}
+
+fn render_voxel_overlay_native(
+    ctx: &egui::Context,
+    st: &mut VoxelUiState,
+    st_changed: &mut bool,
+    param_overrides: &mut HashMap<String, ParameterValue>,
+    params_changed: &mut bool,
+) {
+    const CMDS: &str = "cmds_json";
+    const PAL: &str = "palette_json";
+    let mut cmds_json = get_string_param(param_overrides, CMDS, "{\"ops\":[],\"cursor\":0}");
+    let _pal_json = get_string_param(param_overrides, PAL, "[]");
+
+    // Left: palette strip/grid
+    egui::Window::new("Palette")
+        .id(egui::Id::new("cunning_voxel_palette"))
+        .title_bar(true)
+        .resizable(true)
+        .collapsible(false)
+        .default_pos(egui::pos2(14.0, 160.0))
+        .default_size(egui::vec2(240.0, 620.0))
+        .show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                ui.label("Index");
+                let mut idx_i = st.palette_index as i32;
+                if ui.add(egui::DragValue::new(&mut idx_i).range(1..=255)).changed() {
+                    st.palette_index = idx_i.clamp(1, 255) as u8;
+                    *st_changed = true;
+                }
+                let col = palette_color32(st.palette_index);
+                let (r, _) = ui.allocate_exact_size(egui::vec2(22.0, 22.0), egui::Sense::hover());
+                ui.painter().rect_filled(r, egui::CornerRadius::same(4), col);
+                ui.painter().rect_stroke(r, egui::CornerRadius::same(4), egui::Stroke::new(1.0, egui::Color32::from_white_alpha(64)), egui::StrokeKind::Outside);
+            });
+            ui.add_space(6.0);
+            let cell = 14.0;
+            let cols = ((ui.available_width() / (cell + 2.0)).floor() as usize).clamp(4, 16);
+            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+                ui.spacing_mut().item_spacing = egui::vec2(2.0, 2.0);
+                let mut i = 1u16;
+                while i <= 255 {
+                    ui.horizontal(|ui| {
+                        for _ in 0..cols {
+                            if i > 255 { break; }
+                            let idx = i as u8;
+                            let selected = idx == st.palette_index;
+                            let fill = palette_color32(idx);
+                            let mut b = egui::Button::new("")
+                                .min_size(egui::vec2(cell, cell))
+                                .fill(fill);
+                            if selected {
+                                b = b.stroke(egui::Stroke::new(2.0, egui::Color32::from_rgb(90, 160, 255)));
+                            } else {
+                                b = b.stroke(egui::Stroke::new(1.0, egui::Color32::from_white_alpha(30)));
+                            }
+                            if ui.add(b).clicked() {
+                                st.palette_index = idx;
+                                *st_changed = true;
+                            }
+                            i += 1;
+                        }
+                    });
+                }
+            });
+        });
+
+    // Right: tools / settings / command list edits
+    egui::Window::new("Tools")
+        .id(egui::Id::new("cunning_voxel_tools"))
+        .title_bar(true)
+        .resizable(true)
+        .collapsible(false)
+        .default_pos(egui::pos2(270.0, 160.0))
+        .default_size(egui::vec2(360.0, 620.0))
+        .show(ctx, |ui| {
+            ui.label("Mode");
+            ui.horizontal_wrapped(|ui| {
+                let mut changed = false;
+                changed |= ui.selectable_label(st.mode == VoxelToolMode::Add, "Add").clicked().then(|| { st.mode = VoxelToolMode::Add; true }).unwrap_or(false);
+                changed |= ui.selectable_label(st.mode == VoxelToolMode::Select, "Select").clicked().then(|| { st.mode = VoxelToolMode::Select; true }).unwrap_or(false);
+                changed |= ui.selectable_label(st.mode == VoxelToolMode::Move, "Move").clicked().then(|| { st.mode = VoxelToolMode::Move; true }).unwrap_or(false);
+                changed |= ui.selectable_label(st.mode == VoxelToolMode::Paint, "Paint").clicked().then(|| { st.mode = VoxelToolMode::Paint; true }).unwrap_or(false);
+                changed |= ui.selectable_label(st.mode == VoxelToolMode::Extrude, "Extrude").clicked().then(|| { st.mode = VoxelToolMode::Extrude; true }).unwrap_or(false);
+                if changed { *st_changed = true; }
+            });
+            ui.add_space(8.0);
+
+            ui.label("Brush");
+            if ui.add(egui::Slider::new(&mut st.brush_radius, 0.05..=5.0).text("Radius")).changed() { *st_changed = true; }
+            ui.horizontal(|ui| {
+                if ui.checkbox(&mut st.sym_x, "Sym X").changed() { *st_changed = true; }
+                if ui.checkbox(&mut st.sym_y, "Sym Y").changed() { *st_changed = true; }
+                if ui.checkbox(&mut st.sym_z, "Sym Z").changed() { *st_changed = true; }
+            });
+            if ui.checkbox(&mut st.clone_overwrite, "Clone overwrite").changed() { *st_changed = true; }
+
+            ui.add_space(10.0);
+            ui.separator();
+            ui.label("Commands (cmds_json)");
+            ui.horizontal(|ui| {
+                if ui.button("Undo").clicked() {
+                    let mut cmds = DiscreteVoxelCmdList::from_json(&cmds_json);
+                    let _ = cmds.undo();
+                    cmds_json = cmds.to_json();
+                    set_string_param(param_overrides, CMDS, cmds_json.clone(), params_changed);
+                }
+                if ui.button("Redo").clicked() {
+                    let mut cmds = DiscreteVoxelCmdList::from_json(&cmds_json);
+                    let _ = cmds.redo();
+                    cmds_json = cmds.to_json();
+                    set_string_param(param_overrides, CMDS, cmds_json.clone(), params_changed);
+                }
+                if ui.button("ClearAll").clicked() {
+                    let mut cmds = DiscreteVoxelCmdList::from_json(&cmds_json);
+                    cmds.push(DiscreteVoxelOp::ClearAll);
+                    cmds_json = cmds.to_json();
+                    set_string_param(param_overrides, CMDS, cmds_json.clone(), params_changed);
+                }
+            });
+            ui.add_space(6.0);
+            ui.label("Palette index is used when emitting voxel ops from the viewport.");
+            ui.label("Next step: Unity viewport raycast -> emit DiscreteVoxelOp into cmds_json.");
+        });
+}
+
+static COVERLAY_CTXS: OnceCell<Mutex<HashMap<u64, CoverlayCtx>>> = OnceCell::new();
+static NEXT_COVERLAY_CTX_ID: AtomicU64 = AtomicU64::new(1);
+static COVERLAY_LAST_ERR: OnceCell<Mutex<String>> = OnceCell::new();
+static COVERLAY_RENDER_CTX: AtomicU64 = AtomicU64::new(0);
+fn coverlay_ctxs() -> &'static Mutex<HashMap<u64, CoverlayCtx>> {
+    COVERLAY_CTXS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+fn coverlay_last_err() -> &'static Mutex<String> {
+    COVERLAY_LAST_ERR.get_or_init(|| Mutex::new(String::new()))
+}
+fn set_coverlay_err(msg: impl Into<String>) {
+    *coverlay_last_err().lock().unwrap() = msg.into();
+}
+
 // --- CDA Asset Load / Submit ---
 #[no_mangle]
 pub extern "C" fn cunning_cda_load(path: *const c_char) -> u64 {
@@ -467,7 +1107,9 @@ fn cook_asset(asset: &GraphAsset) -> Option<Arc<Geometry>> {
                 for (k, v) in &n.params {
                     if let Some(p) = params.iter_mut().find(|p| p.name == *k) { p.value = v.clone(); }
                 }
-                PolyExtrudeNode::default().compute(&params, &ins)
+                let ins_ref: Vec<Arc<dyn cunning_kernel::libs::geometry::geo_ref::GeometryRef>> =
+                    ins.iter().cloned().map(|g| g as Arc<dyn cunning_kernel::libs::geometry::geo_ref::GeometryRef>).collect();
+                PolyExtrudeNode::default().compute(&params, &ins_ref)
             }
             _ => Arc::new(Geometry::new()),
         };
@@ -999,7 +1641,7 @@ pub extern "C" fn cunning_op_poly_extrude(handle: Handle, distance: f32, inset: 
             Parameter::new("output_side", "", "", ParameterValue::Bool(true), ParameterUIType::Toggle),
         ];
 
-        let inputs = vec![geo.clone()];
+        let inputs = vec![geo.clone() as Arc<dyn cunning_kernel::libs::geometry::geo_ref::GeometryRef>];
         let result_arc = PolyExtrudeNode::default().compute(&params, &inputs);
 
         drop(reg);
@@ -1043,7 +1685,7 @@ pub extern "C" fn cunning_op_poly_extrude_prim(handle: Handle, prim_index: u32, 
             Parameter::new("side_grp", "", "", ParameterValue::String("extrudeSide".into()), ParameterUIType::String),
         ];
 
-        let inputs = vec![geo.clone()];
+        let inputs = vec![geo.clone() as Arc<dyn cunning_kernel::libs::geometry::geo_ref::GeometryRef>];
         let result_arc = PolyExtrudeNode::default().compute(&params, &inputs);
 
         drop(reg);
@@ -1081,7 +1723,7 @@ pub extern "C" fn cunning_op_poly_bevel(handle: Handle, distance: f32, divisions
             Parameter::new("divisions", "", "", ParameterValue::Int(divisions.max(1) as i32), ParameterUIType::IntSlider { min: 1, max: 16 }),
         ];
 
-        let inputs = vec![geo.clone()];
+        let inputs = vec![geo.clone() as Arc<dyn cunning_kernel::libs::geometry::geo_ref::GeometryRef>];
         let result_arc = PolyBevelNode::default().compute(&params, &inputs);
 
         drop(reg);
@@ -1239,6 +1881,417 @@ pub extern "C" fn cunning_blob_copy(blob_handle: u64, out_ptr: *mut u8, out_cap:
 pub extern "C" fn cunning_blob_release(blob_handle: u64) {
     if session_store().is_some() { return; }
     blob_reg().lock().unwrap().remove(&blob_handle);
+}
+
+// --- Coverlay B1 C ABI ---
+#[no_mangle]
+pub extern "C" fn cunning_coverlay_create(width_px: u32, height_px: u32, pixels_per_point: f32) -> u64 {
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let id = NEXT_COVERLAY_CTX_ID.fetch_add(1, Ordering::Relaxed);
+        let ctx = CoverlayCtx::new(width_px, height_px, pixels_per_point);
+        coverlay_ctxs().lock().unwrap().insert(id, ctx);
+        Some(id)
+    }));
+    result.unwrap_or(None).unwrap_or(0)
+}
+
+#[no_mangle]
+pub extern "C" fn cunning_coverlay_destroy(ctx_id: u64) -> u32 {
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        if ctx_id == 0 {
+            return None;
+        }
+        coverlay_ctxs().lock().unwrap().remove(&ctx_id);
+        Some(1u32)
+    }));
+    result.unwrap_or(None).unwrap_or(0)
+}
+
+#[no_mangle]
+pub extern "C" fn cunning_coverlay_bind_cda(ctx_id: u64, cda_id: u64, instance_id: u64) -> CoverlayStatus {
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let mut reg = coverlay_ctxs().lock().unwrap();
+        let c = match reg.get_mut(&ctx_id) {
+            Some(v) => v,
+            None => {
+                set_coverlay_err(format!("bind failed: ctx {} not found", ctx_id));
+                return CoverlayStatus::NotFound;
+            }
+        };
+        let prev = c.bound_cda_id;
+        c.bound_cda_id = cda_id;
+        c.bound_instance_id = instance_id;
+        if prev != cda_id {
+            c.param_overrides.clear();
+            c.params_dirty = true;
+            c.params_json_cache = "{}".to_string();
+            c.coverlay_order.clear();
+            c.coverlay_on.clear();
+            if let Some(e) = cda_reg().lock().unwrap().get(&cda_id).cloned() {
+                let mut units: Vec<_> = e.def.coverlay_units.iter().collect();
+                units.sort_by_key(|u| u.order);
+                for u in units {
+                    c.coverlay_order.push(u.node_id);
+                    c.coverlay_on.insert(u.node_id, u.default_on);
+                }
+            }
+        }
+        CoverlayStatus::Ok
+    }));
+    result.unwrap_or(CoverlayStatus::InternalError)
+}
+
+#[no_mangle]
+pub extern "C" fn cunning_coverlay_set_input(ctx_id: u64, input: *const CoverlayInputPacket) -> CoverlayStatus {
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        if input.is_null() {
+            set_coverlay_err("set_input failed: null input pointer");
+            return CoverlayStatus::InvalidArg;
+        }
+        let v = unsafe { *input };
+        let mut reg = coverlay_ctxs().lock().unwrap();
+        let ctx = match reg.get_mut(&ctx_id) {
+            Some(v) => v,
+            None => {
+                set_coverlay_err(format!("set_input failed: ctx {} not found", ctx_id));
+                return CoverlayStatus::NotFound;
+            }
+        };
+        let mut v2 = v;
+        v2.width_px = v2.width_px.max(1);
+        v2.height_px = v2.height_px.max(1);
+        v2.pixels_per_point = v2.pixels_per_point.max(0.25);
+        ctx.input = v2;
+        CoverlayStatus::Ok
+    }));
+    result.unwrap_or(CoverlayStatus::InternalError)
+}
+
+#[no_mangle]
+pub extern "C" fn cunning_coverlay_push_text_utf8(ctx_id: u64, utf8_ptr: *const u8, utf8_len: u32) -> CoverlayStatus {
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        if utf8_ptr.is_null() {
+            set_coverlay_err("push_text failed: null text pointer");
+            return CoverlayStatus::InvalidArg;
+        }
+        let bytes = unsafe { std::slice::from_raw_parts(utf8_ptr, utf8_len as usize) };
+        let text = match std::str::from_utf8(bytes) {
+            Ok(v) => v.to_string(),
+            Err(_) => {
+                set_coverlay_err("push_text failed: invalid utf8");
+                return CoverlayStatus::InvalidArg;
+            }
+        };
+        let mut reg = coverlay_ctxs().lock().unwrap();
+        let ctx = match reg.get_mut(&ctx_id) {
+            Some(v) => v,
+            None => {
+                set_coverlay_err(format!("push_text failed: ctx {} not found", ctx_id));
+                return CoverlayStatus::NotFound;
+            }
+        };
+        ctx.pending_text.push(text);
+        CoverlayStatus::Ok
+    }));
+    result.unwrap_or(CoverlayStatus::InternalError)
+}
+
+#[no_mangle]
+pub extern "C" fn cunning_coverlay_push_key(ctx_id: u64, key_code: u32, pressed: u32, modifiers: u32) -> CoverlayStatus {
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let mut reg = coverlay_ctxs().lock().unwrap();
+        let ctx = match reg.get_mut(&ctx_id) {
+            Some(v) => v,
+            None => {
+                set_coverlay_err(format!("push_key failed: ctx {} not found", ctx_id));
+                return CoverlayStatus::NotFound;
+            }
+        };
+        ctx.pending_keys.push((key_code, pressed != 0, modifiers));
+        CoverlayStatus::Ok
+    }));
+    result.unwrap_or(CoverlayStatus::InternalError)
+}
+
+#[no_mangle]
+pub extern "C" fn cunning_coverlay_begin_frame(ctx_id: u64, input: *const CoverlayInputPacket) -> CoverlayStatus {
+    cunning_coverlay_set_input(ctx_id, input)
+}
+
+#[no_mangle]
+pub extern "C" fn cunning_coverlay_end_frame(ctx_id: u64) -> u32 {
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let mut reg = coverlay_ctxs().lock().unwrap();
+        let ctx = match reg.get_mut(&ctx_id) {
+            Some(v) => v,
+            None => {
+                set_coverlay_err(format!("end_frame failed: ctx {} not found", ctx_id));
+                return None;
+            }
+        };
+        ctx.frame();
+        Some(ctx.draw_lists.len().min(u32::MAX as usize) as u32)
+    }));
+    result.unwrap_or(None).unwrap_or(0)
+}
+
+#[no_mangle]
+pub extern "C" fn cunning_coverlay_draw_list_count(ctx_id: u64) -> u32 {
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let reg = coverlay_ctxs().lock().unwrap();
+        let ctx = reg.get(&ctx_id)?;
+        Some(ctx.draw_lists.len().min(u32::MAX as usize) as u32)
+    }));
+    result.unwrap_or(None).unwrap_or(0)
+}
+
+#[no_mangle]
+pub extern "C" fn cunning_coverlay_draw_list_info(ctx_id: u64, list_index: u32, out_info: *mut CoverlayDrawListInfo) -> u32 {
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        if out_info.is_null() {
+            return None;
+        }
+        let reg = coverlay_ctxs().lock().unwrap();
+        let ctx = reg.get(&ctx_id)?;
+        let dl = ctx.draw_lists.get(list_index as usize)?;
+        unsafe {
+            *out_info = CoverlayDrawListInfo {
+                texture_id: dl.texture_id,
+                clip_min_x: dl.clip[0],
+                clip_min_y: dl.clip[1],
+                clip_max_x: dl.clip[2],
+                clip_max_y: dl.clip[3],
+                vertex_count: dl.vertices.len().min(u32::MAX as usize) as u32,
+                index_count: dl.indices.len().min(u32::MAX as usize) as u32,
+            };
+        }
+        Some(1u32)
+    }));
+    result.unwrap_or(None).unwrap_or(0)
+}
+
+#[no_mangle]
+pub extern "C" fn cunning_coverlay_copy_vertices(ctx_id: u64, list_index: u32, out_ptr: *mut CoverlayVertex, out_cap: u32) -> u32 {
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        if out_ptr.is_null() || out_cap == 0 {
+            return None;
+        }
+        let reg = coverlay_ctxs().lock().unwrap();
+        let ctx = reg.get(&ctx_id)?;
+        let dl = ctx.draw_lists.get(list_index as usize)?;
+        let n = dl.vertices.len().min(out_cap as usize);
+        unsafe {
+            std::ptr::copy_nonoverlapping(dl.vertices.as_ptr(), out_ptr, n);
+        }
+        Some(n.min(u32::MAX as usize) as u32)
+    }));
+    result.unwrap_or(None).unwrap_or(0)
+}
+
+#[no_mangle]
+pub extern "C" fn cunning_coverlay_copy_indices(ctx_id: u64, list_index: u32, out_ptr: *mut u32, out_cap: u32) -> u32 {
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        if out_ptr.is_null() || out_cap == 0 {
+            return None;
+        }
+        let reg = coverlay_ctxs().lock().unwrap();
+        let ctx = reg.get(&ctx_id)?;
+        let dl = ctx.draw_lists.get(list_index as usize)?;
+        let n = dl.indices.len().min(out_cap as usize);
+        unsafe {
+            std::ptr::copy_nonoverlapping(dl.indices.as_ptr(), out_ptr, n);
+        }
+        Some(n.min(u32::MAX as usize) as u32)
+    }));
+    result.unwrap_or(None).unwrap_or(0)
+}
+
+#[no_mangle]
+pub extern "C" fn cunning_coverlay_texture_set_count(ctx_id: u64) -> u32 {
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let reg = coverlay_ctxs().lock().unwrap();
+        let ctx = reg.get(&ctx_id)?;
+        Some(ctx.tex_set.len().min(u32::MAX as usize) as u32)
+    }));
+    result.unwrap_or(None).unwrap_or(0)
+}
+
+#[no_mangle]
+pub extern "C" fn cunning_coverlay_texture_set_info(ctx_id: u64, index: u32, out_info: *mut CoverlayTextureDeltaInfo) -> CoverlayStatus {
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        if out_info.is_null() {
+            set_coverlay_err("texture_set_info failed: null out pointer");
+            return CoverlayStatus::InvalidArg;
+        }
+        let reg = coverlay_ctxs().lock().unwrap();
+        let ctx = match reg.get(&ctx_id) {
+            Some(v) => v,
+            None => {
+                set_coverlay_err(format!("texture_set_info failed: ctx {} not found", ctx_id));
+                return CoverlayStatus::NotFound;
+            }
+        };
+        let d = match ctx.tex_set.get(index as usize) {
+            Some(v) => v,
+            None => {
+                set_coverlay_err(format!("texture_set_info failed: index {} out of range", index));
+                return CoverlayStatus::NotFound;
+            }
+        };
+        unsafe {
+            *out_info = CoverlayTextureDeltaInfo {
+                texture_id: d.texture_id,
+                pos_x: d.pos.map(|p| p[0] as u32).unwrap_or(0),
+                pos_y: d.pos.map(|p| p[1] as u32).unwrap_or(0),
+                width: d.width.min(u32::MAX as usize) as u32,
+                height: d.height.min(u32::MAX as usize) as u32,
+                bytes_len: d.bytes_rgba.len().min(u32::MAX as usize) as u32,
+                is_update: if d.pos.is_some() { 1 } else { 0 },
+            };
+        }
+        CoverlayStatus::Ok
+    }));
+    result.unwrap_or(CoverlayStatus::InternalError)
+}
+
+#[no_mangle]
+pub extern "C" fn cunning_coverlay_texture_set_copy_rgba(ctx_id: u64, index: u32, out_ptr: *mut u8, out_cap: u32) -> u32 {
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        if out_ptr.is_null() || out_cap == 0 {
+            return None;
+        }
+        let reg = coverlay_ctxs().lock().unwrap();
+        let ctx = reg.get(&ctx_id)?;
+        let d = ctx.tex_set.get(index as usize)?;
+        let n = d.bytes_rgba.len().min(out_cap as usize);
+        unsafe { std::ptr::copy_nonoverlapping(d.bytes_rgba.as_ptr(), out_ptr, n); }
+        Some(n.min(u32::MAX as usize) as u32)
+    }));
+    result.unwrap_or(None).unwrap_or(0)
+}
+
+#[no_mangle]
+pub extern "C" fn cunning_coverlay_texture_free_count(ctx_id: u64) -> u32 {
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let reg = coverlay_ctxs().lock().unwrap();
+        let ctx = reg.get(&ctx_id)?;
+        Some(ctx.tex_free.len().min(u32::MAX as usize) as u32)
+    }));
+    result.unwrap_or(None).unwrap_or(0)
+}
+
+#[no_mangle]
+pub extern "C" fn cunning_coverlay_texture_free_id(ctx_id: u64, index: u32) -> u64 {
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let reg = coverlay_ctxs().lock().unwrap();
+        let ctx = reg.get(&ctx_id)?;
+        Some(*ctx.tex_free.get(index as usize)?)
+    }));
+    result.unwrap_or(None).unwrap_or(0)
+}
+
+#[no_mangle]
+pub extern "C" fn cunning_coverlay_is_params_dirty(ctx_id: u64) -> u32 {
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let reg = coverlay_ctxs().lock().unwrap();
+        let ctx = reg.get(&ctx_id)?;
+        Some(if ctx.params_dirty { 1u32 } else { 0u32 })
+    }));
+    result.unwrap_or(None).unwrap_or(0)
+}
+
+#[no_mangle]
+pub extern "C" fn cunning_coverlay_take_params_json(ctx_id: u64, out_buf: *mut c_char, cap: u32) -> u32 {
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        if out_buf.is_null() || cap == 0 {
+            return None;
+        }
+        let mut reg = coverlay_ctxs().lock().unwrap();
+        let ctx = reg.get_mut(&ctx_id)?;
+        let bytes = ctx.params_json_cache.as_bytes();
+        let n = bytes.len().min(cap.saturating_sub(1) as usize);
+        unsafe {
+            std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_buf as *mut u8, n);
+            *out_buf.add(n) = 0;
+        }
+        ctx.params_dirty = false;
+        Some(n.min(u32::MAX as usize) as u32)
+    }));
+    result.unwrap_or(None).unwrap_or(0)
+}
+
+#[no_mangle]
+pub extern "C" fn cunning_coverlay_get_last_error(out_buf: *mut c_char, cap: u32) -> u32 {
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        if out_buf.is_null() || cap == 0 { return None; }
+        let msg = coverlay_last_err().lock().unwrap().clone();
+        let bytes = msg.as_bytes();
+        let n = bytes.len().min(cap.saturating_sub(1) as usize);
+        unsafe {
+            std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_buf as *mut u8, n);
+            *out_buf.add(n) = 0;
+        }
+        Some(1u32)
+    }));
+    result.unwrap_or(None).unwrap_or(0)
+}
+
+extern "C" fn coverlay_render_event(_event_id: i32) {
+    let _ctx = COVERLAY_RENDER_CTX.load(Ordering::Relaxed);
+}
+
+#[no_mangle]
+pub extern "C" fn cunning_coverlay_set_render_context(ctx_id: u64) -> CoverlayStatus {
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        COVERLAY_RENDER_CTX.store(ctx_id, Ordering::Relaxed);
+        CoverlayStatus::Ok
+    }));
+    result.unwrap_or(CoverlayStatus::InternalError)
+}
+
+#[no_mangle]
+pub extern "C" fn cunning_coverlay_get_render_event_func() -> *const std::ffi::c_void {
+    coverlay_render_event as *const std::ffi::c_void
+}
+
+// Backward compatibility wrappers.
+#[no_mangle]
+pub extern "C" fn cunning_coverlay_resize(ctx_id: u64, width_px: u32, height_px: u32, pixels_per_point: f32) -> u32 {
+    let input = CoverlayInputPacket {
+        width_px,
+        height_px,
+        pixels_per_point,
+        delta_seconds: 0.0,
+        pointer_x_px: 0.0,
+        pointer_y_px: 0.0,
+        wheel_x: 0.0,
+        wheel_y: 0.0,
+        pointer_buttons: 0,
+        modifiers: 0,
+    };
+    if cunning_coverlay_set_input(ctx_id, &input as *const CoverlayInputPacket) == CoverlayStatus::Ok { 1 } else { 0 }
+}
+
+#[no_mangle]
+pub extern "C" fn cunning_coverlay_set_pointer(ctx_id: u64, x_px: f32, y_px: f32, primary_down: u32) -> u32 {
+    let mut reg = match coverlay_ctxs().lock() {
+        Ok(v) => v,
+        Err(_) => return 0,
+    };
+    let ctx = match reg.get_mut(&ctx_id) {
+        Some(v) => v,
+        None => return 0,
+    };
+    ctx.input.pointer_x_px = x_px;
+    ctx.input.pointer_y_px = y_px;
+    let down = if primary_down != 0 { 1u32 } else { 0u32 };
+    ctx.input.pointer_buttons = (ctx.input.pointer_buttons & !1u32) | down;
+    1
+}
+
+#[no_mangle]
+pub extern "C" fn cunning_coverlay_frame(ctx_id: u64) -> u32 {
+    cunning_coverlay_end_frame(ctx_id)
 }
 
 #[no_mangle]

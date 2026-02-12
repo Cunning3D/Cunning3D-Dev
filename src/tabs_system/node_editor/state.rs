@@ -227,6 +227,7 @@ pub struct NodeEditorTab {
     pub copilot_relay_selected: Option<Uuid>,
     pub copilot_relay_actions: Vec<CopilotRelayAction>,
     pub copilot_backend: CopilotBackend,
+    pub gemini_cloud_model: GeminiCloudModel,
     pub copilot_inflight_backend: Option<CopilotBackend>,
     pub copilot_retry_count: u8, // Auto-retry counter (0 = first attempt)
     pub copilot_request_start: Option<std::time::Instant>, // For timeout detection
@@ -270,6 +271,7 @@ pub struct NodeEditorTab {
 
     // Lightweight cache to avoid re-locking the graph for immutable per-node data each frame.
     pub cached_nodes_rev: u64,
+    pub cached_topo_key: u64,
     pub cached_nodes: Vec<NodeSnapshot>,
     pub cached_cda_depth: usize, // Track CDA edit depth changes
 
@@ -321,6 +323,18 @@ pub enum CopilotBackend {
     Gemini,
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum GeminiCloudModel { Fast, Pro }
+
+impl GeminiCloudModel {
+    pub fn model_name(&self) -> &'static str {
+        match self {
+            Self::Fast => "gemini-3-flash-preview",
+            Self::Pro => "gemini-3-pro-preview",
+        }
+    }
+}
+
 impl Default for NodeEditorTab {
     fn default() -> Self {
         Self {
@@ -358,6 +372,7 @@ impl Default for NodeEditorTab {
             copilot_relay_selected: None,
             copilot_relay_actions: Vec::new(),
             copilot_backend: CopilotBackend::LocalTiny,
+            gemini_cloud_model: GeminiCloudModel::Fast,
             copilot_inflight_backend: None,
             copilot_retry_count: 0,
             copilot_request_start: None,
@@ -398,6 +413,7 @@ impl Default for NodeEditorTab {
             info_panel_state: InfoPanelState::default(),
 
             cached_nodes_rev: 0,
+            cached_topo_key: 0,
             cached_nodes: Vec::new(),
             cached_cda_depth: 0,
             hovered_port: None,

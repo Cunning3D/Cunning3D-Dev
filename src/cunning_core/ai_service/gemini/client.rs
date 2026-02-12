@@ -2,18 +2,18 @@ use super::parser::StreamParser;
 use crate::tabs_registry::ai_workspace::session::event::SessionEvent;
 use crate::tabs_registry::ai_workspace::session::prompt::PromptBuilder;
 use crate::tabs_registry::ai_workspace::session::thread_entry::ThreadEntry;
-use bevy::log::error;
+use bevy::log::{error, info, warn};
 use futures_lite::StreamExt; // for .next()
 use reqwest::{Client, StatusCode};
 use serde_json::Value;
 use std::time::Duration;
 use tokio::sync::oneshot;
+use tokio::time::sleep;
 // Zed-like: short connect timeout + stream idle timeout to avoid "dead" hangs.
 
 pub struct GeminiClient {
     client: Client,
-    model_pro: String,
-    model_flash: String,
+    model: String,
     api_key: String,
 }
 
@@ -31,15 +31,12 @@ enum ChatError {
 // No timeouts; user abort controls cancellation.
 
 impl GeminiClient {
-    pub fn new(api_key: String, model_pro: String, model_flash: String) -> Self {
-        let env_key = std::env::var("GEMINI_API_KEY").unwrap_or_default();
-        let api_key = if env_key.trim().is_empty() { api_key } else { env_key };
-
-        let env_pro = std::env::var("CUNNING_GEMINI_MODEL_PRO").unwrap_or_default();
-        let env_flash = std::env::var("CUNNING_GEMINI_MODEL_FLASH").unwrap_or_default();
-        let pro = if env_pro.trim().is_empty() { model_pro } else { env_pro };
-        let flash = if env_flash.trim().is_empty() { model_flash } else { env_flash };
-        let flash = if flash.trim().is_empty() { pro.clone() } else { flash };
+    pub fn new(api_key: String, model: String) -> Self {
+        let env_model = std::env::var("CUNNING_GEMINI_MODEL").unwrap_or_default();
+        // Single source of truth: UI/settings win; env vars are defaults only.
+        let model = if model.trim().is_empty() { env_model } else { model };
+        let model = if model.trim().is_empty() { "gemini-3-pro-preview".to_string() } else { model };
+        let model = super::normalize_model_name(&model);
 
         let client = match Client::builder()
             .connect_timeout(Duration::from_secs(10))
@@ -58,8 +55,7 @@ impl GeminiClient {
 
         Self {
             client,
-            model_pro: pro,
-            model_flash: flash,
+            model,
             api_key,
         }
     }
@@ -167,29 +163,23 @@ impl GeminiClient {
         mut abort_signal: oneshot::Receiver<()>,
     ) {
         if self.api_key.is_empty() {
-            callback(SessionEvent::Error(
-                "Missing Gemini API key (set GEMINI_API_KEY or settings/ai/providers.json gemini.api_key)."
-                    .to_string(),
-            ));
+            let p = crate::runtime_paths::ai_providers_path();
+            callback(SessionEvent::Error(format!(
+                "Missing Gemini API key (set GEMINI_API_KEY / GOOGLE_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY, or {} -> gemini.api_key).",
+                p.display()
+            )));
             return;
         }
 
-        let use_pro = tools.as_ref().is_some_and(|t| !t.is_empty())
-            || new_user_input.to_ascii_lowercase().contains("nodespec")
-            || new_user_input.to_ascii_lowercase().contains("plugin")
-            || context.map(|c| c.len()).unwrap_or(0) > 6000;
-        let model = if use_pro {
-            &self.model_pro
-        } else {
-            &self.model_flash
-        };
-        let stream_url = format!(
-            "https://generativelanguage.googleapis.com/v1beta/models/{}:streamGenerateContent?alt=sse&key={}",
-            model, self.api_key
-        );
-        let non_stream_url = format!(
-            "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
-            model, self.api_key
+        let mut models_to_try: Vec<String> = Vec::new();
+        let m = self.model.trim();
+        if !m.is_empty() { models_to_try.push(m.to_string()); }
+        if models_to_try.is_empty() { models_to_try.push("gemini-3-flash-preview".to_string()); }
+
+        info!(
+            "[AI Workspace] Gemini models_to_try={:?} (model='{}')",
+            models_to_try,
+            self.model
         );
 
         let body = PromptBuilder::build_full_request_gemini_from_entries_with_images(
@@ -203,36 +193,107 @@ impl GeminiClient {
             callback(SessionEvent::Error("Current request aborted".to_string()));
             return;
         }
-        match self
-            .do_single_stream_request(&stream_url, &body, parser, &callback, &mut abort_signal)
-            .await
-        {
-            Ok(()) => {}
-            Err(ChatError::Http { status, body: _err_body }) if status == StatusCode::NOT_FOUND => {
-                // Copilot uses generateContent successfully in this repo; fall back to non-stream for AI Workspace.
-                match self
-                    .do_single_non_stream_request(&non_stream_url, &body, &callback, &mut abort_signal)
-                    .await
-                {
-                    Ok(()) => {}
-                    Err(ChatError::Aborted) => callback(SessionEvent::Error("Current request aborted".to_string())),
-                    Err(ChatError::Http { status, body }) => callback(SessionEvent::Error(format!(
-                        "Gemini HTTP {}: {}",
-                        status, body
-                    ))),
-                    Err(ChatError::Network(e)) => callback(SessionEvent::Error(format!("Network error: {}", e))),
-                    Err(ChatError::Stream(e)) => callback(SessionEvent::Error(format!("Stream error: {}", e))),
-                    Err(ChatError::Json(e)) => callback(SessionEvent::Error(format!("JSON parse error: {}", e))),
+        for (attempt, model) in models_to_try.iter().enumerate() {
+            info!("[AI Workspace] Gemini attempt={} model='{}'", attempt + 1, model);
+            let stream_url = format!(
+                "https://generativelanguage.googleapis.com/v1beta/models/{}:streamGenerateContent?alt=sse&key={}",
+                model, self.api_key
+            );
+            let non_stream_url = format!(
+                "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+                model, self.api_key
+            );
+            match self
+                .do_single_stream_request(&stream_url, &body, parser, &callback, &mut abort_signal)
+                .await
+            {
+                Ok(()) => return,
+                Err(ChatError::Http { status, body: _ }) if status == StatusCode::NOT_FOUND => {
+                    // Stream endpoint or model may be missing; fall back to non-stream for this model.
+                    match self
+                        .do_single_non_stream_request(&non_stream_url, &body, &callback, &mut abort_signal)
+                        .await
+                    {
+                        Ok(()) => return,
+                        Err(ChatError::Http { status, body }) if status == StatusCode::NOT_FOUND => {
+                            if attempt + 1 == models_to_try.len() {
+                                callback(SessionEvent::Error(format!(
+                                    "Gemini HTTP {} Not Found for model '{}': {}",
+                                    status,
+                                    model,
+                                    if body.trim().is_empty() { "<empty body>".to_string() } else { body }
+                                )));
+                                return;
+                            }
+                            continue;
+                        }
+                        Err(ChatError::Aborted) => {
+                            callback(SessionEvent::Error("Current request aborted".to_string()));
+                            return;
+                        }
+                        Err(ChatError::Http { status, body }) => {
+                            callback(SessionEvent::Error(format!(
+                                "Gemini HTTP {} for model '{}': {}",
+                                status,
+                                model,
+                                if body.trim().is_empty() { "<empty body>".to_string() } else { body }
+                            )));
+                            return;
+                        }
+                        Err(ChatError::Network(e)) => {
+                            callback(SessionEvent::Error(format!("Network error: {}", e)));
+                            return;
+                        }
+                        Err(ChatError::Stream(e)) => {
+                            callback(SessionEvent::Error(format!("Stream error: {}", e)));
+                            return;
+                        }
+                        Err(ChatError::Json(e)) => {
+                            callback(SessionEvent::Error(format!("JSON parse error: {}", e)));
+                            return;
+                        }
+                    }
+                }
+                Err(ChatError::Aborted) => {
+                    callback(SessionEvent::Error("Current request aborted".to_string()));
+                    return;
+                }
+                Err(ChatError::Http { status, body }) => {
+                    let can_fallback = attempt + 1 < models_to_try.len();
+                    let is_retryable = status == StatusCode::TOO_MANY_REQUESTS
+                        || status == StatusCode::SERVICE_UNAVAILABLE
+                        || status == StatusCode::INTERNAL_SERVER_ERROR
+                        || status == StatusCode::GATEWAY_TIMEOUT;
+                    if can_fallback && is_retryable {
+                        let ms = (600u64 * (attempt as u64 + 1)).min(3000);
+                        warn!(
+                            "[AI Workspace] Gemini HTTP {} for model='{}' (will retry/fallback in {}ms)",
+                            status, model, ms
+                        );
+                        sleep(Duration::from_millis(ms)).await;
+                        continue;
+                    }
+                    callback(SessionEvent::Error(format!(
+                        "Gemini HTTP {} for model '{}': {}",
+                        status,
+                        model,
+                        if body.trim().is_empty() { "<empty body>".to_string() } else { body }
+                    )));
+                    return;
+                }
+                Err(ChatError::Network(e)) => {
+                    callback(SessionEvent::Error(format!("Network error: {}", e)));
+                    return;
+                }
+                Err(ChatError::Stream(e)) => {
+                    callback(SessionEvent::Error(format!("Stream error: {}", e)));
+                    return;
+                }
+                Err(ChatError::Json(e)) => {
+                    callback(SessionEvent::Error(format!("JSON parse error: {}", e)));
+                    return;
                 }
             }
-            Err(ChatError::Aborted) => callback(SessionEvent::Error("Current request aborted".to_string())),
-            Err(ChatError::Http { status, body }) => callback(SessionEvent::Error(format!(
-                "Gemini HTTP {}: {}",
-                status, body
-            ))),
-            Err(ChatError::Network(e)) => callback(SessionEvent::Error(format!("Network error: {}", e))),
-            Err(ChatError::Stream(e)) => callback(SessionEvent::Error(format!("Stream error: {}", e))),
-            Err(ChatError::Json(e)) => callback(SessionEvent::Error(format!("JSON parse error: {}", e))),
         }
     }
 
@@ -409,15 +470,16 @@ impl GeminiClient {
 
     pub async fn generate_title(&self, user_input: &str) -> Result<String, String> {
         if self.api_key.is_empty() {
-            return Err(
-                "Missing Gemini API key (set GEMINI_API_KEY or settings/ai/providers.json gemini.api_key)."
-                    .to_string(),
-            );
+            let p = crate::runtime_paths::ai_providers_path();
+            return Err(format!(
+                "Missing Gemini API key (set GEMINI_API_KEY / GOOGLE_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY, or {} -> gemini.api_key).",
+                p.display()
+            ));
         }
 
         let url = format!(
             "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
-            self.model_flash, self.api_key
+            self.model, self.api_key
         );
 
         let prompt = format!("Summarize the following request into a very short title (max 5 words, no quotes). Language: same as input.\n\nRequest: {}", user_input);

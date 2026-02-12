@@ -1,6 +1,7 @@
 //! Voice service: orchestrates STT + TTS + Audio I/O as Bevy Resource
 use super::{
     audio::{AudioCapture, AudioChunk, AudioPlayer},
+    gemini_live::{GeminiLiveClient, GeminiLiveCommand, GeminiLiveEvent, SEND_SAMPLE_RATE, RECEIVE_SAMPLE_RATE},
     stt::{resample_to_16k, simple_vad, WhisperEngine},
     tts::VitsTtsEngine,
 };
@@ -19,6 +20,7 @@ pub enum VoiceMode {
     PushToTalk,
     WakeWordSleep,
     WakeWordAwake,
+    GeminiLive,
 }
 
 #[derive(Debug, Clone)]
@@ -26,8 +28,18 @@ pub enum VoiceCommand {
     StartListening,
     StopListening,
     Speak(String),
+    StopSpeaking,
     SetMode(VoiceMode),
     SetWakePhrases(Vec<String>),
+    // Gemini Live commands
+    StartGeminiLive {
+        api_key: String,
+        system_instruction: Option<String>,
+        tools: Option<serde_json::Value>,
+    },
+    StopGeminiLive,
+    SendGeminiLiveText { text: String },
+    SendGeminiLiveToolResponse { id: String, name: String, response: serde_json::Value },
 }
 
 #[derive(Debug, Clone)]
@@ -35,6 +47,7 @@ pub enum VoiceEvent {
     TranscriptionReady(String),
     WakeWordDetected(String),
     UtteranceFinalized(String),
+    GeminiLiveToolCall { id: String, name: String, args: serde_json::Value },
     SpeechStarted,
     SpeechEnded,
     Error(String),
@@ -113,13 +126,9 @@ impl VoiceService {
                 list.retain(|tx| tx.try_send(ev.clone()).is_ok());
             }
         }
-        let whisper = match WhisperEngine::new(&stt_path) {
-            Ok(w) => Some(w),
-            Err(e) => {
-                emit(&event_subs, VoiceEvent::Error(format!("Whisper model load failed: {stt_path} ({e})")));
-                None
-            }
-        };
+        // Lazy-init STT to avoid blocking/crashing app startup before UI is ready.
+        let mut whisper: Option<WhisperEngine> = None;
+        let mut whisper_load_failed = false;
         let mut tts = VitsTtsEngine::new(&tts_path).ok();
         let mut capture = AudioCapture::new();
         let samples_rx = capture.take_receiver();
@@ -135,6 +144,13 @@ impl VoiceService {
         let vad_th = 0.01;
         let end_silence = Duration::from_millis(850);
         let min_utt = Duration::from_millis(250);
+
+        // Gemini Live state
+        let mut gemini_live_cmd_tx: Option<Sender<GeminiLiveCommand>> = None;
+        let mut gemini_live_event_rx: Option<Receiver<GeminiLiveEvent>> = None;
+        let mut gemini_audio_buf: Vec<i16> = Vec::new();
+        let mut gemini_setup_done = false;
+        const GEMINI_CHUNK_SIZE: usize = 4800; // 300ms at 16kHz
 
         fn norm(s: &str) -> String {
             s.chars()
@@ -163,6 +179,20 @@ impl VoiceService {
                             capture.stop();
                             listen_flag.store(false, Ordering::SeqCst);
                         }
+                        if whisper.is_none() && !whisper_load_failed {
+                            match WhisperEngine::new(&stt_path) {
+                                Ok(w) => whisper = Some(w),
+                                Err(e) => {
+                                    whisper_load_failed = true;
+                                    emit(
+                                        &event_subs,
+                                        VoiceEvent::Error(format!(
+                                            "Whisper model load failed: {stt_path} ({e})"
+                                        )),
+                                    );
+                                }
+                            }
+                        }
                         if let Some(ref w) = whisper {
                             if !ptt_buf.is_empty() {
                                 let samples_16k = resample_to_16k(&ptt_buf, ptt_sr);
@@ -180,6 +210,7 @@ impl VoiceService {
                         ptt_buf.clear();
                     }
                     VoiceCommand::Speak(text) => {
+                        AudioPlayer::stop();
                         speak_flag.store(true, Ordering::SeqCst);
                         emit(&event_subs, VoiceEvent::SpeechStarted);
                         if let Some(ref mut engine) = tts {
@@ -191,12 +222,23 @@ impl VoiceService {
                                 }
                                 Ok(_) => {}
                                 Err(e) => {
+                                    bevy::log::error!("[TTS] {e}");
                                     emit(&event_subs, VoiceEvent::Error(e.to_string()));
                                 }
                             }
+                        } else {
+                            let msg = "TTS engine unavailable";
+                            bevy::log::error!("[TTS] {msg}");
+                            emit(&event_subs, VoiceEvent::Error(msg.to_string()));
                         }
                         speak_flag.store(false, Ordering::SeqCst);
                         emit(&event_subs, VoiceEvent::SpeechEnded);
+                    }
+                    VoiceCommand::StopSpeaking => {
+                        AudioPlayer::stop();
+                        if speak_flag.swap(false, Ordering::SeqCst) {
+                            emit(&event_subs, VoiceEvent::SpeechEnded);
+                        }
                     }
                     VoiceCommand::SetMode(m) => {
                         mode = m;
@@ -205,7 +247,7 @@ impl VoiceService {
                                 capture.stop();
                                 listen_flag.store(false, Ordering::SeqCst);
                             }
-                            _ => {
+                            VoiceMode::PushToTalk | VoiceMode::WakeWordSleep | VoiceMode::WakeWordAwake | VoiceMode::GeminiLive => {
                                 capture.start();
                                 listen_flag.store(true, Ordering::SeqCst);
                             }
@@ -219,6 +261,55 @@ impl VoiceService {
                         }
                     }
                     VoiceCommand::SetWakePhrases(p) => wake_phrases = p,
+                    VoiceCommand::StartGeminiLive { api_key, system_instruction, tools } => {
+                        // Stop any existing Gemini Live session
+                        if let Some(ref cmd_tx) = gemini_live_cmd_tx {
+                            let _ = cmd_tx.try_send(GeminiLiveCommand::Disconnect);
+                        }
+                        gemini_live_cmd_tx = None;
+                        gemini_live_event_rx = None;
+                        gemini_setup_done = false;
+
+                        // Start new Gemini Live session
+                        mode = VoiceMode::GeminiLive;
+                        capture.start();
+                        listen_flag.store(true, Ordering::SeqCst);
+
+                        let (cmd_tx, event_rx) = GeminiLiveClient::spawn(
+                            api_key,
+                            system_instruction,
+                            tools,
+                        );
+                        gemini_live_cmd_tx = Some(cmd_tx);
+                        gemini_live_event_rx = Some(event_rx);
+                        bevy::log::info!("[GeminiLive] Session started");
+                    }
+                    VoiceCommand::StopGeminiLive => {
+                        if let Some(ref cmd_tx) = gemini_live_cmd_tx {
+                            let _ = cmd_tx.try_send(GeminiLiveCommand::Disconnect);
+                        }
+                        gemini_live_cmd_tx = None;
+                        gemini_live_event_rx = None;
+                        gemini_setup_done = false;
+                        mode = VoiceMode::Off;
+                        capture.stop();
+                        listen_flag.store(false, Ordering::SeqCst);
+                        bevy::log::info!("[GeminiLive] Session stopped");
+                    }
+                    VoiceCommand::SendGeminiLiveText { text } => {
+                        if let Some(ref cmd_tx) = gemini_live_cmd_tx {
+                            let _ = cmd_tx.try_send(GeminiLiveCommand::SendText(text));
+                        }
+                    }
+                    VoiceCommand::SendGeminiLiveToolResponse { id, name, response } => {
+                        if let Some(ref cmd_tx) = gemini_live_cmd_tx {
+                            let _ = cmd_tx.try_send(GeminiLiveCommand::SendToolResult {
+                                id,
+                                function_name: name,
+                                result: response,
+                            });
+                        }
+                    }
                 }
             }
             if let Some(ref rx) = samples_rx {
@@ -229,6 +320,30 @@ impl VoiceService {
                             ptt_sr = sample_rate;
                             if simple_vad(&samples, vad_th) {
                                 ptt_buf.extend(samples);
+                            }
+                        }
+                        VoiceMode::GeminiLive => {
+                            // Convert f32 samples to i16 PCM and send to Gemini Live
+                            if gemini_setup_done {
+                                if let Some(ref cmd_tx) = gemini_live_cmd_tx {
+                                // Resample to 16kHz if needed
+                                let samples_16k = if sample_rate != SEND_SAMPLE_RATE {
+                                    resample_to_16k(&samples, sample_rate)
+                                } else {
+                                    samples.clone()
+                                };
+                                // Convert f32 to i16
+                                for s in samples_16k {
+                                    let clamped = s.clamp(-1.0, 1.0);
+                                    gemini_audio_buf.push((clamped * 32767.0) as i16);
+                                }
+                                // Send in chunks
+                                while gemini_audio_buf.len() >= GEMINI_CHUNK_SIZE {
+                                    let chunk: Vec<i16> = gemini_audio_buf.drain(..GEMINI_CHUNK_SIZE).collect();
+                                    let pcm_bytes: Vec<u8> = chunk.iter().flat_map(|&s| s.to_le_bytes()).collect();
+                                    let _ = cmd_tx.try_send(GeminiLiveCommand::SendAudio(pcm_bytes));
+                                }
+                                }
                             }
                         }
                         VoiceMode::WakeWordSleep | VoiceMode::WakeWordAwake => {
@@ -250,6 +365,20 @@ impl VoiceService {
                                 && !utt_buf.is_empty()
                             {
                                 speech_active = false;
+                                if whisper.is_none() && !whisper_load_failed {
+                                    match WhisperEngine::new(&stt_path) {
+                                        Ok(w) => whisper = Some(w),
+                                        Err(e) => {
+                                            whisper_load_failed = true;
+                                            emit(
+                                                &event_subs,
+                                                VoiceEvent::Error(format!(
+                                                    "Whisper model load failed: {stt_path} ({e})"
+                                                )),
+                                            );
+                                        }
+                                    }
+                                }
                                 if let Some(ref w) = whisper {
                                     let samples_16k = resample_to_16k(&utt_buf, utt_sr);
                                     match w.transcribe(&samples_16k) {
@@ -273,6 +402,62 @@ impl VoiceService {
                     }
                 }
             }
+
+            // Process Gemini Live events (audio output, text, function calls)
+            let mut gemini_disconnected = false;
+            if let Some(ref rx) = gemini_live_event_rx {
+                while let Ok(ev) = rx.try_recv() {
+                    match ev {
+                        GeminiLiveEvent::Connected => {
+                            gemini_setup_done = true;
+                            bevy::log::info!("[GeminiLive] Connected to server");
+                        }
+                        GeminiLiveEvent::AudioOutput(pcm_bytes) => {
+                            speak_flag.store(true, Ordering::SeqCst);
+                            AudioPlayer::play_bytes(&pcm_bytes, RECEIVE_SAMPLE_RATE);
+                            speak_flag.store(false, Ordering::SeqCst);
+                        }
+                        GeminiLiveEvent::TextOutput(text) => {
+                            bevy::log::info!("[GeminiLive] Response: {}", text);
+                            emit(&event_subs, VoiceEvent::UtteranceFinalized(text));
+                        }
+                        GeminiLiveEvent::InputTranscript(text) => {
+                            bevy::log::info!("[GeminiLive] You said: {}", text);
+                            emit(&event_subs, VoiceEvent::TranscriptionReady(text));
+                        }
+                        GeminiLiveEvent::FunctionCall { id, name, args } => {
+                            bevy::log::info!("[GeminiLive] Function call: {} {:?}", name, args);
+                            emit(&event_subs, VoiceEvent::GeminiLiveToolCall { id, name, args });
+                        }
+                        GeminiLiveEvent::TurnComplete => {
+                            bevy::log::debug!("[GeminiLive] Turn complete");
+                        }
+                        GeminiLiveEvent::Interrupted => {
+                            bevy::log::debug!("[GeminiLive] Interrupted");
+                        }
+                        GeminiLiveEvent::Disconnected => {
+                            bevy::log::info!("[GeminiLive] Disconnected");
+                            gemini_disconnected = true;
+                        }
+                        GeminiLiveEvent::Error(e) => {
+                            bevy::log::error!("[GeminiLive] Error: {}", e);
+                            gemini_setup_done = false;
+                            emit(&event_subs, VoiceEvent::Error(format!("GeminiLive: {}", e)));
+                        }
+                    }
+                }
+            }
+            if gemini_disconnected {
+                gemini_live_cmd_tx = None;
+                gemini_live_event_rx = None;
+                gemini_setup_done = false;
+                if mode == VoiceMode::GeminiLive {
+                    mode = VoiceMode::Off;
+                    capture.stop();
+                    listen_flag.store(false, Ordering::SeqCst);
+                }
+            }
+
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
     }

@@ -4,10 +4,11 @@ use super::protocol::*;
 use super::ui::{h_flex, v_flex, ThemeColors, Label, LabelColor, LabelSize, Button, ButtonStyle, TintColor, Spacing, ResizeDirection, drag_handle};
 use super::components::{SessionList, ThreadView, InputComposer, ModelSelector, ModeSelector, ProjectPanel, EditorTabs, QuickOpen, CommandPalette, ProviderSettings, VoiceAssistantSettings};
 use crossbeam_channel::{Receiver, Sender, unbounded};
-use gpui::{actions, App, Application, AsyncApp, Bounds, Context, DismissEvent, Entity, ExternalPaths, FocusHandle, Focusable, InteractiveElement, KeyBinding, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Render, SharedString, TitlebarOptions, Window, WindowBounds, WindowHandle, WindowOptions, Styled, anchored, deferred, div, prelude::*, px, relative, size};
+use gpui::{actions, App, Application, AsyncApp, Bounds, Context, DismissEvent, Entity, ExternalPaths, FocusHandle, Focusable, InteractiveElement, KeyBinding, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Render, SharedString, TitlebarOptions, Window, WindowBounds, WindowControlArea, WindowHandle, WindowOptions, Styled, anchored, deferred, div, prelude::*, px, relative, size};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
+use crate::app::window_frame::{WINDOW_CHROME_ICON_FONT_FAMILY, WINDOW_CHROME_GLYPH_CLOSE, WINDOW_CHROME_GLYPH_MAX, WINDOW_CHROME_GLYPH_MIN};
 
 actions!(ai_workspace, [Quit, Refresh, NewSession, ToggleModelSelector, CycleMode, ToggleProjectPanel, ToggleQuickOpen, ToggleCommandPalette, SaveFile, SaveAllFiles]);
 
@@ -58,16 +59,23 @@ fn run_gpui_app(host_rx: Receiver<HostToUi>, ui_tx: Sender<UiToHost>, action_rx:
         let ui_tx = ui_tx.clone();
         let shutdown = shutdown.clone();
 
-        let window: WindowHandle<AiWorkspaceWindow> = cx.open_window(
+        let window: WindowHandle<AiWorkspaceWindow> = match cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
-                titlebar: Some(TitlebarOptions { title: Some(SharedString::from("AI Workspace")), ..Default::default() }),
+                titlebar: Some(TitlebarOptions { title: Some(SharedString::from("AI Workspace")), appears_transparent: true, ..Default::default() }),
                 ..Default::default()
             },
             move |window, cx| {
                 cx.new(|cx| AiWorkspaceWindow::new(ui_tx.clone(), window, cx))
             },
-        ).expect("open gpui window");
+        ) {
+            Ok(w) => w,
+            Err(e) => {
+                bevy::log::error!("[GPUI] open_window failed: {e}");
+                cx.quit();
+                return;
+            }
+        };
 
         let host_rx = host_rx;
         let action_rx = action_rx;
@@ -92,6 +100,8 @@ fn run_gpui_app(host_rx: Receiver<HostToUi>, ui_tx: Sender<UiToHost>, action_rx:
                         return;
                     }
                 }
+                // Drive editor animations (diff playback) at ~60fps even without host events.
+                let _ = window.update(cx, |this, _window, cx| this.tick(cx));
                 cx.background_executor().timer(std::time::Duration::from_millis(16)).await;
             }
             cx.update(|cx| cx.quit());
@@ -162,6 +172,9 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("cmd-y", code_editor::Redo, Some("CodeEditor")),
         KeyBinding::new("ctrl-shift-z", code_editor::Redo, Some("CodeEditor")),
         KeyBinding::new("cmd-shift-z", code_editor::Redo, Some("CodeEditor")),
+        KeyBinding::new("ctrl-space", code_editor::Complete, Some("CodeEditor")),
+        KeyBinding::new("f12", code_editor::GotoDefinition, Some("CodeEditor")),
+        KeyBinding::new("ctrl-alt-h", code_editor::Hover, Some("CodeEditor")),
         KeyBinding::new("ctrl-p", ToggleQuickOpen, Some("AiWorkspace")),
         KeyBinding::new("cmd-p", ToggleQuickOpen, Some("AiWorkspace")),
         KeyBinding::new("ctrl-shift-p", ToggleCommandPalette, Some("AiWorkspace")),
@@ -178,6 +191,7 @@ pub struct AiWorkspaceUiState {
     pub snapshot: WorkspaceSnapshot,
     pub active_session_id: Option<uuid::Uuid>,
     pub expanded_tools: std::collections::HashSet<u64>,
+    pub voice_listening: bool,
 }
 
 impl AiWorkspaceUiState {
@@ -187,7 +201,19 @@ impl AiWorkspaceUiState {
             HostToUi::ActiveSessionChanged { session_id } => { self.active_session_id = session_id; }
             HostToUi::SessionEvent { session_id, event } => { self.apply_session_event(session_id, event); }
             HostToUi::ProvidersUpdated { profiles, active_idx } => { self.snapshot.providers = profiles; self.snapshot.active_provider_idx = active_idx; }
-            HostToUi::VoiceAssistantSettingsUpdated(settings) => { self.snapshot.voice_assistant_enabled = settings.enabled; }
+            HostToUi::VoiceAssistantSettingsUpdated(settings) => {
+                self.snapshot.voice_assistant_enabled = settings.enabled;
+                self.snapshot.voice_model = if settings.enabled {
+                    if settings.use_gemini_live { VoiceModel::GeminiLive } else { VoiceModel::Legacy }
+                } else {
+                    VoiceModel::Off
+                };
+            }
+            HostToUi::GeminiLiveStateChanged { active } => { self.snapshot.gemini_live_active = active; }
+            HostToUi::GeminiLiveTranscript { text: _ } => { /* TODO: display user speech transcript */ }
+            HostToUi::GeminiLiveResponse { text: _ } => { /* TODO: display AI response text */ }
+            HostToUi::VoiceListeningChanged { listening } => { self.voice_listening = listening; }
+            HostToUi::ComposerTextSet { .. } => { /* handled by window (UI-only) */ }
             HostToUi::IdeEvent(ide_event) => { self.apply_ide_event(ide_event); }
             HostToUi::Shutdown => {}
         }
@@ -314,6 +340,7 @@ struct AiWorkspaceWindow {
     chat_width_ratio: f32,
     resize: Option<(ResizeTarget, f32, f32, f32)>,
     is_pinned: bool,
+    api_setup_gate_opened: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -335,7 +362,7 @@ impl AiWorkspaceWindow {
             let plugins = cwd.join("plugins");
             let _ = tx.send(UiToHost::IdeSetRoot { path: if plugins.exists() { plugins } else { cwd } });
         }
-        Self { focus_handle, state: AiWorkspaceUiState::default(), thread_view, input_composer, session_list, mode_selector, model_selector_open: false, model_selector: None, provider_settings_open: false, provider_settings: None, voice_settings_open: false, voice_settings: None, voice_settings_snapshot: VoiceAssistantSettingsSnapshot::default(), project_panel, project_panel_visible: true, editor_tabs, quick_open: None, command_palette: None, ui_tx, sidebar_width: 240.0, chat_width_ratio: 0.35, resize: None, is_pinned: false }
+        Self { focus_handle, state: AiWorkspaceUiState::default(), thread_view, input_composer, session_list, mode_selector, model_selector_open: false, model_selector: None, provider_settings_open: false, provider_settings: None, voice_settings_open: false, voice_settings: None, voice_settings_snapshot: VoiceAssistantSettingsSnapshot::default(), project_panel, project_panel_visible: true, editor_tabs, quick_open: None, command_palette: None, ui_tx, sidebar_width: 240.0, chat_width_ratio: 0.35, resize: None, is_pinned: false, api_setup_gate_opened: false }
     }
 
     fn resize_start(&mut self, target: ResizeTarget, event: &MouseDownEvent, _: &mut Window, cx: &mut Context<Self>) {
@@ -379,8 +406,23 @@ impl AiWorkspaceWindow {
                         tabs.apply_file_changed(path.clone(), *version, edits.clone(), cx)
                     });
                 }
+                IdeEvent::CursorMoved { path, line, col } => {
+                    self.editor_tabs.update(cx, |tabs, cx| tabs.set_cursor(path.clone(), *line, *col, cx));
+                }
                 IdeEvent::FileDirtyChanged { path, is_dirty } => {
                     self.editor_tabs.update(cx, |tabs, cx| tabs.mark_dirty(path, *is_dirty, cx));
+                }
+                IdeEvent::DiagnosticsUpdated { path, diagnostics } => {
+                    self.editor_tabs.update(cx, |tabs, cx| tabs.set_diagnostics(path.clone(), diagnostics.clone(), cx));
+                }
+                IdeEvent::CompletionItems { path, items } => {
+                    self.editor_tabs.update(cx, |tabs, cx| tabs.set_completions(path.clone(), items.clone(), cx));
+                }
+                IdeEvent::HoverText { path, markdown } => {
+                    self.editor_tabs.update(cx, |tabs, cx| tabs.set_hover(path.clone(), markdown.clone(), cx));
+                }
+                IdeEvent::DefinitionLocation { from: _, to, line, col } => {
+                    let _ = self.ui_tx.send(UiToHost::IdeGotoLine { path: to.clone(), line: *line, col: *col });
                 }
                 IdeEvent::QuickOpenResults { items } => {
                     if let Some(ref qo) = self.quick_open { qo.update(cx, |qo, cx| qo.set_results(items.clone(), cx)); }
@@ -389,6 +431,13 @@ impl AiWorkspaceWindow {
                     if let Some(ref cp) = self.command_palette { cp.update(cx, |cp, cx| cp.set_results(commands.clone(), cx)); }
                 }
                 _ => {}
+            }
+        }
+        if let HostToUi::ComposerTextSet { session_id, text } = &event {
+            if self.state.active_session_id == Some(*session_id) {
+                let text = text.clone();
+                self.input_composer.update(cx, |comp, cx| comp.set_text(text, cx));
+                self.input_composer.update(cx, |comp, cx| comp.focus(window, cx));
             }
         }
         // Update project panel with IDE snapshot
@@ -404,13 +453,28 @@ impl AiWorkspaceWindow {
         let active_id = self.state.active_session_id;
         let is_busy = active_session.as_ref().map(|s| s.is_busy).unwrap_or(false);
         let active_file = self.state.snapshot.ide.active_file.clone();
+        let voice_available = !matches!(self.state.snapshot.voice_model, VoiceModel::Off);
+        let voice_active = !matches!(self.state.snapshot.voice_model, VoiceModel::Off)
+            && (self.state.snapshot.gemini_live_active || self.state.voice_listening);
         self.thread_view.update(cx, |view, cx| view.set_session(active_session, cx));
         self.input_composer.update(cx, |comp, cx| {
             comp.set_session(active_id);
             comp.set_busy(is_busy, cx);
             comp.set_active_file(active_file.clone(), cx);
+            comp.set_voice_active(voice_active, cx);
+            comp.set_voice_available(voice_available, cx);
         });
         self.session_list.update(cx, |list, cx| list.set_sessions(self.state.snapshot.sessions.clone(), active_id, cx));
+
+        let missing_gemini_key = self
+            .state
+            .snapshot
+            .providers
+            .first()
+            .is_some_and(|p| p.backend_type == BackendType::Gemini && !p.has_api_key);
+        if !missing_gemini_key {
+            self.api_setup_gate_opened = false;
+        }
     }
 
     fn toggle_model_selector(&mut self, _: &ToggleModelSelector, window: &mut Window, cx: &mut Context<Self>) {
@@ -420,8 +484,9 @@ impl AiWorkspaceWindow {
         } else {
             let providers = self.state.snapshot.providers.clone();
             let active_idx = self.state.snapshot.active_provider_idx;
+            let voice_model = self.state.snapshot.voice_model;
             let tx = self.ui_tx.clone();
-            let selector = cx.new(|cx| ModelSelector::new(&providers, active_idx, tx, window, cx));
+            let selector = cx.new(|cx| ModelSelector::new(&providers, active_idx, voice_model, tx, window, cx));
             cx.subscribe(&selector, |this, _, _: &DismissEvent, cx| {
                 this.model_selector = None;
                 this.model_selector_open = false;
@@ -552,15 +617,30 @@ impl AiWorkspaceWindow {
         let idx = self.state.snapshot.active_provider_idx;
         providers.get(idx).map(|p| p.selected_model.clone()).unwrap_or_else(|| "Select Model".into())
     }
+
+    fn tick(&mut self, cx: &mut Context<Self>) {
+        self.editor_tabs.update(cx, |tabs, cx| { let _ = tabs.tick(cx); });
+    }
 }
 
 impl Focusable for AiWorkspaceWindow { fn focus_handle(&self, _: &App) -> FocusHandle { self.focus_handle.clone() } }
 
 impl Render for AiWorkspaceWindow {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let active_id = self.state.active_session_id.or(self.state.snapshot.active_session_id);
         let active_session = self.state.active_session().cloned();
         let model_name = self.current_model_name();
+
+        let missing_gemini_key = self
+            .state
+            .snapshot
+            .providers
+            .first()
+            .is_some_and(|p| p.backend_type == BackendType::Gemini && !p.has_api_key);
+        if missing_gemini_key && !self.provider_settings_open && !self.api_setup_gate_opened {
+            self.api_setup_gate_opened = true;
+            self.toggle_provider_settings(window, cx);
+        }
 
         // Left sidebar: plugins file tree (top) + sessions (bottom)
         let sidebar_w = self.sidebar_width;
@@ -587,14 +667,14 @@ impl Render for AiWorkspaceWindow {
         let tx_voice = self.ui_tx.clone();
         let header = h_flex()
             .flex_none()
-            .h(px(44.0))
-            .px(Spacing::Base12.px())
+            .h(px(32.0))
+            .px(Spacing::Base08.px())
             .gap(Spacing::Base06.px())
             .border_b_1()
             .border_color(ThemeColors::border())
             .bg(ThemeColors::bg_secondary())
-            .child(Label::new("AI Workspace").size(LabelSize::Large).color(LabelColor::Primary))
-            .child(div().flex_1())
+            .child(Label::new("AI Workspace").size(LabelSize::Small).color(LabelColor::Primary))
+            .child(div().flex_1().window_control_area(WindowControlArea::Drag))
             .child(self.mode_selector.clone())
             .child(Button::new("model-btn", model_name).style(ButtonStyle::Subtle).on_click(cx.listener(|this, _, window, cx| this.toggle_model_selector(&ToggleModelSelector, window, cx))))
             .child(Button::new("provider-settings", "⚙").style(ButtonStyle::Icon).on_click(cx.listener(|this, _, window, cx| this.toggle_provider_settings(window, cx))))
@@ -608,7 +688,9 @@ impl Render for AiWorkspaceWindow {
             .child(Button::new("new-session", "+ New").style(ButtonStyle::Tinted(TintColor::Accent)).on_click(move |_, _, _| { let _ = tx_new.send(UiToHost::NewSession); }))
             .child(Button::new("pin-window", pin_icon).style(ButtonStyle::Icon).toggle_state(self.is_pinned).on_click(cx.listener(|this, _, window, cx| this.toggle_pin(window, cx))))
             .child(Button::new("refresh", "↻").style(ButtonStyle::Icon).on_click(move |_, _, _| { let _ = tx_snap.send(UiToHost::RequestSnapshot); }))
-            .child(Button::new("close", "✕").style(ButtonStyle::Icon).on_click(move |_, _, _| { let _ = tx_shut.send(UiToHost::Shutdown); }));
+            .child(div().font_family(WINDOW_CHROME_ICON_FONT_FAMILY).window_control_area(WindowControlArea::Min).child(Button::new("minimize", WINDOW_CHROME_GLYPH_MIN).style(ButtonStyle::Icon).on_click(move |_, window, _| window.minimize_window())))
+            .child(div().font_family(WINDOW_CHROME_ICON_FONT_FAMILY).window_control_area(WindowControlArea::Max).child(Button::new("maximize", WINDOW_CHROME_GLYPH_MAX).style(ButtonStyle::Icon).on_click(move |_, window, _| window.titlebar_double_click())))
+            .child(div().font_family(WINDOW_CHROME_ICON_FONT_FAMILY).window_control_area(WindowControlArea::Close).child(Button::new("close", WINDOW_CHROME_GLYPH_CLOSE).style(ButtonStyle::Icon).on_click(move |_, _, _| { let _ = tx_shut.send(UiToHost::Shutdown); })));
 
         // Token usage bar
         let token_info = active_session.as_ref().map(|s| {
@@ -617,9 +699,9 @@ impl Render for AiWorkspaceWindow {
             h_flex()
                 .flex_none()
                 .w_full()
-                .px(Spacing::Base08.px())
+                .px(Spacing::Base06.px())
                 .py(Spacing::Base02.px())
-                .gap(Spacing::Base08.px())
+                .gap(Spacing::Base06.px())
                 .bg(ThemeColors::bg_secondary())
                 .border_t_1()
                 .border_color(ThemeColors::border())
@@ -673,7 +755,7 @@ impl Render for AiWorkspaceWindow {
             .min_w(px(360.0))
             .max_w(relative(0.5))
             .h_full()
-            .px(Spacing::Base16.px())
+            .px(Spacing::Base08.px())
             .bg(ThemeColors::bg_primary())
             .border_l_1()
             .border_color(ThemeColors::border())

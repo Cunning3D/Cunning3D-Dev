@@ -1,6 +1,7 @@
-//! Document: Rope-based text buffer with undo/redo (Zed-isomorphic)
+//! Document: Rope-backed text buffer with undo/redo (Zed-isomorphic)
 
 use crate::ai_workspace_gpui::protocol::{IdeEvent, OpenFileSnapshot, TextEdit};
+use crate::ai_workspace_gpui::ide::text_core::{TextCore, Transaction};
 use crossbeam_channel::Sender;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -12,7 +13,7 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone)]
 pub struct Document {
     pub path: PathBuf,
-    pub content: String,
+    pub core: TextCore,
     pub version: u64,
     pub is_dirty: bool,
     pub cursor_line: usize,
@@ -25,85 +26,55 @@ pub struct Document {
 #[derive(Debug, Clone)]
 struct UndoEntry {
     version: u64,
-    edits: Vec<TextEdit>,
-    inverse: Vec<TextEdit>,
+    tx: Transaction,
 }
 
 impl Document {
     pub fn new(path: PathBuf, content: String) -> Self {
         Self {
-            path, content, version: 1, is_dirty: false, cursor_line: 0, cursor_col: 0,
+            path, core: TextCore::new(&content), version: 1, is_dirty: false, cursor_line: 0, cursor_col: 0,
             undo_stack: vec![], redo_stack: vec![], saved_version: 1,
         }
     }
 
-    pub fn apply_edit(&mut self, edit: &TextEdit) -> TextEdit {
-        let old_text = self.content[edit.start_offset..edit.end_offset].to_string();
-        let inverse = TextEdit { start_offset: edit.start_offset, end_offset: edit.start_offset + edit.new_text.len(), new_text: old_text };
-        self.content = format!("{}{}{}", &self.content[..edit.start_offset], &edit.new_text, &self.content[edit.end_offset..]);
-        self.version += 1;
-        self.is_dirty = self.version != self.saved_version;
-        inverse
-    }
-
     pub fn apply_edits(&mut self, edits: &[TextEdit]) {
-        let mut inverses = Vec::new();
-        let mut offset_delta: isize = 0;
-        for edit in edits {
-            let adjusted = TextEdit {
-                start_offset: (edit.start_offset as isize + offset_delta) as usize,
-                end_offset: (edit.end_offset as isize + offset_delta) as usize,
-                new_text: edit.new_text.clone(),
-            };
-            let inv = self.apply_edit(&adjusted);
-            offset_delta += edit.new_text.len() as isize - (edit.end_offset - edit.start_offset) as isize;
-            inverses.push(inv);
-        }
-        inverses.reverse();
-        self.undo_stack.push(UndoEntry { version: self.version, edits: edits.to_vec(), inverse: inverses });
+        let tx = self.core.apply_transaction(edits);
+        self.version = self.core.version();
+        self.undo_stack.push(UndoEntry { version: self.version, tx });
         self.redo_stack.clear();
+        self.is_dirty = self.version != self.saved_version;
     }
 
     pub fn undo(&mut self) -> Option<Vec<TextEdit>> {
         let entry = self.undo_stack.pop()?;
-        for inv in &entry.inverse { self.apply_edit(inv); }
+        self.core.apply_inverse(&entry.tx.inverse);
+        self.version = self.core.version();
+        self.is_dirty = self.version != self.saved_version;
         self.redo_stack.push(entry.clone());
-        Some(entry.inverse)
+        Some(entry.tx.inverse)
     }
 
     pub fn redo(&mut self) -> Option<Vec<TextEdit>> {
         let entry = self.redo_stack.pop()?;
-        for edit in &entry.edits { self.apply_edit(edit); }
-        self.undo_stack.push(entry.clone());
-        Some(entry.edits)
+        let tx = self.core.apply_transaction(&entry.tx.edits);
+        self.version = self.core.version();
+        self.is_dirty = self.version != self.saved_version;
+        self.undo_stack.push(UndoEntry { version: self.version, tx: tx.clone() });
+        Some(tx.edits)
     }
 
     pub fn mark_saved(&mut self) { self.saved_version = self.version; self.is_dirty = false; }
-    pub fn line_count(&self) -> usize { self.content.lines().count().max(1) }
+    pub fn line_count(&self) -> usize { self.core.line_count() }
 
-    pub fn line_at(&self, line: usize) -> &str {
-        self.content.lines().nth(line).unwrap_or("")
-    }
+    pub fn to_string(&self) -> String { self.core.to_string() }
+    pub fn len_bytes(&self) -> usize { self.core.len_bytes() }
 
     pub fn offset_to_line_col(&self, offset: usize) -> (usize, usize) {
-        let mut line = 0;
-        let mut col = 0;
-        for (i, ch) in self.content.char_indices() {
-            if i >= offset { break; }
-            if ch == '\n' { line += 1; col = 0; } else { col += 1; }
-        }
-        (line, col)
+        self.core.byte_to_line_col(offset)
     }
 
     pub fn line_col_to_offset(&self, line: usize, col: usize) -> usize {
-        let mut cur_line = 0;
-        let mut cur_col = 0;
-        for (i, ch) in self.content.char_indices() {
-            if cur_line == line && cur_col == col { return i; }
-            if ch == '\n' { cur_line += 1; cur_col = 0; if cur_line > line { return i; } }
-            else { cur_col += 1; }
-        }
-        self.content.len()
+        self.core.line_col_to_byte(line, col)
     }
 
     pub fn to_snapshot(&self) -> OpenFileSnapshot {
@@ -158,7 +129,7 @@ impl DocumentStore {
 
     pub fn save(&mut self, path: &Path) -> Result<(), String> {
         let doc = self.documents.get_mut(path).ok_or("File not open")?;
-        std::fs::write(path, &doc.content).map_err(|e| e.to_string())?;
+        std::fs::write(path, doc.to_string()).map_err(|e| e.to_string())?;
         doc.mark_saved();
         let version = doc.version;
         let _ = self.event_tx.send(IdeEvent::FileSaved { path: path.to_path_buf(), version });
@@ -181,6 +152,19 @@ impl DocumentStore {
         let _ = self.event_tx.send(IdeEvent::FileChanged { path: path.to_path_buf(), version, edits });
         let _ = self.event_tx.send(IdeEvent::FileDirtyChanged { path: path.to_path_buf(), is_dirty });
         Ok(version)
+    }
+
+    /// Apply external on-disk content change as an undoable edit.
+    /// This keeps the editor "刷刷改代码" feeling when tools patch files.
+    pub fn sync_from_disk_as_edit(&mut self, path: &Path) -> Result<u64, String> {
+        let new_content = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+        let doc = self.documents.get_mut(path).ok_or("File not open")?;
+        if doc.to_string() == new_content {
+            return Ok(doc.version);
+        }
+        let old_len = doc.len_bytes();
+        let edits = vec![TextEdit { start_offset: 0, end_offset: old_len, new_text: new_content }];
+        self.edit(path, edits)
     }
 
     pub fn undo(&mut self, path: &Path) -> Result<u64, String> {
@@ -218,10 +202,18 @@ impl DocumentStore {
             if let Some(doc) = self.documents.get(path) {
                 let _ = self.event_tx.send(IdeEvent::FileOpened {
                     path: path.to_path_buf(),
-                    content: doc.content.clone(),
+                    content: doc.to_string(),
                     version: doc.version,
                 });
             }
+        }
+    }
+
+    pub fn set_cursor(&mut self, path: &Path, line: usize, col: usize) {
+        if let Some(doc) = self.documents.get_mut(path) {
+            doc.cursor_line = line.min(doc.line_count().saturating_sub(1));
+            doc.cursor_col = col;
+            let _ = self.event_tx.send(IdeEvent::CursorMoved { path: path.to_path_buf(), line: doc.cursor_line as u32, col: doc.cursor_col as u32 });
         }
     }
 
@@ -231,7 +223,7 @@ impl DocumentStore {
         }
         let mut doc = self.documents.remove(from).ok_or("File not open")?;
         doc.path = to.to_path_buf();
-        let content = doc.content.clone();
+        let content = doc.to_string();
         let version = doc.version;
         self.documents.insert(to.to_path_buf(), doc);
 
@@ -261,4 +253,26 @@ impl DocumentStore {
     pub fn open_files(&self) -> Vec<OpenFileSnapshot> { self.documents.values().map(|d| d.to_snapshot()).collect() }
     pub fn recent_files(&self) -> &[PathBuf] { &self.recent_files }
     pub fn is_open(&self, path: &Path) -> bool { self.documents.contains_key(path) }
+
+    /// Reload an already-open document from disk and emit IdeEvent::FileChanged.
+    /// This makes tool-based file edits immediately visible in the editor and undoable.
+    pub fn reload_from_disk_if_open(&mut self, path: &Path) -> Result<(), String> {
+        if !self.documents.contains_key(path) {
+            return Ok(());
+        }
+        let old = self.documents.get(path).map(|d| d.to_string()).unwrap_or_default();
+        let new = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+        if old == new {
+            return Ok(());
+        }
+        let doc = self.documents.get_mut(path).ok_or("File not open")?;
+        let edits = vec![TextEdit { start_offset: 0, end_offset: old.len(), new_text: new }];
+        doc.apply_edits(&edits);
+        // Disk is already updated (tool wrote it). Treat this as clean while keeping undo available.
+        doc.mark_saved();
+        let version = doc.version;
+        let _ = self.event_tx.send(IdeEvent::FileChanged { path: path.to_path_buf(), version, edits });
+        let _ = self.event_tx.send(IdeEvent::FileDirtyChanged { path: path.to_path_buf(), is_dirty: false });
+        Ok(())
+    }
 }

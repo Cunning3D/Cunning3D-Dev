@@ -1,5 +1,6 @@
 //! Overlay widget library for coverlay panels.
 mod style;
+mod icons;
 mod buttons;
 mod inputs;
 mod layout;

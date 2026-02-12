@@ -131,7 +131,7 @@ pub fn request_relay_session(
                 session.error = Some("Gemini host missing.".to_string());
                 return;
             };
-            host.request(&session.request_id, &prompt);
+            host.request_with_model(&session.request_id, &prompt, Some(editor.gemini_cloud_model.model_name()));
         }
     }
 }
@@ -721,7 +721,7 @@ pub fn request_ghost_path(
                     );
                     return;
                 };
-                host.request(&req_id, &prompt);
+                host.request_with_model(&req_id, &prompt, Some(editor.gemini_cloud_model.model_name()));
             }
         }
     }
@@ -853,7 +853,7 @@ pub fn request_box_note(
                 );
                 return;
             };
-            host.request(&req_id, &prompt);
+            host.request_with_model(&req_id, &prompt, Some(editor.gemini_cloud_model.model_name()));
         }
     }
 }
@@ -916,7 +916,7 @@ pub fn request_graph_explain(
             if let Some(host) = context.native_ai_host { host.request_prediction(req_id, prompt, 256); }
         }
         crate::tabs_system::node_editor::state::CopilotBackend::Gemini => {
-            if let Some(host) = context.gemini_copilot_host { host.request(&req_id, &prompt); }
+            if let Some(host) = context.gemini_copilot_host { host.request_with_model(&req_id, &prompt, Some(editor.gemini_cloud_model.model_name())); }
         }
     }
 }
@@ -982,7 +982,7 @@ pub fn request_coverlay_panel_generate(editor: &mut NodeEditorTab, context: &mut
         user = user,
         nodes = nodes_txt
     );
-    host.request(&req_id, &prompt);
+    host.request_with_model(&req_id, &prompt, Some(editor.gemini_cloud_model.model_name()));
 }
 
 fn request_multi_agg_then_path(
@@ -1102,7 +1102,7 @@ fn request_multi_agg_then_path(
                 );
                 return;
             };
-            host.request(&req_id, &prompt);
+            host.request_with_model(&req_id, &prompt, Some(editor.gemini_cloud_model.model_name()));
         }
     }
     let _ = anchor;
@@ -1376,7 +1376,7 @@ fn request_multi_path(
                 );
                 return;
             };
-            host.request(&req_id, &prompt);
+            host.request_with_model(&req_id, &prompt, Some(editor.gemini_cloud_model.model_name()));
         }
     }
 }

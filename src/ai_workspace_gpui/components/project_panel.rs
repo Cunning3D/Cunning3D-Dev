@@ -1,7 +1,7 @@
 //! Project Panel: File tree with virtualized rendering (Zed-isomorphic)
 
 use crossbeam_channel::{bounded, Receiver, Sender};
-use gpui::{anchored, deferred, div, point, px, prelude::*, AnyElement, App, Context, DismissEvent, Entity, FocusHandle, Focusable, IntoElement, KeyDownEvent, ListAlignment, ListState, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Render, Styled, Window};
+use gpui::{anchored, deferred, div, list, point, px, prelude::*, AnyElement, App, Context, DismissEvent, Entity, FocusHandle, Focusable, IntoElement, KeyDownEvent, ListAlignment, ListState, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Render, Styled, Window};
 use crate::ai_workspace_gpui::{
     protocol::{EntryId, EntryKind, FileEntrySnapshot, FileIcon, UiToHost},
     ui::{h_flex, v_flex, Button, ButtonStyle, ContextMenu, ContextMenuItem, Label, LabelColor, LabelSize, Spacing, TextInput, ThemeColors},
@@ -76,11 +76,11 @@ impl ProjectPanel {
                     cx.notify();
                 }
                 ProjectPanelCmd::RevealInExplorer(id) => {
-                    let Some(entry) = self.entry_by_id(id) else { continue; };
+                    let Some(entry) = self.entry_by_id(id).cloned() else { continue; };
                     let _ = self.ui_tx.send(UiToHost::IdeRevealInExplorer { path: entry.path.clone() });
                 }
                 ProjectPanelCmd::BeginRename(id) => {
-                    let Some(entry) = self.entry_by_id(id) else { continue; };
+                    let Some(entry) = self.entry_by_id(id).cloned() else { continue; };
                     self.context_menu = None;
                     self.renaming = Some(id);
                     self.rename_input.update(cx, |i, cx| i.set_text(entry.name.clone(), cx));
@@ -110,7 +110,7 @@ impl ProjectPanel {
                     self.open_delete_confirm_menu(id, window, cx);
                 }
                 ProjectPanelCmd::ConfirmDelete(id) => {
-                    let Some(entry) = self.entry_by_id(id) else { continue; };
+                    let Some(entry) = self.entry_by_id(id).cloned() else { continue; };
                     let _ = self.ui_tx.send(UiToHost::IdeDeletePath { path: entry.path.clone() });
                     self.context_menu = None;
                     cx.notify();
@@ -267,8 +267,8 @@ impl Render for ProjectPanel {
                 h_flex()
                     .flex_none()
                     .w_full()
-                    .h(px(32.0))
-                    .px(Spacing::Base06.px())
+                    .h(px(28.0))
+                    .px(Spacing::Base04.px())
                     .justify_between()
                     .items_center()
                     .border_b_1()

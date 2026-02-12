@@ -1,25 +1,25 @@
 {
+  "plugin_name": "demo_jitter",
   "node": {
+    "name": "Demo Jitter",
+    "category": "Demo",
     "params": [
       {
+        "type": "float",
         "default": 1,
-        "name": "amount",
-        "type": "float"
+        "name": "amount"
       },
       {
         "default": 42,
-        "type": "int",
-        "name": "seed"
+        "name": "seed",
+        "type": "int"
       }
     ],
-    "category": "Demo",
     "inputs": [
       "Mesh"
     ],
     "outputs": [
       "Out"
-    ],
-    "name": "Demo Jitter"
-  },
-  "plugin_name": "demo_jitter"
+    ]
+  }
 }

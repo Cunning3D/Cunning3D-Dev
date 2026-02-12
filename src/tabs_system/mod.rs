@@ -18,6 +18,7 @@ use crate::libs::ai_service::native_tiny_model::TinyModelHost;
 use crate::libs::voice::VoiceService;
 use crate::nodes::NodeGraphResource;
 use crate::tabs_system::node_editor::connection_hint::service::ConnectionHintState;
+use crate::app::window_frame::{WINDOW_SAFE_INSET_LP, WINDOW_UI_SURFACE_BG_SRGBA};
 use crate::{
     console::ConsoleLog,
     invalidator::GraphRevision,
@@ -33,13 +34,13 @@ use std::collections::HashMap;
 mod rect_hash;
 use rect_hash::mix_rect;
 
-pub use crate::tabs_registry::ai_workspace::pane::AiWorkspacePane;
+pub use crate::tabs_registry::ai_assistant::pane::AiAssistantPane;
 pub use codex_tab::CodexTab;
 pub use console_tab::ConsoleTab;
 pub use geometry_spreadsheet_tab::GeometrySpreadsheetTab;
 pub use node_editor::NodeEditorTab;
 pub use node_properties_tab::NodePropertiesTab;
-pub use outliner_tab::OutlinerTab;
+//pub use outliner_tab::OutlinerTab;
 pub use pane::settings::SettingsPane;
 pub use toolbar::Toolbar;
 pub use viewport_3d::Viewport3DTab;
@@ -54,8 +55,8 @@ pub mod hud_actions;
 pub mod node_editor;
 #[path = "./node_properties_tab.rs"]
 pub mod node_properties_tab;
-#[path = "./outliner_tab.rs"]
-pub mod outliner_tab;
+//#[path = "./outliner_tab.rs"]
+//pub mod outliner_tab;
 pub mod pane;
 #[path = "./timeline.rs"]
 pub mod timeline;
@@ -192,6 +193,11 @@ impl<'a> EguiTabViewer for TabUi<'a> {
         tab.title()
     }
 
+    fn clear_background(&self, tab: &Self::Tab) -> bool {
+        // Keep the 3D viewport area fully transparent so the Bevy camera output stays visible.
+        !tab.as_any().is::<Viewport3DTab>()
+    }
+
     fn on_close(&mut self, _tab: &mut Self::Tab) -> bool {
         // For now, we don't allow closing tabs.
         true // Allow closing now that we can add them!
@@ -211,7 +217,7 @@ impl<'a> EguiTabViewer for TabUi<'a> {
             ("Node Graph", crate::ui::PaneTabType::NodeGraph),
             ("Properties", crate::ui::PaneTabType::Properties),
             ("Spreadsheet", crate::ui::PaneTabType::Spreadsheet),
-            ("Outliner", crate::ui::PaneTabType::Outliner),
+           //"Outliner", crate::ui::PaneTabType::Outliner),
             ("Coverlay", crate::ui::PaneTabType::Coverlay),
             ("Console (Old)", crate::ui::PaneTabType::Console),
             ("Codex", crate::ui::PaneTabType::Codex),
@@ -265,6 +271,36 @@ pub struct TabViewer {
     pub dock_state: DockState<Box<dyn EditorTab>>,
     // Persistent instance for Tablet/Mobile mode
     pub mobile_node_editor: NodeEditorTab,
+    pub did_strip_outliner: bool,
+}
+
+fn strip_outliner_from_dock_state(st: &mut DockState<Box<dyn EditorTab>>) {
+    // Remove legacy Outliner tab from the default dock (keep everything else unchanged).
+    loop {
+        let mut hit: Option<(egui_dock::SurfaceIndex, egui_dock::NodeIndex, egui_dock::TabIndex)> =
+            None;
+        for si in 0..st.surfaces_count() {
+            let s = egui_dock::SurfaceIndex(si);
+            let len = st[s].len();
+            for ni in 0..len {
+                let n = egui_dock::NodeIndex(ni);
+                let egui_dock::Node::Leaf { tabs, .. } = &st[s][n] else { continue };
+                if let Some(ti) = tabs
+                    .iter()
+                    .position(|t| t.title().text() == "Outliner")
+                    .map(egui_dock::TabIndex)
+                {
+                    hit = Some((s, n, ti));
+                    break;
+                }
+            }
+            if hit.is_some() {
+                break;
+            }
+        }
+        let Some(key) = hit else { break };
+        let _ = st.remove_tab(key);
+    }
 }
 
 impl FromWorld for TabViewer {
@@ -272,7 +308,6 @@ impl FromWorld for TabViewer {
         // The order of tabs here is important for the layout logic below.
         let mut tabs: Vec<Box<dyn EditorTab>> = vec![
             Box::new(Viewport3DTab::default()),
-            Box::new(OutlinerTab::default()),
             Box::new(NodePropertiesTab::default()),
             Box::new(GeometrySpreadsheetTab::default()),
             Box::new(ConsoleTab::default()), // Moved Console before NodeEditor for layout logic
@@ -282,15 +317,9 @@ impl FromWorld for TabViewer {
 
         // 1. Start with the 3D Viewport as the central panel.
         let mut dock_state = DockState::new(vec![tabs.remove(0)]);
+        let viewport_node = NodeIndex::root();
 
-        // 2. Split Left -> Outliner (20% width)
-        // Returns [Original Node (Viewport), New Node (Outliner)]
-        let [viewport_node, _ai_node] =
-            dock_state
-                .main_surface_mut()
-                .split_left(NodeIndex::root(), 0.20, vec![tabs.remove(0)]);
-
-        // 3. Split Right (of Viewport) -> Properties + Spreadsheet
+        // 2. Split Right (of Viewport) -> Properties + Spreadsheet
         // We want the Viewport (Left) to take about 75% of the remaining width.
         let [viewport_node, properties_node] = dock_state.main_surface_mut().split_right(
             viewport_node,
@@ -298,7 +327,7 @@ impl FromWorld for TabViewer {
             vec![tabs.remove(0), tabs.remove(0)],
         );
 
-        // 4. Split Viewport Below -> Console
+        // 3. Split Viewport Below -> Console
         // Viewport (Top) keeps 85% of height, bottom group gets the remaining 15%.
         let [_viewport_node, _console_node] = dock_state.main_surface_mut().split_below(
             viewport_node,
@@ -306,16 +335,18 @@ impl FromWorld for TabViewer {
             vec![tabs.remove(0), tabs.remove(0)],
         );
 
-        // 5. Split Properties Below -> Node Editor
+        // 4. Split Properties Below -> Node Editor
         // Node Editor takes 50% of the vertical space in the right column
         let [_properties_node, _node_editor_node] =
             dock_state
                 .main_surface_mut()
                 .split_below(properties_node, 0.5, vec![tabs.remove(0)]);
 
+        strip_outliner_from_dock_state(&mut dock_state);
         Self {
             dock_state,
             mobile_node_editor: NodeEditorTab::default(),
+            did_strip_outliner: true,
         }
     }
 }
@@ -534,10 +565,24 @@ pub fn show_editor_ui(world: &mut World) {
         };
 
         // Create and apply the style here
+        let ui_bg = egui::Color32::from_rgba_unmultiplied(
+            (WINDOW_UI_SURFACE_BG_SRGBA[0] * 255.0) as u8,
+            (WINDOW_UI_SURFACE_BG_SRGBA[1] * 255.0) as u8,
+            (WINDOW_UI_SURFACE_BG_SRGBA[2] * 255.0) as u8,
+            (WINDOW_UI_SURFACE_BG_SRGBA[3] * 255.0) as u8,
+        );
+        // IMPORTANT: do not mutate global egui Context style every frame (can deadlock with render thread under epaint debug locks).
+        // Instead, use explicit fills in dock/layout painting below.
+        let tab_body_bg = ui_bg;
         let mut style = Style::from_egui(egui_context.get_mut().style().as_ref());
         // CRITICAL for Native Viewport: Make dock background transparent so the Bevy hole is visible!
         style.main_surface_border_stroke = egui::Stroke::NONE;
-        style.tab.tab_body.bg_fill = egui::Color32::TRANSPARENT; // Use the correct field: bg_fill
+        // Default: fill tab bodies (all non-viewport tabs). Viewport tab opts out via `clear_background()`.
+        style.tab.tab_body.bg_fill = tab_body_bg;
+        // Fill the tab strip background so the area around buttons isn't "empty" at the edges.
+        // This keeps visuals consistent with the global left/right safe inset gutters.
+        style.tab_bar.fill_tab_bar = true;
+        style.tab_bar.bg_fill = ui_bg;
 
         // Interaction sizing is controlled by Settings → General/UI/Interaction.
 
@@ -684,9 +729,10 @@ pub fn show_editor_ui(world: &mut World) {
             crate::ui::LayoutMode::Desktop => {
                 // --- DESKTOP LAYOUT ---
                 let _toolbar = Toolbar::default();
+                let bg = ui_bg;
                 // --- TOPBAR SPACER (Topbar is Bevy UI) ---
                 // Use a transparent egui panel to reserve space WITHOUT changing egui's screen_rect size.
-                let top_h = 28.0;
+                let top_h = crate::app::window_frame::WINDOW_SAFE_INSET_LP + crate::app::window_frame::WINDOW_TOPBAR_H_LP;
                 egui::TopBottomPanel::top("bevy_ui_topbar_spacer")
                     .resizable(false)
                     .frame(egui::Frame::NONE.inner_margin(egui::Margin::same(0)))
@@ -697,7 +743,7 @@ pub fn show_editor_ui(world: &mut World) {
                     });
 
                 // Shelf is Bevy UI now; keep egui out of this region to avoid overlap/input conflicts.
-                let shelf_h = 84.0;
+                let shelf_h = crate::app::window_frame::WINDOW_SHELF_H_LP;
                 egui::TopBottomPanel::top("bevy_ui_shelf_spacer")
                     .resizable(false)
                     .frame(egui::Frame::NONE.inner_margin(egui::Margin::same(0)))
@@ -708,8 +754,8 @@ pub fn show_editor_ui(world: &mut World) {
                     });
 
                 // --- TIMELINE SPACER (Timeline is Bevy UI) ---
-                // Keep egui out of the bottom 60px while preserving egui screen size for SDF/GPUText.
-                let bottom_h = 60.0;
+                // Keep egui out of the bottom timeline area + safe inset strip.
+                let bottom_h = 60.0 + crate::app::window_frame::WINDOW_SAFE_INSET_LP;
                 egui::TopBottomPanel::bottom("bevy_ui_timeline_spacer")
                     .resizable(false)
                     .frame(egui::Frame::NONE.inner_margin(egui::Margin::same(0)))
@@ -721,12 +767,52 @@ pub fn show_editor_ui(world: &mut World) {
 
                 let mut tab_ui = TabUi { context: &mut cx };
 
-                DockArea::new(&mut tab_viewer.dock_state)
-                    .id(egui::Id::new("main_dock_area"))
-                    .style(style)
-                    .show_add_buttons(true)
-                    .show_add_popup(true)
-                    .show(egui_context.get_mut(), &mut tab_ui);
+                let has_outliner = tab_viewer
+                    .dock_state
+                    .iter_all_tabs()
+                    .any(|(_k, t)| t.title().text() == "Outliner");
+                if !tab_viewer.did_strip_outliner || has_outliner {
+                    strip_outliner_from_dock_state(&mut tab_viewer.dock_state);
+                    tab_viewer.did_strip_outliner = true;
+                }
+
+                egui::CentralPanel::default().frame(egui::Frame::NONE).show(egui_context.get_mut(), |ui| {
+                    // Global safe inset: keep ALL tabs away from left/right window edges,
+                    // but do NOT paint an opaque background over the viewport.
+                    let full = ui.max_rect();
+                    let inset = crate::app::window_frame::WINDOW_SAFE_INSET_LP;
+                    let inner_min_x = (full.min.x + inset).min(full.max.x);
+                    let inner_max_x = (full.max.x - inset).max(full.min.x);
+                    let inner = egui::Rect::from_min_max(
+                        egui::pos2(inner_min_x, full.min.y),
+                        egui::pos2(inner_max_x, full.max.y),
+                    );
+
+                    // Paint only the left/right gutters as a single background layer.
+                    if inner.min.x > full.min.x + 0.5 {
+                        ui.painter().rect_filled(
+                            egui::Rect::from_min_max(full.min, egui::pos2(inner.min.x, full.max.y)),
+                            egui::CornerRadius::ZERO,
+                            bg,
+                        );
+                    }
+                    if inner.max.x < full.max.x - 0.5 {
+                        ui.painter().rect_filled(
+                            egui::Rect::from_min_max(egui::pos2(inner.max.x, full.min.y), full.max),
+                            egui::CornerRadius::ZERO,
+                            bg,
+                        );
+                    }
+
+                    ui.allocate_ui_at_rect(inner, |ui| {
+                        DockArea::new(&mut tab_viewer.dock_state)
+                            .id(egui::Id::new("main_dock_area"))
+                            .style(style)
+                            .show_add_buttons(true)
+                            .show_add_popup(true)
+                            .show_inside(ui, &mut tab_ui);
+                    });
+                });
 
                 // Convert egui-dock "window surfaces" into real OS windows (Bevy Window entities).
                 // This enables minimizing the main window while keeping detached panels usable.
@@ -810,7 +896,7 @@ pub fn show_editor_ui(world: &mut World) {
                     crate::ui::PaneTabType::Spreadsheet => {
                         Box::new(GeometrySpreadsheetTab::default())
                     }
-                    crate::ui::PaneTabType::Outliner => Box::new(OutlinerTab::default()),
+                    //crate::ui::PaneTabType::Outliner => Box::new(OutlinerTab::default()),
                     crate::ui::PaneTabType::Coverlay => {
                         Box::new(crate::coverlay_bevy_ui::CoverlayDockTab::default())
                     }
@@ -831,8 +917,8 @@ pub fn show_editor_ui(world: &mut World) {
                 }
             }
             crate::ui::PaneCommand::AddByName(name, surface, node) => {
-                // Special case: AI Workspace opens GPUI window directly
-                if name == "AI Workspace" {
+                // Special case: GPUI workspace opens a native GPUI window directly.
+                if name == "AI Workspace" || name == "AI Workspace (GPUI)" {
                     should_open_ai_workspace = true;
                     continue;
                 }
@@ -1013,9 +1099,14 @@ pub fn show_floating_tabs_ui(world: &mut World) {
 
                 // IMPORTANT: Floating windows are rendered in immediate mode to avoid long-lived borrows
                 // (retained closures can capture &mut references across loop iterations).
-                egui::CentralPanel::default().show(ctx, |ui| {
-                    tab.ui(ui, &mut cx);
-                });
+                let is_viewport = tab.as_any().downcast_ref::<Viewport3DTab>().is_some();
+                let panel = if is_viewport {
+                    // Floating Viewport window: keep the 3D render visible and only draw chrome/overlays.
+                    egui::CentralPanel::default().frame(egui::Frame::NONE.fill(egui::Color32::TRANSPARENT))
+                } else {
+                    egui::CentralPanel::default()
+                };
+                panel.show(ctx, |ui| tab.ui(ui, &mut cx));
 
                 // NOTE: Do not force repaint every frame; winit reactive mode + egui repaint requests
                 // should drive updates only when needed (input/animations/data changes).

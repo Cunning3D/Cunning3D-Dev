@@ -2,6 +2,7 @@
 use super::definitions::{
     Tool, ToolContext, ToolDefinition, ToolError, ToolLog, ToolLogLevel, ToolOutput,
 };
+use super::diff::compute_file_diff;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::fs;
@@ -361,9 +362,15 @@ impl Tool for ReadFileTool {
                 remaining, total
             ));
         }
-        // LLM needs a real excerpt (not "OK") to avoid re-requesting read_file; keep it small but useful.
-        let mut o =
-            ToolOutput::with_summary(out.lines().take(120).collect::<Vec<_>>().join("\n"), out);
+        // Keep LLM summary compact; full content stays in raw_text for ToolCard UI.
+        let summary = format!(
+            "Read file '{}' (lines {}-{}, total {}).",
+            path.display(),
+            a.offset,
+            end,
+            total
+        );
+        let mut o = ToolOutput::with_summary(summary, out);
         o.ui_logs = vec![ToolLog {
             message: format!("Read {} lines from {}", end - start, path.display()),
             level: ToolLogLevel::Success,
@@ -373,7 +380,80 @@ impl Tool for ReadFileTool {
 }
 
 // ==========================================
-// Tool 4: Web Search (docs.rs priority + multi-source)
+// Tool 4: Patch / Write File (safe roots)
+// ==========================================
+
+fn resolve_edit_path(file_path: &str) -> Result<std::path::PathBuf, ToolError> {
+    let p = file_path.trim().trim_start_matches("./").trim_start_matches(".\\").replace("\\", "/");
+    if p.is_empty() || p.contains("..") || p.starts_with('/') || p.contains(':') { return Err(ToolError("Invalid path".into())); }
+    if !ALLOWED_ROOTS.iter().any(|r| p == *r || p.starts_with(&format!("{r}/"))) {
+        return Err(ToolError(format!("Access denied. Allowed roots: {:?}", ALLOWED_ROOTS)));
+    }
+    Ok(std::path::PathBuf::from(p))
+}
+
+#[derive(Deserialize)]
+struct PatchHunk { original: String, replacement: String }
+#[derive(Deserialize)]
+struct PatchAnyFileArgs { file_path: String, hunks: Vec<PatchHunk> }
+
+pub struct PatchFileTool;
+impl Tool for PatchFileTool {
+    fn name(&self) -> &str { "patch_file" }
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: self.name().to_string(),
+            description: "Apply precise unique text patches to a file under allowed roots (plugins/crates/src). Prefer this over rewriting the whole file.".into(),
+            parameters: json!({"type":"object","properties":{"file_path":{"type":"string","description":"Relative path (e.g. 'plugins/extra_node/foo/Cargo.toml' or 'src/main.rs')"},"hunks":{"type":"array","items":{"type":"object","properties":{"original":{"type":"string","description":"Exact text to replace (must be unique)"},"replacement":{"type":"string","description":"New text"},"required":["original","replacement"]}}}},"required":["file_path","hunks"]}),
+        }
+    }
+    fn execute(&self, args: Value) -> Result<ToolOutput, ToolError> {
+        let a: PatchAnyFileArgs = serde_json::from_value(args).map_err(|e| ToolError(format!("Invalid args: {e}")))?;
+        let path = resolve_edit_path(&a.file_path)?;
+        if !path.exists() || !path.is_file() { return Err(ToolError(format!("File not found: {}", path.display()))); }
+        let old = fs::read_to_string(&path).map_err(|e| ToolError(format!("Read error: {e}")))?;
+        let mut content = old.clone();
+        let mut logs = Vec::new();
+        for (i, h) in a.hunks.iter().enumerate() {
+            let hits: Vec<_> = content.match_indices(&h.original).collect();
+            if hits.is_empty() { return Err(ToolError(format!("Hunk {i} failed: original not found"))); }
+            if hits.len() > 1 { return Err(ToolError(format!("Hunk {i} failed: original not unique ({})", hits.len()))); }
+            content = content.replace(&h.original, &h.replacement);
+            logs.push(ToolLog { message: format!("Applied hunk {}", i + 1), level: ToolLogLevel::Success });
+        }
+        fs::write(&path, &content).map_err(|e| ToolError(format!("Write error: {e}")))?;
+        let mut out = ToolOutput::new(format!("Patched {} hunks in {}.", a.hunks.len(), path.display()), logs);
+        if let Some(d) = compute_file_diff(path.to_string_lossy().to_string(), &old, &content) { out.ui_diffs.push(d); }
+        Ok(out)
+    }
+}
+
+#[derive(Deserialize)]
+struct WriteAnyFileArgs { file_path: String, content: String }
+pub struct WriteFileTool;
+impl Tool for WriteFileTool {
+    fn name(&self) -> &str { "write_file" }
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: self.name().to_string(),
+            description: "Write full content to a file under allowed roots (plugins/crates/src). Creates parent directories if needed.".into(),
+            parameters: json!({"type":"object","properties":{"file_path":{"type":"string","description":"Relative path under allowed roots"},"content":{"type":"string","description":"Full file content"}},"required":["file_path","content"]}),
+        }
+    }
+    fn execute(&self, args: Value) -> Result<ToolOutput, ToolError> {
+        let a: WriteAnyFileArgs = serde_json::from_value(args).map_err(|e| ToolError(format!("Invalid args: {e}")))?;
+        let path = resolve_edit_path(&a.file_path)?;
+        if let Some(parent) = path.parent() { let _ = fs::create_dir_all(parent); }
+        let old = fs::read_to_string(&path).unwrap_or_default();
+        fs::write(&path, &a.content).map_err(|e| ToolError(format!("Write error: {e}")))?;
+        let mut out = ToolOutput::new(format!("Wrote {} bytes to {}.", a.content.len(), path.display()), vec![ToolLog { message: "Write completed".into(), level: ToolLogLevel::Success }]);
+        if let Some(d) = compute_file_diff(path.to_string_lossy().to_string(), &old, &a.content) { out.ui_diffs.push(d); }
+        Ok(out)
+    }
+}
+
+// ==========================================
+// Tool 5: Web Search (docs.rs priority + multi-source)
 // ==========================================
 
 #[derive(Deserialize)]

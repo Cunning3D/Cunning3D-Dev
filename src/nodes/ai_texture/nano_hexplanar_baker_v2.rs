@@ -466,17 +466,16 @@ struct Img { mime: String, bytes: Vec<u8> }
 struct ImgOut { mime: String, bytes: Vec<u8> }
 
 fn load_gemini_key() -> String {
-    if let Ok(k) = std::env::var("GEMINI_API_KEY") { if !k.trim().is_empty() { return k; } }
-    let path = std::env::current_dir().ok().map(|p| p.join("settings/ai/providers.json"));
-    let raw = path.as_ref().and_then(|p| std::fs::read_to_string(p).ok()).unwrap_or_default();
+    let k = crate::cunning_core::ai_service::gemini::api_key::read_gemini_api_key_env();
+    if !k.trim().is_empty() { return k; }
+    let raw = std::fs::read_to_string(crate::runtime_paths::ai_providers_path()).unwrap_or_default();
     let v: Value = serde_json::from_str(&raw).unwrap_or(Value::Null);
     v.get("gemini").and_then(|g| g.get("api_key")).and_then(|x| x.as_str()).unwrap_or("").trim().to_string()
 }
 fn load_gemini_model_image() -> String {
     if let Ok(m) = std::env::var("CUNNING_GEMINI_MODEL_IMAGE") { if !m.trim().is_empty() { return m; } }
     if let Ok(m) = std::env::var("CUNNING_GEMINI_IMAGE_MODEL") { if !m.trim().is_empty() { return m; } }
-    let path = std::env::current_dir().ok().map(|p| p.join("settings/ai/providers.json"));
-    let raw = path.as_ref().and_then(|p| std::fs::read_to_string(p).ok()).unwrap_or_default();
+    let raw = std::fs::read_to_string(crate::runtime_paths::ai_providers_path()).unwrap_or_default();
     let v: Value = serde_json::from_str(&raw).unwrap_or(Value::Null);
     v.get("gemini").and_then(|g| g.get("model_image").or_else(|| g.get("image_model"))).and_then(|x| x.as_str()).unwrap_or("gemini-3-pro-image-preview").trim().to_string()
 }

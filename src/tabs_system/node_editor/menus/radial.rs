@@ -311,9 +311,18 @@ pub fn handle_radial_menu(
                 &editor.cda_state.breadcrumb(),
             );
             if let Some(node) = node_graph.nodes.get(&node_id) {
+                // IMPORTANT: Node dragging updates visuals via `editor.cached_nodes` every frame and
+                // only commits into the real graph on release. The radial menu must follow the
+                // visual node rect, not the committed graph rect, otherwise the ring "lags behind".
+                let (pos, size) = editor
+                    .cached_nodes
+                    .iter()
+                    .find(|n| n.id == node_id)
+                    .map(|n| (n.position, n.size))
+                    .unwrap_or((node.position, node.size));
                 let node_rect = Rect::from_min_size(
-                    editor_rect.min + node.position.to_vec2() * editor.zoom + editor.pan,
-                    node.size * editor.zoom,
+                    editor_rect.min + pos.to_vec2() * editor.zoom + editor.pan,
+                    size * editor.zoom,
                 );
                 node_rect_for_action = Some(node_rect);
 

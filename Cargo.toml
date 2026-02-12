@@ -68,6 +68,8 @@ rhai = { version = "1.18.0", features = ["sync", "serde", "internals"] }
 toml = "0.8"
 sysinfo = "0.30"
 tokio = { version = "1.36", features = ["full"] }
+tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
+futures-util = "0.3"
 reqwest = { version = "0.11", features = ["json", "stream", "blocking"] }
 crossbeam-channel = "0.5"
 gpui = { path = "libs/gpui_deps/gpui", default-features = false }
@@ -80,6 +82,11 @@ ustr = { version = "1.1.0", features = ["serde"] }
 robust = "1.2.0"
 xatlas-rs = "0.1.3"
 similar = "2.5"
+ropey = "1.6"
+tree-sitter = "0.26.3"
+tree-sitter-highlight = "0.26.3"
+tree-sitter-rust = "0.24.0"
+lsp-types = "0.96"
 manifold-rs = { path = "src/cunning_core/core/algorithms/algorithms_editor/libs/manifold3d" }
 bevy_cgui = { path = "src/cunning_core/libs/3rd/bevy/crates/bevy_cgui" }
 bevy_cgui_render = { path = "src/cunning_core/libs/3rd/bevy/crates/bevy_cgui_render" }
@@ -114,6 +121,10 @@ cunning_voxel_faces = { path = "crates/cunning_voxel_faces" }
 cunning_overlay_widgets = { path = "crates/cunning_overlay_widgets" }
 cunning_plugin_sdk = { path = "crates/cunning_plugin_sdk" }
 redb = "3.1.0"
+raw-window-handle = "0.6"
+cunning_syntax = { path = "crates/cunning_syntax" }
+cunning_syntax_egui = { path = "crates/cunning_syntax_egui" }
+windows = { version = "0.62.2", features = ["Win32_UI_Controls", "Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging"] }
 
 [build-dependencies]
 chacha20poly1305 = "0.10.1"

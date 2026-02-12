@@ -1,6 +1,41 @@
 //! AiWorkspaceHost: Actor driving Session/Tool/LLM, outputs HostToUi events.
-use super::ide::{DocumentStore, Worktree};
+use super::ide::{DocumentStore, Worktree, LspManager};
+
+/// System prompt for Gemini Live voice assistant.
+/// This is a simplified "操作助手" (operation assistant) - no code writing,
+/// focused on node creation, connection, parameter adjustment, and scene navigation.
+const GEMINI_LIVE_SYSTEM_PROMPT: &str = r#"你是 Cunning3D 的语音操作助手。你的职责是帮助用户通过语音指令操作 3D 建模软件。
+
+## 你的能力
+- 创建节点：Box、Sphere、Torus、Grid、Merge、Transform、Copy 等
+- 连接节点：将一个节点的输出连接到另一个节点的输入
+- 调整参数：修改节点的尺寸、分辨率、位置、旋转、缩放等参数
+- 选择对象：选择节点、几何体、点、边、面
+- 视图控制：缩放、平移、旋转视角，聚焦选中对象
+
+## 你不做的事情
+- 不写代码（Rust、Rhai、Python 等）
+- 不创建自定义节点
+- 不解释复杂的编程概念
+
+## 交互风格
+- 简洁直接，像真人助手一样对话
+- 用用户的语言回复（中文或英文）
+- 确认操作已完成，或说明无法完成的原因
+- 如果不确定用户意图，简短询问澄清
+
+## 示例对话
+用户: 帮我创建一个立方体
+你: 好的，已创建 Box 节点。
+
+用户: 把它变大一点
+你: 已将尺寸调整为 2x2x2。
+
+用户: 再创建一个球体，然后把它们合并
+你: 已创建 Sphere 节点并用 Merge 节点将它们合并。
+"#;
 use super::protocol::*;
+use crate::cunning_core::ai_service::prefix_cache::StablePrefixCache;
 use crate::tabs_registry::ai_workspace::client::gemini::GeminiClient;
 use crate::tabs_registry::ai_workspace::client::openai_compat::{
     OpenAiCompatChatOutput, OpenAiCompatClient,
@@ -15,7 +50,8 @@ use crate::tabs_registry::ai_workspace::tools::{
 };
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use serde_json::json;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use uuid::Uuid;
@@ -32,6 +68,12 @@ fn tts_speakable(s: &str) -> Option<String> {
     }
     let max = 260usize;
     Some(if t.chars().count() <= max { t.to_string() } else { t.chars().take(max).collect::<String>() })
+}
+
+fn fnv1a64(bytes: &[u8]) -> u64 {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for &b in bytes { h ^= b as u64; h = h.wrapping_mul(0x100000001b3); }
+    h
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -96,10 +138,30 @@ struct ToolPermissionsFile {
     allow_always: HashSet<String>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+struct WorkspaceStateFile {
+    #[serde(default)]
+    active_session_id: Option<Uuid>,
+    #[serde(default)]
+    ide_root_path: Option<PathBuf>,
+    #[serde(default)]
+    ide_open_files: Vec<PathBuf>,
+    #[serde(default)]
+    ide_active_file: Option<PathBuf>,
+    #[serde(default = "default_project_panel_visible")]
+    project_panel_visible: bool,
+}
+
+fn default_project_panel_visible() -> bool { true }
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct VoiceAssistantSettingsFile {
     #[serde(default)]
     enabled: bool,
+    #[serde(default)]
+    use_gemini_live: bool,
+    #[serde(default)]
+    voice_model: Option<VoiceModel>,
     #[serde(default)]
     wake_phrases: String,
     #[serde(default)]
@@ -118,13 +180,31 @@ struct VoiceAssistantSettingsFile {
     auto_send_pause_secs: i64,
 }
 
+impl VoiceAssistantSettingsFile {
+    fn effective_voice_model(&self) -> VoiceModel {
+        if let Some(vm) = self.voice_model {
+            return vm;
+        }
+        if !self.enabled {
+            return VoiceModel::Off;
+        }
+        if self.use_gemini_live {
+            VoiceModel::GeminiLive
+        } else {
+            VoiceModel::Legacy
+        }
+    }
+}
+
 fn default_idle_timeout() -> i64 { 10 }
 fn default_auto_send_pause() -> i64 { 3 }
 
 impl Default for VoiceAssistantSettingsFile {
     fn default() -> Self {
         Self {
-            enabled: true,
+            enabled: false,
+            use_gemini_live: false,
+            voice_model: Some(VoiceModel::Off),
             wake_phrases: "hallo gemini|hello gemini|hi gemini|你好".into(),
             cmd_input_phrases: "start dictation|input|输入".into(),
             cmd_send_phrases: "send|发送".into(),
@@ -151,6 +231,7 @@ pub struct AiWorkspaceHost {
     tool_executor: AsyncToolExecutor,
     next_tool_request_id: u64,
     tool_allow_always: HashSet<String>,
+    last_tts_hash: HashMap<Uuid, u64>,
 
     // Internal event channel (tool/LLM -> host)
     internal_tx: Sender<(Uuid, SessionEvent)>,
@@ -170,6 +251,12 @@ pub struct AiWorkspaceHost {
     // Voice assistant state (mirrors bevy setting, updated via UI)
     voice_assistant_enabled: bool,
 
+    voice_model: VoiceModel,
+    
+    // Gemini Live state
+    gemini_live_active: bool,
+    gemini_api_key: String,
+
     // Context intelligence
     agent_index: Arc<RwLock<AgentIndex>>,
 
@@ -185,6 +272,7 @@ pub struct AiWorkspaceHost {
     // ─────────────────────────────────────────────────────────────────────────
     worktree: Worktree,
     documents: DocumentStore,
+    lsp: LspManager,
     project_panel_visible: bool,
     ide_event_rx: Receiver<IdeEvent>,
 
@@ -193,10 +281,104 @@ pub struct AiWorkspaceHost {
 }
 
 impl AiWorkspaceHost {
+    fn stop_speaking(&self) { let _ = self.bevy_tx.try_send(HostToBevy::VoiceStopSpeaking); }
+
+    fn local_assistant_to_active(&mut self, text: String) {
+        let sid = self
+            .active_session_id
+            .or_else(|| self.sessions.first().map(|s| s.id))
+            .unwrap_or_else(|| {
+                let s = Session::new();
+                let id = s.id;
+                self.sessions.push(s);
+                self.active_session_id = Some(id);
+                id
+            });
+        self.active_session_id = Some(sid);
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        if let Some(s) = self.sessions.iter_mut().find(|s| s.id == sid) {
+            let entry = ThreadEntry::Assistant { thinking: None, content: text, state: MessageState::Done, timestamp: ts };
+            s.entries.push(entry.clone());
+            let idx = s.entries.len().saturating_sub(1);
+            let _ = self.ui_tx.send(HostToUi::SessionEvent { session_id: sid, event: SessionEventSnapshot::EntryAdded { index: idx, entry: Self::entry_snapshot(&entry) } });
+            self.save_sessions();
+        }
+    }
+
+    fn sync_ide_from_tool_diffs(docs: &mut DocumentStore, diffs: &[crate::tabs_registry::ai_workspace::tools::FileDiff]) {
+        let Ok(cwd) = std::env::current_dir() else { return; };
+        for (i, d) in diffs.iter().enumerate() {
+            let p = std::path::PathBuf::from(&d.file_path);
+            let abs = if p.is_absolute() { p } else { cwd.join(p) };
+            let abs = abs.canonicalize().unwrap_or(abs);
+            // Zed-like: ensure the edited file is opened so UI can refresh immediately.
+            if !docs.is_open(&abs) {
+                let _ = docs.open(&abs);
+            }
+            if i == 0 {
+                docs.set_active(&abs);
+            }
+            let _ = docs.reload_from_disk_if_open(&abs);
+        }
+    }
+
+    fn gemini_live_tools(&self) -> Option<serde_json::Value> {
+        let deny: std::collections::HashSet<&'static str> = [
+            "terminal",
+            "diagnostics",
+            "patch_file",
+            "write_file",
+            "create_rust_plugin",
+            "compile_rust_plugin",
+            "apply_rust_nodespec",
+            "revert_rust_plugin_build",
+            "load_rust_plugins",
+            "generate_replay_script",
+            "build_knowledge_pack",
+            "create_node_folder",
+            "patch_node_file",
+            "write_node_file",
+            "check_node_compile",
+            "reload_plugin",
+        ]
+        .into_iter()
+        .collect();
+
+        let defs = self
+            .tool_registry
+            .list_definitions()
+            .into_iter()
+            .filter(|d| !deny.contains(d.name.as_str()))
+            .collect::<Vec<_>>();
+
+        if defs.is_empty() {
+            return None;
+        }
+
+        let mut tools = StablePrefixCache::tool_declarations(defs);
+        if let Some(arr) = tools.as_array_mut() {
+            for item in arr.iter_mut() {
+                if let Some(obj) = item.as_object_mut() {
+                    if let Some(v) = obj.remove("function_declarations") {
+                        obj.insert("functionDeclarations".to_string(), v);
+                    }
+                }
+            }
+        }
+        Some(tools)
+    }
+
     pub fn new(tool_registry: Arc<ToolRegistry>, ui_tx: Sender<HostToUi>, bevy_tx: Sender<HostToBevy>) -> Self {
         let (internal_tx, internal_rx) = unbounded();
         let sessions = Self::load_sessions().unwrap_or_else(|| vec![Session::new()]);
-        let active_session_id = sessions.first().map(|s| s.id);
+        let ws = Self::load_workspace_state();
+        let active_session_id = ws
+            .active_session_id
+            .filter(|id| sessions.iter().any(|s| s.id == *id))
+            .or_else(|| sessions.first().map(|s| s.id));
         let tool_allow_always = Self::load_tool_permissions().unwrap_or_default().allow_always;
         let providers = Self::load_providers_settings().unwrap_or_default();
         let gemini_settings = providers.gemini;
@@ -205,12 +387,8 @@ impl AiWorkspaceHost {
         } else {
             providers.openai_compat_profiles
         };
-        let gemini_client = Arc::new(GeminiClient::new(
-            gemini_settings.api_key.clone(),
-            gemini_settings.model_pro.clone(),
-            gemini_settings.model_flash.clone(),
-        ));
         let voice_assistant_enabled = Self::load_voice_assistant_enabled();
+        let voice_model = Self::load_voice_assistant_settings().effective_voice_model();
         let agent_index = Arc::new(RwLock::new(AgentIndex::new()));
 
         // Async build index
@@ -224,15 +402,30 @@ impl AiWorkspaceHost {
         // IDE subsystem: create event channel and components
         let (ide_event_tx, ide_event_rx) = unbounded();
         let mut worktree = Worktree::new(ide_event_tx.clone());
-        let documents = DocumentStore::new(ide_event_tx);
+        let mut documents = DocumentStore::new(ide_event_tx.clone());
+        let lsp = LspManager::new(ide_event_tx);
 
-        // Auto-set root to plugins directory
-        if let Ok(cwd) = std::env::current_dir() {
+        // Restore IDE root/open files (best-effort)
+        if let Some(root) = ws.ide_root_path.clone().filter(|p| p.exists()) {
+            worktree.set_root(root);
+        } else if let Ok(cwd) = std::env::current_dir() {
             let plugins_dir = cwd.join("plugins");
             if plugins_dir.exists() { worktree.set_root(plugins_dir); }
             else { worktree.set_root(cwd); }
         }
+        for p in &ws.ide_open_files { let _ = documents.open(p); }
+        if let Some(p) = ws.ide_active_file.clone() {
+            if !documents.is_open(&p) { let _ = documents.open(&p); }
+            documents.set_active(&p);
+        }
 
+        let gemini_api_key = {
+            let env = crate::cunning_core::ai_service::gemini::api_key::read_gemini_api_key_env();
+            if !env.trim().is_empty() { env } else { gemini_settings.api_key.clone() }
+        };
+
+        let gemini_client = Arc::new(GeminiClient::new(gemini_api_key.clone(), gemini_settings.model_pro.clone()));
+        
         Self {
             sessions,
             active_session_id,
@@ -240,6 +433,7 @@ impl AiWorkspaceHost {
             tool_executor: AsyncToolExecutor::new(tool_registry),
             next_tool_request_id: 1,
             tool_allow_always,
+            last_tts_hash: HashMap::new(),
             internal_tx,
             internal_rx,
             ui_tx,
@@ -248,13 +442,18 @@ impl AiWorkspaceHost {
             openai_profiles,
             openai_profile_idx: 0,
             voice_assistant_enabled,
+
+            voice_model,
+            gemini_live_active: false,
+            gemini_api_key,
             agent_index,
             chat_backend: ChatBackend::Gemini,
             gemini_client,
             pending_auto_feedback: Vec::new(),
             worktree,
             documents,
-            project_panel_visible: true,
+            lsp,
+            project_panel_visible: ws.project_panel_visible,
             ide_event_rx,
 
             ide_cursor: None,
@@ -268,7 +467,7 @@ impl AiWorkspaceHost {
         stores.load();
         match stores.user.get("voice.assistant.enabled") {
             Some(SettingValue::Bool(v)) => *v,
-            _ => true,
+            _ => false,
         }
     }
 
@@ -341,16 +540,20 @@ impl AiWorkspaceHost {
     pub fn handle_action(&mut self, action: UiToHost) {
         match action {
             UiToHost::NewSession => {
+                let _ = self.bevy_tx.try_send(HostToBevy::VoiceStopSpeaking);
                 let s = Session::new();
                 let id = s.id;
                 self.sessions.push(s);
                 self.active_session_id = Some(id);
                 self.save_sessions();
+                self.save_workspace_state();
                 let _ = self.ui_tx.send(HostToUi::Snapshot(self.build_snapshot()));
             }
             UiToHost::SelectSession { session_id } => {
                 if self.sessions.iter().any(|s| s.id == session_id) {
+                    let _ = self.bevy_tx.try_send(HostToBevy::VoiceStopSpeaking);
                     self.active_session_id = Some(session_id);
+                    self.save_workspace_state();
                     let _ = self.ui_tx.send(HostToUi::ActiveSessionChanged { session_id: Some(session_id) });
                 }
             }
@@ -358,11 +561,13 @@ impl AiWorkspaceHost {
                 if let Some(s) = self.sessions.iter_mut().find(|s| s.id == session_id) {
                     s.title = title;
                     self.save_sessions();
+                    self.save_workspace_state();
                     let _ = self.ui_tx.send(HostToUi::Snapshot(self.build_snapshot()));
                 }
             }
             UiToHost::CopySession { session_id } => {
                 if let Some(s) = self.sessions.iter().find(|s| s.id == session_id).cloned() {
+                    let _ = self.bevy_tx.try_send(HostToBevy::VoiceStopSpeaking);
                     let mut copy = s;
                     copy.id = Uuid::new_v4();
                     copy.title = format!("{} (copy)", copy.title);
@@ -371,10 +576,12 @@ impl AiWorkspaceHost {
                     self.sessions.push(copy);
                     self.active_session_id = Some(id);
                     self.save_sessions();
+                    self.save_workspace_state();
                     let _ = self.ui_tx.send(HostToUi::Snapshot(self.build_snapshot()));
                 }
             }
             UiToHost::DeleteSession { session_id } => {
+                let _ = self.bevy_tx.try_send(HostToBevy::VoiceStopSpeaking);
                 self.sessions.retain(|s| s.id != session_id);
                 if self.active_session_id == Some(session_id) {
                     self.active_session_id = self.sessions.first().map(|s| s.id);
@@ -384,6 +591,7 @@ impl AiWorkspaceHost {
                     self.active_session_id = self.sessions.first().map(|s| s.id);
                 }
                 self.save_sessions();
+                self.save_workspace_state();
                 let _ = self.ui_tx.send(HostToUi::Snapshot(self.build_snapshot()));
             }
             UiToHost::SendMessage { session_id, text, mentions, images } => {
@@ -404,6 +612,7 @@ impl AiWorkspaceHost {
                 self.send_message(sid, text, mentions, images);
             }
             UiToHost::AbortSession { session_id } => {
+                let _ = self.bevy_tx.try_send(HostToBevy::VoiceStopSpeaking);
                 if let Some(s) = self.sessions.iter_mut().find(|s| s.id == session_id) {
                     if let Some(tx) = s.abort_sender.take() {
                         let _ = tx.send(());
@@ -448,6 +657,14 @@ impl AiWorkspaceHost {
                         },
                     });
                     self.save_sessions();
+                }
+            }
+            UiToHost::SetComposerText { session_id, text } => {
+                let _ = self.ui_tx.send(HostToUi::ComposerTextSet { session_id, text });
+            }
+            UiToHost::SpeakText { text } => {
+                if let Some(t) = tts_speakable(&text) {
+                    let _ = self.bevy_tx.try_send(HostToBevy::VoiceSpeak { text: t });
                 }
             }
             UiToHost::CancelTool { session_id, request_id } => {
@@ -501,6 +718,8 @@ impl AiWorkspaceHost {
                     if self.gemini_settings.model_flash.trim().is_empty() {
                         self.gemini_settings.model_flash = self.gemini_settings.model_pro.clone();
                     }
+                    // Keep runtime client in sync with selected model.
+                    self.gemini_client = Arc::new(GeminiClient::new(self.gemini_api_key.clone(), self.gemini_settings.model_pro.clone()));
                     Self::save_providers_settings(&self.gemini_settings, &self.openai_profiles);
                     let _ = self.ui_tx.send(HostToUi::ProvidersUpdated {
                         profiles: self.provider_snapshots(),
@@ -520,18 +739,18 @@ impl AiWorkspaceHost {
                     }
                 }
             }
-            UiToHost::UpdateGeminiSettings { api_key, model_pro, model_flash, model_image } => {
+            UiToHost::UpdateGeminiSettings { api_key, model, model_image } => {
                 if !api_key.trim().is_empty() {
                     self.gemini_settings.api_key = api_key;
                 }
-                self.gemini_settings.model_pro = model_pro;
-                self.gemini_settings.model_flash = model_flash;
+                self.gemini_api_key = {
+                    let env = std::env::var("GEMINI_API_KEY").unwrap_or_default();
+                    if !env.trim().is_empty() { env } else { self.gemini_settings.api_key.clone() }
+                };
+                self.gemini_settings.model_pro = model;
+                self.gemini_settings.model_flash = self.gemini_settings.model_pro.clone();
                 self.gemini_settings.model_image = model_image;
-                self.gemini_client = Arc::new(GeminiClient::new(
-                    self.gemini_settings.api_key.clone(),
-                    self.gemini_settings.model_pro.clone(),
-                    self.gemini_settings.model_flash.clone(),
-                ));
+                self.gemini_client = Arc::new(GeminiClient::new(self.gemini_api_key.clone(), self.gemini_settings.model_pro.clone()));
                 Self::save_providers_settings(&self.gemini_settings, &self.openai_profiles);
                 let _ = self.ui_tx.send(HostToUi::ProvidersUpdated {
                     profiles: self.provider_snapshots(),
@@ -588,12 +807,47 @@ impl AiWorkspaceHost {
                 let _ = self.bevy_tx.send(HostToBevy::VoiceSetAssistantEnabled { enabled });
                 let _ = self.ui_tx.send(HostToUi::Snapshot(self.build_snapshot()));
             }
-            UiToHost::UpdateVoiceAssistantSettings { enabled, wake_phrases, cmd_input_phrases, cmd_send_phrases, cmd_cancel_phrases, greet_text, sleep_text, idle_timeout_secs, auto_send_pause_secs } => {
+
+            UiToHost::SetVoiceModel { model } => {
+                self.voice_model = model;
+                let mut settings = Self::load_voice_assistant_settings();
+                settings.voice_model = Some(model);
+                settings.use_gemini_live = matches!(model, VoiceModel::GeminiLive);
+                settings.enabled = !matches!(model, VoiceModel::Off);
+                Self::save_voice_assistant_settings(&settings);
+
+                self.voice_assistant_enabled = settings.enabled;
+                let _ = self.bevy_tx.send(HostToBevy::VoiceSetAssistantEnabled { enabled: settings.enabled });
+
+                if matches!(model, VoiceModel::Off) {
+                    let _ = self.bevy_tx.send(HostToBevy::StopGeminiLive);
+                    let _ = self.bevy_tx.send(HostToBevy::VoiceStopListening);
+                    if self.gemini_live_active {
+                        self.gemini_live_active = false;
+                        let _ = self.ui_tx.send(HostToUi::GeminiLiveStateChanged { active: false });
+                    }
+                    let _ = self.ui_tx.send(HostToUi::VoiceListeningChanged { listening: false });
+                } else if self.gemini_live_active && !matches!(model, VoiceModel::GeminiLive) {
+                    let _ = self.bevy_tx.send(HostToBevy::StopGeminiLive);
+                    self.gemini_live_active = false;
+                    let _ = self.ui_tx.send(HostToUi::GeminiLiveStateChanged { active: false });
+                }
+
+                let _ = self.ui_tx.send(HostToUi::Snapshot(self.build_snapshot()));
+            }
+            UiToHost::UpdateVoiceAssistantSettings { enabled, use_gemini_live, wake_phrases, cmd_input_phrases, cmd_send_phrases, cmd_cancel_phrases, greet_text, sleep_text, idle_timeout_secs, auto_send_pause_secs } => {
                 self.voice_assistant_enabled = enabled;
                 let _ = self.bevy_tx.send(HostToBevy::VoiceSetAssistantEnabled { enabled });
+                self.voice_model = if enabled {
+                    if use_gemini_live { VoiceModel::GeminiLive } else { VoiceModel::Legacy }
+                } else {
+                    VoiceModel::Off
+                };
                 // Save to settings file
                 Self::save_voice_assistant_settings(&VoiceAssistantSettingsFile {
                     enabled,
+                    use_gemini_live,
+                    voice_model: Some(self.voice_model),
                     wake_phrases: wake_phrases.clone(),
                     cmd_input_phrases: cmd_input_phrases.clone(),
                     cmd_send_phrases: cmd_send_phrases.clone(),
@@ -605,6 +859,7 @@ impl AiWorkspaceHost {
                 });
                 let _ = self.ui_tx.send(HostToUi::VoiceAssistantSettingsUpdated(VoiceAssistantSettingsSnapshot {
                     enabled,
+                    use_gemini_live,
                     wake_phrases,
                     cmd_input_phrases,
                     cmd_send_phrases,
@@ -614,11 +869,13 @@ impl AiWorkspaceHost {
                     idle_timeout_secs,
                     auto_send_pause_secs,
                 }));
+                let _ = self.ui_tx.send(HostToUi::Snapshot(self.build_snapshot()));
             }
             UiToHost::RequestVoiceAssistantSettings => {
                 let settings = Self::load_voice_assistant_settings();
                 let _ = self.ui_tx.send(HostToUi::VoiceAssistantSettingsUpdated(VoiceAssistantSettingsSnapshot {
                     enabled: settings.enabled,
+                    use_gemini_live: settings.use_gemini_live,
                     wake_phrases: settings.wake_phrases,
                     cmd_input_phrases: settings.cmd_input_phrases,
                     cmd_send_phrases: settings.cmd_send_phrases,
@@ -629,11 +886,182 @@ impl AiWorkspaceHost {
                     auto_send_pause_secs: settings.auto_send_pause_secs,
                 }));
             }
+
+            // ─────────────────────────────────────────────────────────────────
+            // Voice (unified): auto-select Gemini Live or Whisper based on settings
+            // ─────────────────────────────────────────────────────────────────
+            UiToHost::StartVoice => {
+                let settings = Self::load_voice_assistant_settings();
+                match settings.effective_voice_model() {
+                    VoiceModel::Off => {}
+                    VoiceModel::GeminiLive => {
+                        let api_key = {
+                            let env = crate::cunning_core::ai_service::gemini::api_key::read_gemini_api_key_env();
+                            if !env.trim().is_empty() { env } else { self.gemini_api_key.clone() }
+                        };
+                        if api_key.trim().is_empty() {
+                            let p = crate::runtime_paths::ai_providers_path();
+                            self.local_assistant_to_active(format!(
+                                "Missing Gemini API key. Set `GEMINI_API_KEY` (or `GOOGLE_API_KEY` / `GOOGLE_GENERATIVE_AI_API_KEY`) env var, or `{}` -> gemini.api_key.",
+                                p.display()
+                            ));
+                            return;
+                        }
+                        let system_instruction = Some(GEMINI_LIVE_SYSTEM_PROMPT.to_string());
+                        let tools = self.gemini_live_tools();
+                        let _ = self.bevy_tx.send(HostToBevy::StartGeminiLive { api_key, system_instruction, tools });
+                        self.gemini_live_active = true;
+                        let _ = self.ui_tx.send(HostToUi::GeminiLiveStateChanged { active: true });
+                    }
+                    VoiceModel::Legacy => {
+                        let _ = self.bevy_tx.send(HostToBevy::VoiceStartListening);
+                        let _ = self.ui_tx.send(HostToUi::VoiceListeningChanged { listening: true });
+                    }
+                }
+            }
+            UiToHost::StopVoice => {
+                self.stop_speaking();
+                if self.gemini_live_active {
+                    let _ = self.bevy_tx.send(HostToBevy::StopGeminiLive);
+                    self.gemini_live_active = false;
+                    let _ = self.ui_tx.send(HostToUi::GeminiLiveStateChanged { active: false });
+                } else {
+                    let _ = self.bevy_tx.send(HostToBevy::VoiceStopListening);
+                    let _ = self.ui_tx.send(HostToUi::VoiceListeningChanged { listening: false });
+                }
+            }
+
+            // ─────────────────────────────────────────────────────────────────
+            // Gemini Live (explicit control)
+            // ─────────────────────────────────────────────────────────────────
+            UiToHost::StartGeminiLive => {
+                let api_key = {
+                    let env = crate::cunning_core::ai_service::gemini::api_key::read_gemini_api_key_env();
+                    if !env.trim().is_empty() { env } else { self.gemini_api_key.clone() }
+                };
+                if api_key.trim().is_empty() {
+                    let p = crate::runtime_paths::ai_providers_path();
+                    self.local_assistant_to_active(format!(
+                        "Missing Gemini API key. Set `GEMINI_API_KEY` (or `GOOGLE_API_KEY` / `GOOGLE_GENERATIVE_AI_API_KEY`) env var, or `{}` -> gemini.api_key.",
+                        p.display()
+                    ));
+                    return;
+                }
+                let system_instruction = Some("You are a helpful 3D modeling assistant for Cunning3D. Help users create and modify nodes, geometry, and materials. Respond concisely in the user's language.".to_string());
+                let tools = self.gemini_live_tools();
+                let _ = self.bevy_tx.send(HostToBevy::StartGeminiLive { api_key, system_instruction, tools });
+                self.gemini_live_active = true;
+                let _ = self.ui_tx.send(HostToUi::GeminiLiveStateChanged { active: true });
+            }
+            UiToHost::StopGeminiLive => {
+                self.stop_speaking();
+                let _ = self.bevy_tx.send(HostToBevy::StopGeminiLive);
+                self.gemini_live_active = false;
+                let _ = self.ui_tx.send(HostToUi::GeminiLiveStateChanged { active: false });
+            }
+            UiToHost::SendGeminiLiveText { text } => {
+                let _ = self.bevy_tx.send(HostToBevy::SendGeminiLiveText { text });
+            }
+
+            UiToHost::GeminiLiveToolCall { id, name, args } => {
+                let deny: std::collections::HashSet<&'static str> = [
+                    "terminal",
+                    "diagnostics",
+                    "patch_file",
+                    "write_file",
+                    "create_rust_plugin",
+                    "compile_rust_plugin",
+                    "apply_rust_nodespec",
+                    "revert_rust_plugin_build",
+                    "load_rust_plugins",
+                    "generate_replay_script",
+                    "build_knowledge_pack",
+                    "create_node_folder",
+                    "patch_node_file",
+                    "write_node_file",
+                    "check_node_compile",
+                    "reload_plugin",
+                ]
+                .into_iter()
+                .collect();
+
+                if deny.contains(name.as_str()) {
+                    let _ = self.bevy_tx.try_send(HostToBevy::SendGeminiLiveToolResponse {
+                        id,
+                        name,
+                        response: json!({ "error": "tool_not_allowed" }),
+                    });
+                    return;
+                }
+
+                let sid = self
+                    .active_session_id
+                    .or_else(|| self.sessions.first().map(|s| s.id));
+                let Some(session_id) = sid else { return; };
+                let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) else { return; };
+
+                let preview = serde_json::to_string(&args).unwrap_or_default();
+                let request_id = self.next_tool_request_id;
+                self.next_tool_request_id = self.next_tool_request_id.wrapping_add(1).max(1);
+
+                session.tool_request_meta.insert(
+                    request_id,
+                    ToolRequestMeta {
+                        tool_name: name.clone(),
+                        args: args.clone(),
+                        live_call_id: Some(id.clone()),
+                    },
+                );
+
+                let mut c = ToolCall::new(request_id, name.clone(), preview.clone());
+                c.raw_input = serde_json::to_string(&args).ok();
+                c.mark_running();
+                session.entries.push(ThreadEntry::ToolCall(c));
+                let insert_ix = session.entries.len().saturating_sub(1);
+
+                session.set_busy(format!("Tool: {}", name));
+                session.busy_stage = BusyStage::ToolRunning;
+
+                let _ = self.ui_tx.send(HostToUi::SessionEvent {
+                    session_id,
+                    event: SessionEventSnapshot::BusyChanged {
+                        is_busy: true,
+                        reason: Some(format!("Tool: {}", name)),
+                        stage: BusyStageSnapshot::ToolRunning,
+                    },
+                });
+
+                if let Some(e) = session.entries.get(insert_ix) {
+                    let _ = self.ui_tx.send(HostToUi::SessionEvent {
+                        session_id,
+                        event: SessionEventSnapshot::EntryAdded {
+                            index: insert_ix,
+                            entry: Self::entry_snapshot(e),
+                        },
+                    });
+                }
+                let _ = self.ui_tx.send(HostToUi::SessionEvent {
+                    session_id,
+                    event: SessionEventSnapshot::ToolCallRequest {
+                        tool_name: name.clone(),
+                        request_id,
+                        args_preview: preview,
+                    },
+                });
+                let _ = self.ui_tx.send(HostToUi::SessionEvent {
+                    session_id,
+                    event: SessionEventSnapshot::ToolExecutionStarted { request_id },
+                });
+                self.execute_tool(session_id, request_id, name, args);
+            }
+
             UiToHost::RequestSnapshot => {
                 let _ = self.ui_tx.send(HostToUi::Snapshot(self.build_snapshot()));
             }
             UiToHost::Shutdown => {
+                let _ = self.bevy_tx.try_send(HostToBevy::VoiceStopSpeaking);
                 self.save_sessions();
+                self.save_workspace_state();
                 let _ = self.ui_tx.send(HostToUi::Shutdown);
             }
 
@@ -642,6 +1070,7 @@ impl AiWorkspaceHost {
             // ─────────────────────────────────────────────────────────────────
             UiToHost::IdeSetRoot { path } => {
                 self.worktree.set_root(path);
+                self.save_workspace_state();
             }
             UiToHost::IdeRefreshTree => {
                 if let Some(root) = self.worktree.root_path().map(|p| p.to_path_buf()) {
@@ -656,6 +1085,7 @@ impl AiWorkspaceHost {
             }
             UiToHost::IdeToggleProjectPanel => {
                 self.project_panel_visible = !self.project_panel_visible;
+                self.save_workspace_state();
                 let _ = self.ui_tx.send(HostToUi::Snapshot(self.build_snapshot()));
             }
 
@@ -665,13 +1095,19 @@ impl AiWorkspaceHost {
             UiToHost::IdeOpenFile { path } => {
                 if let Err(e) = self.documents.open(&path) {
                     let _ = self.ui_tx.send(HostToUi::IdeEvent(IdeEvent::FileError { path, error: e }));
+                } else if let Some(doc) = self.documents.get(&path) {
+                    self.lsp.did_open(&path, doc.to_string(), doc.version);
                 }
+                self.save_workspace_state();
             }
             UiToHost::IdeCloseFile { path } => {
                 self.documents.close(&path);
+                self.lsp.did_close(&path);
+                self.save_workspace_state();
             }
             UiToHost::IdeCloseAllFiles => {
                 self.documents.close_all();
+                self.save_workspace_state();
             }
             UiToHost::IdeSaveFile { path } => {
                 if let Err(e) = self.documents.save(&path) {
@@ -686,6 +1122,27 @@ impl AiWorkspaceHost {
             }
             UiToHost::IdeSetActiveFile { path } => {
                 self.documents.set_active(&path);
+                self.save_workspace_state();
+            }
+            UiToHost::IdeGotoLine { path, line, col } => {
+                if !self.documents.is_open(&path) {
+                    if let Err(e) = self.documents.open(&path) {
+                        let _ = self.ui_tx.send(HostToUi::IdeEvent(IdeEvent::FileError { path, error: e }));
+                        return;
+                    }
+                } else {
+                    self.documents.set_active(&path);
+                }
+                self.documents.set_cursor(&path, line as usize, col as usize);
+            }
+            UiToHost::IdeRequestCompletion { path, line, col } => {
+                self.lsp.request_completion(path, line, col);
+            }
+            UiToHost::IdeRequestDefinition { path, line, col } => {
+                self.lsp.request_definition(path, line, col);
+            }
+            UiToHost::IdeRequestHover { path, line, col } => {
+                self.lsp.request_hover(path, line, col);
             }
             UiToHost::IdeEditFile { path, version, edits } => {
                 if let Some(doc) = self.documents.get(&path) {
@@ -696,17 +1153,23 @@ impl AiWorkspaceHost {
                 }
                 if let Err(e) = self.documents.edit(&path, edits) {
                     let _ = self.ui_tx.send(HostToUi::IdeEvent(IdeEvent::FileError { path, error: e }));
+                } else if let Some(doc) = self.documents.get(&path) {
+                    self.lsp.did_change_full(&path, doc.to_string(), doc.version);
                 }
             }
 
             UiToHost::IdeUndo { path } => {
                 if let Err(e) = self.documents.undo(&path) {
                     let _ = self.ui_tx.send(HostToUi::IdeEvent(IdeEvent::Error { message: e }));
+                } else if let Some(doc) = self.documents.get(&path) {
+                    self.lsp.did_change_full(&path, doc.to_string(), doc.version);
                 }
             }
             UiToHost::IdeRedo { path } => {
                 if let Err(e) = self.documents.redo(&path) {
                     let _ = self.ui_tx.send(HostToUi::IdeEvent(IdeEvent::Error { message: e }));
+                } else if let Some(doc) = self.documents.get(&path) {
+                    self.lsp.did_change_full(&path, doc.to_string(), doc.version);
                 }
             }
 
@@ -919,10 +1382,10 @@ impl AiWorkspaceHost {
                 // Gemini streaming
                 let gemini_client = self.gemini_client.clone();
                 std::thread::spawn(move || {
-                    let rt = tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                        .expect("Failed to create tokio runtime");
+                    let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() else {
+                        let _ = internal_tx.send((session_id, SessionEvent::Error("Tokio runtime init failed".into())));
+                        return;
+                    };
 
                     rt.block_on(async move {
                         let mut parser = StreamParser::new();
@@ -947,10 +1410,10 @@ impl AiWorkspaceHost {
                 // OpenAI-compatible (LM Studio, Kimi, etc.)
                 let profile = self.openai_profiles.get(self.openai_profile_idx).cloned().unwrap_or_default();
                 std::thread::spawn(move || {
-                    let rt = tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                        .expect("Failed to create tokio runtime");
+                    let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() else {
+                        let _ = internal_tx.send((session_id, SessionEvent::Error("Tokio runtime init failed".into())));
+                        return;
+                    };
 
                     rt.block_on(async move {
                         use crate::tabs_registry::ai_workspace::session::prompt::PromptBuilder;
@@ -1107,7 +1570,7 @@ impl AiWorkspaceHost {
             .unwrap_or((0, 0));
 
         let content = if let Some(doc) = self.documents.get(&active_path) {
-            doc.content.clone()
+            doc.to_string()
         } else {
             std::fs::read_to_string(&active_path).unwrap_or_default()
         };
@@ -1433,21 +1896,28 @@ impl AiWorkspaceHost {
                         is_busy: false, reason: None, stage: BusyStageSnapshot::Idle
                     }});
 
-                    if self.voice_assistant_enabled {
+                    if self.voice_assistant_enabled && self.active_session_id == Some(session_id) {
                         if let Some(text) = final_text.as_deref().and_then(tts_speakable) {
-                            let _ = self.bevy_tx.try_send(HostToBevy::VoiceSpeak { text });
+                            let h = fnv1a64(text.as_bytes());
+                            if self.last_tts_hash.get(&session_id).copied().unwrap_or(0) != h {
+                                self.last_tts_hash.insert(session_id, h);
+                                let _ = self.bevy_tx.try_send(HostToBevy::VoiceSpeak { text });
+                            }
                         }
                     }
                     
                     // Auto-generate title for new sessions (first user message)
-                    if session.title == "New Session" || session.title.is_empty() {
+                    if session.title.is_empty() || session.title == "New Session" || session.title == "New Chat" {
                         if let Some(ThreadEntry::User { text, .. }) = session.entries.iter().find(|e| matches!(e, ThreadEntry::User { .. })) {
                             let user_text = text.clone();
                             let gemini = self.gemini_client.clone();
                             let tx = self.internal_tx.clone();
                             let sid = session_id;
                             std::thread::spawn(move || {
-                                let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+                                let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() else {
+                                    let _ = tx.send((sid, SessionEvent::Error("Tokio runtime init failed".into())));
+                                    return;
+                                };
                                 rt.block_on(async move {
                                     if let Ok(title) = gemini.generate_title(&user_text).await {
                                         let _ = tx.send((sid, SessionEvent::TitleUpdated(title)));
@@ -1466,7 +1936,7 @@ impl AiWorkspaceHost {
                 self.next_tool_request_id = self.next_tool_request_id.wrapping_add(1).max(1);
 
                 if Self::tool_needs_approval_static(&self.tool_allow_always, &tool_name, &args) {
-                    session.tool_request_meta.insert(request_id, ToolRequestMeta { tool_name: tool_name.clone(), args: args.clone() });
+                    session.tool_request_meta.insert(request_id, ToolRequestMeta { tool_name: tool_name.clone(), args: args.clone(), live_call_id: None });
                     let mut c = ToolCall::new(request_id, tool_name.clone(), preview.clone());
                     c.raw_input = serde_json::to_string(&args).ok();
                     c.mark_awaiting_approval();
@@ -1486,7 +1956,7 @@ impl AiWorkspaceHost {
                     out.push(HostToUi::SessionEvent { session_id, event: SessionEventSnapshot::ToolCallRequest { tool_name, request_id, args_preview: preview } });
                     out.push(HostToUi::SessionEvent { session_id, event: SessionEventSnapshot::ToolAwaitingApproval { request_id } });
                 } else {
-                    session.tool_request_meta.insert(request_id, ToolRequestMeta { tool_name: tool_name.clone(), args: args.clone() });
+                    session.tool_request_meta.insert(request_id, ToolRequestMeta { tool_name: tool_name.clone(), args: args.clone(), live_call_id: None });
                     let mut c = ToolCall::new(request_id, tool_name.clone(), preview.clone());
                     c.raw_input = serde_json::to_string(&args).ok();
                     c.mark_running();
@@ -1524,6 +1994,10 @@ impl AiWorkspaceHost {
                 }});
             }
             SessionEvent::ToolExecutionSuccess { request_id, output } => {
+                let live_call_id = session
+                    .tool_request_meta
+                    .get(&request_id)
+                    .and_then(|m| m.live_call_id.clone());
                 let tool_name = if let Some(ThreadEntry::ToolCall(c)) = session.entries.iter_mut().find(|e| matches!(e, ThreadEntry::ToolCall(tc) if tc.id == request_id)) {
                     c.llm_result = Some(output.llm_text.clone());
                     c.raw_output = Some(output.raw_text.clone());
@@ -1534,12 +2008,26 @@ impl AiWorkspaceHost {
                 } else {
                     None
                 };
+                // Zed-like: if a tool wrote files, immediately refresh open IDE buffers.
+                Self::sync_ide_from_tool_diffs(&mut self.documents, &output.ui_diffs);
                 session.tool_request_meta.remove(&request_id);
                 session.tool_cancel_tokens.remove(&request_id);
                 let llm_text = output.llm_text.clone();
                 out.push(HostToUi::SessionEvent { session_id, event: SessionEventSnapshot::ToolExecutionSuccess {
                     request_id, llm_result: output.llm_text, raw_output: Some(output.raw_text),
                 }});
+
+                if let (Some(live_id), Some(tn)) = (live_call_id, tool_name.clone()) {
+                    let _ = self.bevy_tx.try_send(HostToBevy::SendGeminiLiveToolResponse {
+                        id: live_id,
+                        name: tn,
+                        response: json!({ "result": llm_text }),
+                    });
+                    session.clear_busy();
+                    out.push(HostToUi::SessionEvent { session_id, event: SessionEventSnapshot::BusyChanged { is_busy: false, reason: None, stage: BusyStageSnapshot::Idle } });
+                    self.save_sessions();
+                    return out;
+                }
                 
                 // Auto-feedback: send tool result back to LLM to continue
                 let tools_running = session.entries.iter().any(|e| matches!(e, ThreadEntry::ToolCall(c) if matches!(c.status, ToolCallStatus::Pending | ToolCallStatus::AwaitingApproval | ToolCallStatus::InProgress)));
@@ -1557,6 +2045,10 @@ impl AiWorkspaceHost {
                 self.save_sessions();
             }
             SessionEvent::ToolExecutionError { request_id, error } => {
+                let live_call_id = session
+                    .tool_request_meta
+                    .get(&request_id)
+                    .and_then(|m| m.live_call_id.clone());
                 let tool_name = if let Some(ThreadEntry::ToolCall(c)) = session
                     .entries
                     .iter_mut()
@@ -1571,6 +2063,18 @@ impl AiWorkspaceHost {
                 session.tool_cancel_tokens.remove(&request_id);
                 let err_for_feedback = error.clone();
                 out.push(HostToUi::SessionEvent { session_id, event: SessionEventSnapshot::ToolExecutionError { request_id, error } });
+
+                if let (Some(live_id), Some(tn)) = (live_call_id, tool_name.clone()) {
+                    let _ = self.bevy_tx.try_send(HostToBevy::SendGeminiLiveToolResponse {
+                        id: live_id,
+                        name: tn,
+                        response: json!({ "error": err_for_feedback }),
+                    });
+                    session.clear_busy();
+                    out.push(HostToUi::SessionEvent { session_id, event: SessionEventSnapshot::BusyChanged { is_busy: false, reason: None, stage: BusyStageSnapshot::Idle } });
+                    self.save_sessions();
+                    return out;
+                }
 
                 // Auto-feedback on error too: send tool error back to LLM to continue (explain + propose fix)
                 let tools_running = session.entries.iter().any(|e| matches!(e, ThreadEntry::ToolCall(c) if matches!(c.status, ToolCallStatus::Pending | ToolCallStatus::AwaitingApproval | ToolCallStatus::InProgress)));
@@ -1589,14 +2093,33 @@ impl AiWorkspaceHost {
                 self.save_sessions();
             }
             SessionEvent::ToolExecutionCancelled { request_id } => {
-                if let Some(ThreadEntry::ToolCall(c)) = session.entries.iter_mut().find(|e| matches!(e, ThreadEntry::ToolCall(tc) if tc.id == request_id)) {
+                let live_call_id = session
+                    .tool_request_meta
+                    .get(&request_id)
+                    .and_then(|m| m.live_call_id.clone());
+                let tool_name = if let Some(ThreadEntry::ToolCall(c)) = session
+                    .entries
+                    .iter_mut()
+                    .find(|e| matches!(e, ThreadEntry::ToolCall(tc) if tc.id == request_id))
+                {
                     c.mark_cancelled();
-                }
+                    Some(c.tool_name.clone())
+                } else {
+                    None
+                };
                 session.tool_request_meta.remove(&request_id);
                 session.tool_cancel_tokens.remove(&request_id);
                 session.clear_busy();
                 out.push(HostToUi::SessionEvent { session_id, event: SessionEventSnapshot::ToolExecutionCancelled { request_id } });
                 out.push(HostToUi::SessionEvent { session_id, event: SessionEventSnapshot::BusyChanged { is_busy: false, reason: None, stage: BusyStageSnapshot::Idle } });
+
+                if let (Some(live_id), Some(tn)) = (live_call_id, tool_name) {
+                    let _ = self.bevy_tx.try_send(HostToBevy::SendGeminiLiveToolResponse {
+                        id: live_id,
+                        name: tn,
+                        response: json!({ "error": "cancelled" }),
+                    });
+                }
                 self.save_sessions();
             }
             SessionEvent::NetworkRetry { attempt, max_seconds } => {
@@ -1649,6 +2172,8 @@ impl AiWorkspaceHost {
             active_provider_idx: self.active_provider_idx(),
             tool_allow_always: self.tool_allow_always.iter().cloned().collect(),
             voice_assistant_enabled: self.voice_assistant_enabled,
+            voice_model: self.voice_model,
+            gemini_live_active: self.gemini_live_active,
             ide: self.build_ide_snapshot(),
         }
     }
@@ -1829,7 +2354,7 @@ impl AiWorkspaceHost {
 
     fn provider_snapshots(&self) -> Vec<ProviderSnapshot> {
         use super::protocol::BackendType;
-        let env_gemini_key = std::env::var("GEMINI_API_KEY").unwrap_or_default();
+        let env_gemini_key = crate::cunning_core::ai_service::gemini::api_key::read_gemini_api_key_env();
         let has_gemini_key = !env_gemini_key.trim().is_empty() || !self.gemini_settings.api_key.trim().is_empty();
         let defaults = Self::default_gemini_settings();
         let pro = if self.gemini_settings.model_pro.trim().is_empty() {
@@ -1884,15 +2409,19 @@ impl AiWorkspaceHost {
     // ─────────────────────────────────────────────────────────────────────────
 
     fn sessions_path() -> PathBuf {
-        std::env::current_dir().unwrap_or_default().join("settings/ai/sessions.json")
+        crate::runtime_paths::ai_sessions_path()
+    }
+
+    fn workspace_state_path() -> PathBuf {
+        crate::runtime_paths::ai_workspace_state_path()
     }
 
     fn providers_path() -> PathBuf {
-        std::env::current_dir().unwrap_or_default().join("settings/ai/providers.json")
+        crate::runtime_paths::ai_providers_path()
     }
 
     fn permissions_path() -> PathBuf {
-        std::env::current_dir().unwrap_or_default().join("settings/ai/tool_permissions.json")
+        crate::runtime_paths::ai_tool_permissions_path()
     }
 
     fn load_sessions() -> Option<Vec<Session>> {
@@ -1910,10 +2439,35 @@ impl AiWorkspaceHost {
         }
     }
 
+    fn load_workspace_state() -> WorkspaceStateFile {
+        let path = Self::workspace_state_path();
+        std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default()
+    }
+
+    fn save_workspace_state(&self) {
+        let path = Self::workspace_state_path();
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let file = WorkspaceStateFile {
+            active_session_id: self.active_session_id,
+            ide_root_path: self.worktree.root_path().map(|p| p.to_path_buf()),
+            ide_open_files: self.documents.open_files().into_iter().map(|f| f.path).collect(),
+            ide_active_file: self.documents.active_path().map(|p| p.to_path_buf()),
+            project_panel_visible: self.project_panel_visible,
+        };
+        if let Ok(json) = serde_json::to_string_pretty(&file) {
+            let _ = std::fs::write(&path, json);
+        }
+    }
+
     fn default_gemini_settings() -> GeminiProviderSettings {
         let pro = std::env::var("CUNNING_GEMINI_MODEL_PRO")
             .unwrap_or_else(|_| "gemini-3-pro-preview".to_string());
-        let flash = std::env::var("CUNNING_GEMINI_MODEL_FLASH").unwrap_or_else(|_| pro.clone());
+        let flash = std::env::var("CUNNING_GEMINI_MODEL_FLASH").unwrap_or_else(|_| "gemini-2.0-flash".to_string());
         let image = std::env::var("CUNNING_GEMINI_MODEL_IMAGE")
             .unwrap_or_else(|_| "gemini-3-pro-image-preview".to_string());
         GeminiProviderSettings {
@@ -1989,7 +2543,7 @@ impl AiWorkspaceHost {
     }
 
     fn voice_assistant_settings_path() -> PathBuf {
-        PathBuf::from("settings/ai/voice_assistant.json")
+        crate::runtime_paths::ai_voice_assistant_path()
     }
 
     fn load_voice_assistant_settings() -> VoiceAssistantSettingsFile {
