@@ -8,7 +8,8 @@ use crate::cunning_core::cda::CdaLibrary;
 use crate::app::window_frame::{
     WINDOW_CHROME_BTN_H_LP, WINDOW_CHROME_BTN_W_LP, WINDOW_CHROME_GLYPH_CLOSE,
     WINDOW_CHROME_GLYPH_MAX, WINDOW_CHROME_GLYPH_MIN, WINDOW_CHROME_ICON_FONT_FAMILY,
-    WINDOW_SAFE_INSET_LP, WINDOW_TOPBAR_H_LP, WINDOW_UI_SURFACE_BG_SRGBA,
+    WINDOW_CORNER_RADIUS_LP, WINDOW_SAFE_INSET_LP, WINDOW_TOPBAR_H_LP,
+    WINDOW_UI_SURFACE_BG_SRGBA,
 };
 use crate::launcher::plugin::AppState;
 use crate::ui::{LayoutMode, OpenAiWorkspaceWindowEvent, OpenSettingsWindowEvent, UiState};
@@ -112,8 +113,8 @@ pub struct TopbarUiPlugin;
 
 const TOPBAR_H: f32 = WINDOW_TOPBAR_H_LP;
 const UI_LAYER: usize = 31;
-const WINDOW_CORNER_RADIUS_VISUAL: f32 = 14.0;
-const WINDOW_CORNER_MASK_COLOR: Color = Color::srgba(
+const WINDOW_CORNER_RADIUS_VISUAL: f32 = WINDOW_CORNER_RADIUS_LP;
+const WINDOW_UI_SURFACE_COLOR: Color = Color::srgba(
     WINDOW_UI_SURFACE_BG_SRGBA[0],
     WINDOW_UI_SURFACE_BG_SRGBA[1],
     WINDOW_UI_SURFACE_BG_SRGBA[2],
@@ -284,39 +285,6 @@ fn spawn_topbar_ui(
         })
         .id();
 
-    // Visual rounded-corner mask (pure UI, no native window style injection).
-    // This keeps startup stable while giving a rounded-corner appearance.
-    let corner_d = WINDOW_CORNER_RADIUS_VISUAL * 2.0;
-    let spawn_corner_mask = |commands: &mut Commands, root: Entity, left: Option<f32>, right: Option<f32>, top: Option<f32>, bottom: Option<f32>| {
-        let mut node = cgui::Node {
-            position_type: cgui::PositionType::Absolute,
-            width: cgui::Val::Px(corner_d),
-            height: cgui::Val::Px(corner_d),
-            border_radius: cgui::BorderRadius::all(cgui::Val::Px(corner_d)),
-            ..default()
-        };
-        if let Some(v) = left { node.left = cgui::Val::Px(v); }
-        if let Some(v) = right { node.right = cgui::Val::Px(v); }
-        if let Some(v) = top { node.top = cgui::Val::Px(v); }
-        if let Some(v) = bottom { node.bottom = cgui::Val::Px(v); }
-
-        let corner = commands
-            .spawn_empty()
-            .insert(RenderLayers::layer(UI_LAYER))
-            .insert(cgui::GlobalZIndex(20))
-            .insert(cgui::ZIndex(0))
-            .insert(FocusPolicy::Pass)
-            .insert(node)
-            .insert(cgui::BackgroundColor(WINDOW_CORNER_MASK_COLOR))
-            .id();
-        commands.entity(root).add_child(corner);
-    };
-    // Place circles partially outside viewport so only quarter-arcs remain visible.
-    spawn_corner_mask(commands, root, Some(-WINDOW_CORNER_RADIUS_VISUAL), None, Some(-WINDOW_CORNER_RADIUS_VISUAL), None); // top-left
-    spawn_corner_mask(commands, root, None, Some(-WINDOW_CORNER_RADIUS_VISUAL), Some(-WINDOW_CORNER_RADIUS_VISUAL), None); // top-right
-    spawn_corner_mask(commands, root, Some(-WINDOW_CORNER_RADIUS_VISUAL), None, None, Some(-WINDOW_CORNER_RADIUS_VISUAL)); // bottom-left
-    spawn_corner_mask(commands, root, None, Some(-WINDOW_CORNER_RADIUS_VISUAL), None, Some(-WINDOW_CORNER_RADIUS_VISUAL)); // bottom-right
-
     // Top safe inset strip: keep content off the very top edge.
     let top_strip = commands
         .spawn_empty()
@@ -336,7 +304,7 @@ fn spawn_topbar_ui(
             height: cgui::Val::Px(WINDOW_SAFE_INSET_LP),
             ..default()
         })
-        .insert(cgui::BackgroundColor(WINDOW_CORNER_MASK_COLOR))
+        .insert(cgui::BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.0)))
         .id();
     commands.entity(root).add_child(top_strip);
 
@@ -349,16 +317,27 @@ fn spawn_topbar_ui(
             position_type: cgui::PositionType::Absolute,
             left: cgui::Val::Px(0.0),
             right: cgui::Val::Px(0.0),
-            top: cgui::Val::Px(WINDOW_SAFE_INSET_LP),
-            height: cgui::Val::Px(TOPBAR_H),
+            top: cgui::Val::Px(0.0),
+            height: cgui::Val::Px(WINDOW_SAFE_INSET_LP + TOPBAR_H),
             flex_direction: cgui::FlexDirection::Row,
             align_items: cgui::AlignItems::Center,
-            // Full-width background, but keep contents aligned with egui safe inset.
-            padding: cgui::UiRect::horizontal(cgui::Val::Px(WINDOW_SAFE_INSET_LP + 12.0)),
+            // Full-width rounded top bar; content remains inside safe inset.
+            padding: cgui::UiRect {
+                left: cgui::Val::Px(WINDOW_SAFE_INSET_LP + 12.0),
+                right: cgui::Val::Px(WINDOW_SAFE_INSET_LP + 12.0),
+                top: cgui::Val::Px(WINDOW_SAFE_INSET_LP),
+                bottom: cgui::Val::Px(0.0),
+            },
             column_gap: cgui::Val::Px(6.0),
+            border_radius: cgui::BorderRadius::new(
+                cgui::Val::Px(WINDOW_CORNER_RADIUS_VISUAL),
+                cgui::Val::Px(WINDOW_CORNER_RADIUS_VISUAL),
+                cgui::Val::Px(0.0),
+                cgui::Val::Px(0.0),
+            ),
             ..default()
         })
-        .insert(cgui::BackgroundColor(WINDOW_CORNER_MASK_COLOR))
+        .insert(cgui::BackgroundColor(WINDOW_UI_SURFACE_COLOR))
         .id();
     commands.entity(root).add_child(bar);
 

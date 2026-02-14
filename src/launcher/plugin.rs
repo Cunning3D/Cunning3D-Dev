@@ -62,7 +62,8 @@ fn setup_editor_window(mut windows: Query<&mut Window>) {
     if let Some(mut window) = windows.iter_mut().next() {
         window.title = "Cunning3D 2025".to_string();
         window.decorations = false; // Borderless for custom chrome
-        window.transparent = false;
+        // Required for rounded corner "punch-through" on Windows (otherwise corners clear to black).
+        window.transparent = true;
         
         // Immediate maximize for productivity
         window.mode = bevy::window::WindowMode::Windowed;

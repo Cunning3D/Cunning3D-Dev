@@ -32,18 +32,6 @@ impl Default for SplineAxisConstraint {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SplineTransformHandle {
-    RotateX,
-    RotateY,
-    RotateZ,
-    RotateScreen,
-    ScaleX,
-    ScaleY,
-    ScaleZ,
-    ScaleUniform,
-}
-
 #[derive(Clone, Copy, Debug)]
 pub struct HoveredCurve {
     pub spline_index: usize,
@@ -89,8 +77,6 @@ pub struct SplineToolState {
     pub selection: SplineSelectionState,
     pub ctx: TransformContext,
     pub hovered_curve: Option<HoveredCurve>,
-    pub hovered_handle: Option<SplineTransformHandle>,
-    pub active_handle: Option<SplineTransformHandle>,
     pub drag_last_world: Option<Vec3>,
     pub drag_last_scalar: Option<f32>,
     pub direct_drag_knot: Option<DirectDragKnot>,

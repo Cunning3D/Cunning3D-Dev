@@ -258,9 +258,6 @@ fn poll_jobs_system(mut jobs: ResMut<AppJobs>) {
         }
         for l in e.rx_log.try_iter() {
             e.log.push(l);
-            if e.log.len() > 2000 {
-                e.log.drain(0..(e.log.len() - 2000));
-            }
         }
 
         if e.cancel.is_cancelled() && matches!(e.state, JobState::Running) {

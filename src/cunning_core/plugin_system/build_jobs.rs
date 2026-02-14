@@ -40,6 +40,8 @@ pub struct CompileRustPluginRequest {
     pub locked: bool,
     /// Whether to hot-load after a successful build.
     pub hot_reload: bool,
+    /// Cargo target dir to use for this build (from Settings → General/Build).
+    pub target_dir: Option<PathBuf>,
 }
 
 impl CompileRustPluginRequest {
@@ -52,6 +54,7 @@ impl CompileRustPluginRequest {
             offline: false,
             locked: false,
             hot_reload: true,
+            target_dir: None,
         }
     }
 }
@@ -96,19 +99,28 @@ struct CompileRustPluginQueue {
 
 fn enqueue_compile_plugin_jobs_from_queue_system(
     q: Res<CompileRustPluginQueue>,
+    build_settings: Res<crate::build_settings::BuildSettings>,
     mut jobs: ResMut<crate::app_jobs::AppJobs>,
 ) {
-    for r in q.rx.try_iter() {
+    for mut r in q.rx.try_iter() {
+        if r.target_dir.is_none() {
+            r.target_dir = Some(build_settings.cargo_target_dir_plugins());
+        }
         jobs.enqueue(Box::new(CompileRustPluginJob { req: r }));
     }
 }
 
 fn enqueue_compile_plugin_jobs_system(
     mut req: MessageReader<CompileRustPluginRequest>,
+    build_settings: Res<crate::build_settings::BuildSettings>,
     mut jobs: ResMut<crate::app_jobs::AppJobs>,
 ) {
     for r in req.read() {
-        jobs.enqueue(Box::new(CompileRustPluginJob { req: r.clone() }));
+        let mut r = r.clone();
+        if r.target_dir.is_none() {
+            r.target_dir = Some(build_settings.cargo_target_dir_plugins());
+        }
+        jobs.enqueue(Box::new(CompileRustPluginJob { req: r }));
     }
 }
 
@@ -188,6 +200,7 @@ impl JobRunnable for CompileRustPluginJob {
                     &args,
                     &cx,
                     true, // parse json
+                    req.target_dir.as_deref(),
                 )?;
                 raw_log.push_str(&log);
                 errors.extend(errs);
@@ -235,6 +248,7 @@ impl JobRunnable for CompileRustPluginJob {
                     &args,
                     &cx,
                     false,
+                    req.target_dir.as_deref(),
                 )?;
                 raw_log.push_str(&log);
                 if !ok {
@@ -261,7 +275,7 @@ impl JobRunnable for CompileRustPluginJob {
                 message: "复制 DLL...".into(),
             });
 
-            let built = expected_windows_dll_path(&req.crate_dir, req.release)?;
+            let built = expected_windows_dll_path(&req.crate_dir, req.release, req.target_dir.as_deref())?;
             let copied = rust_build::copy_versioned(
                 &built,
                 Path::new("plugins"),
@@ -289,7 +303,11 @@ impl JobRunnable for CompileRustPluginJob {
     }
 }
 
-fn expected_windows_dll_path(crate_dir: &Path, release: bool) -> Result<PathBuf, JobError> {
+fn expected_windows_dll_path(
+    crate_dir: &Path,
+    release: bool,
+    target_dir: Option<&Path>,
+) -> Result<PathBuf, JobError> {
     // Mirrors rust_build::build_cdylib logic.
     let mode = if release { "release" } else { "debug" };
     let name = {
@@ -310,10 +328,8 @@ fn expected_windows_dll_path(crate_dir: &Path, release: bool) -> Result<PathBuf,
         found.ok_or_else(|| JobError::from("Failed to read crate name from Cargo.toml"))?
     };
 
-    let dll = crate_dir
-        .join("target")
-        .join(mode)
-        .join(format!("{name}.dll"));
+    let base = target_dir.map(|p| p.to_path_buf()).unwrap_or_else(|| crate_dir.join("target"));
+    let dll = base.join(mode).join(format!("{name}.dll"));
     if !dll.exists() {
         return Err(JobError::from(format!(
             "Build OK but missing output DLL: {}",
@@ -329,12 +345,17 @@ fn run_cargo_streaming(
     args: &[&str],
     cx: &JobContext,
     parse_json_errors: bool,
+    target_dir: Option<&Path>,
 ) -> Result<(bool, String, Vec<rust_build::CompilerError>), JobError> {
     let mut cmd = Command::new(cargo_path);
     cmd.current_dir(cwd)
         .args(args)
+        .env_remove("CARGO_TARGET_DIR")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    if let Some(td) = target_dir {
+        cmd.env("CARGO_TARGET_DIR", td);
+    }
     let mut child = cmd
         .spawn()
         .map_err(|e| JobError::from(format!("spawn cargo failed: {e}")))?;

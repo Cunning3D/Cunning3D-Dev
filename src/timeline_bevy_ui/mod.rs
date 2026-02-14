@@ -1,7 +1,9 @@
 //! Bevy UI Timeline - 保留模式 Timeline 实现
 use crate::launcher::plugin::AppState;
 use crate::ui::TimelineState;
-use crate::app::window_frame::{WINDOW_SAFE_INSET_LP, WINDOW_UI_SURFACE_BG_SRGBA};
+use crate::app::window_frame::{
+    WINDOW_CORNER_RADIUS_LP, WINDOW_SAFE_INSET_LP, WINDOW_UI_SURFACE_BG_SRGBA,
+};
 use bevy::camera::visibility::RenderLayers;
 use bevy::camera::ClearColorConfig;
 use bevy::camera::{CameraOutputMode, MsaaWriteback};
@@ -203,6 +205,12 @@ fn spawn_timeline_ui(commands: &mut Commands, cam_q: &Query<Entity, With<Timelin
                 bottom: Val::Px(WINDOW_SAFE_INSET_LP + 4.0),
             },
             column_gap: Val::Px(8.0),
+            border_radius: BorderRadius::new(
+                Val::Px(0.0),
+                Val::Px(0.0),
+                Val::Px(WINDOW_CORNER_RADIUS_LP),
+                Val::Px(WINDOW_CORNER_RADIUS_LP),
+            ),
             ..default()
         })
         .insert(BackgroundColor(Color::srgba(

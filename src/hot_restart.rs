@@ -10,9 +10,10 @@ use bevy::window::PrimaryWindow;
 use bevy_egui::egui;
 use egui_dock::DockState;
 use serde::{Deserialize, Serialize};
-use std::sync::OnceLock;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::collections::HashSet;
 use std::io::{Read, Write};
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -125,6 +126,13 @@ pub fn request_hot_restart(build: bool) -> Result<(), String> {
 struct HotRestartRuntime {
     waiting: Option<HandoffWait>,
     build_spawn: Option<crossbeam_channel::Receiver<Result<(), String>>>,
+    build_log: Option<crossbeam_channel::Receiver<BuildLogLine>>,
+}
+
+#[derive(Clone, Debug)]
+struct BuildLogLine {
+    is_stderr: bool,
+    line: String,
 }
 
 #[derive(Resource)]
@@ -215,7 +223,7 @@ pub fn default_snapshot_path() -> PathBuf {
 }
 
 fn default_hot_restart_target_dir() -> PathBuf {
-    std::env::temp_dir().join("cunning3d_hot_restart_target")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target_hot_restart")
 }
 
 pub fn save_snapshot_atomic(path: &Path, s: &HotRestartSnapshot) -> Result<(), String> {
@@ -430,16 +438,42 @@ fn poll_hot_restart_build_spawn_system(
     hot_log: Option<Res<crate::tabs_system::pane::hot_reload::HotReloadLog>>,
     time: Res<Time>,
 ) {
+    if let Some(rx) = rt.as_mut().build_log.as_ref() {
+        let t = time.elapsed_secs();
+        for l in rx.try_iter() {
+            if l.line.trim().is_empty() {
+                continue;
+            }
+            let msg = format!("[cargo] {}", l.line);
+            if l.is_stderr {
+                if let Some(c) = console.as_deref() {
+                    c.warning(msg.clone());
+                }
+                if let Some(hl) = hot_log.as_deref() {
+                    hl.warn(msg, t);
+                }
+            } else {
+                if let Some(c) = console.as_deref() {
+                    c.info(msg.clone());
+                }
+                if let Some(hl) = hot_log.as_deref() {
+                    hl.info(msg, t);
+                }
+            }
+        }
+    }
     let Some(rx) = rt.as_mut().build_spawn.as_mut() else { return; };
     match rx.try_recv() {
         Ok(Ok(())) => {
             rt.as_mut().build_spawn = None;
+            rt.as_mut().build_log = None;
             let t = time.elapsed_secs();
             if let Some(c) = console.as_deref() { c.info("Hot Restart: spawned new process, waiting for ready signal..."); }
             if let Some(hl) = hot_log.as_deref() { hl.info("Hot Restart: waiting for ready signal...", t); }
         }
         Ok(Err(e)) => {
             rt.as_mut().build_spawn = None;
+            rt.as_mut().build_log = None;
             rt.as_mut().waiting = None;
             let t = time.elapsed_secs();
             if let Some(c) = console.as_deref() { c.error(format!("Hot Restart failed: {e}")); }
@@ -456,6 +490,7 @@ fn handle_hot_restart_requests_system(
     mut req: MessageReader<RequestHotRestart>,
     mut rt: ResMut<HotRestartRuntime>,
     q: Res<HotRestartQueue>,
+    build_settings: Res<crate::build_settings::BuildSettings>,
     snapshot: Res<crate::nodes::graph_model::NodeGraphSnapshotRes>,
     node_editor: Res<NodeEditorState>,
     ui: Res<UiState>,
@@ -500,12 +535,15 @@ fn handle_hot_restart_requests_system(
 
     // Build + spawn in background thread to avoid freezing the main thread.
     let (tx, rx2) = crossbeam_channel::unbounded::<Result<(), String>>();
+    let (tx_log, rx_log) = crossbeam_channel::unbounded::<BuildLogLine>();
     rt.as_mut().build_spawn = Some(rx2);
+    rt.as_mut().build_log = Some(rx_log);
     let snap_path2 = snap_path.clone();
     let token2 = token.clone();
+    let target_dir = build_settings.cargo_target_dir_hot_restart();
     std::thread::spawn(move || {
         let exe = if build {
-            build_new_exe(&default_hot_restart_target_dir(), None)
+            build_new_exe_streaming(&target_dir, &tx_log)
         } else {
             std::env::current_exe().map_err(|e| format!("current_exe failed: {e}"))
         };
@@ -517,6 +555,88 @@ fn handle_hot_restart_requests_system(
     });
     c.info("Hot Restart: building/spawning in background...");
     if let Some(hl) = hot_log.as_deref() { hl.info("Hot Restart: building/spawning in background...", t); }
+}
+
+fn build_new_exe_streaming(
+    target_dir: &Path,
+    tx: &crossbeam_channel::Sender<BuildLogLine>,
+) -> Result<PathBuf, String> {
+    let cargo = crate::cunning_core::plugin_system::rust_build::find_cargo()
+        .unwrap_or_else(|| PathBuf::from("cargo"));
+    let _ = tx.send(BuildLogLine { is_stderr: false, line: format!("cmd: cargo build --bin cunning3d  (target_dir={})", target_dir.display()) });
+    let mut cmd = Command::new(cargo);
+    cmd.current_dir(PathBuf::from(env!("CARGO_MANIFEST_DIR")))
+        .arg("build")
+        .arg("--bin")
+        .arg("cunning3d")
+        .env("CARGO_TARGET_DIR", target_dir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = cmd.spawn().map_err(|e| format!("spawn cargo failed: {e}"))?;
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+    let raw_log = Arc::new(Mutex::new(String::new()));
+    let tx2 = tx.clone();
+    let raw2 = raw_log.clone();
+    let t_out = std::thread::spawn(move || {
+        let Some(s) = stdout else { return; };
+        let mut r = BufReader::new(s);
+        let mut line = String::new();
+        loop {
+            line.clear();
+            match r.read_line(&mut line) {
+                Ok(0) => break,
+                Ok(_) => {
+                    let l = line.trim_end_matches(&['\r', '\n'][..]).to_string();
+                    let _ = tx2.send(BuildLogLine { is_stderr: false, line: l });
+                    if let Ok(mut raw) = raw2.lock() {
+                        raw.push_str(line.as_str());
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    });
+    let tx3 = tx.clone();
+    let raw3 = raw_log.clone();
+    let t_err = std::thread::spawn(move || {
+        let Some(s) = stderr else { return; };
+        let mut r = BufReader::new(s);
+        let mut line = String::new();
+        loop {
+            line.clear();
+            match r.read_line(&mut line) {
+                Ok(0) => break,
+                Ok(_) => {
+                    let l = line.trim_end_matches(&['\r', '\n'][..]).to_string();
+                    let _ = tx3.send(BuildLogLine { is_stderr: true, line: l });
+                    if let Ok(mut raw) = raw3.lock() {
+                        raw.push_str(line.as_str());
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    });
+    let status = child.wait().map_err(|e| format!("wait cargo failed: {e}"))?;
+    let _ = t_out.join();
+    let _ = t_err.join();
+    if !status.success() {
+        let raw = raw_log.lock().ok().map(|s| s.clone()).unwrap_or_default();
+        if raw.trim().is_empty() {
+            return Err(format!("cargo build failed (code={:?})", status.code()));
+        }
+        return Err(format!(
+            "cargo build failed (code={:?})\n{}",
+            status.code(),
+            raw
+        ));
+    }
+    let exe = built_exe_path(target_dir);
+    if !exe.exists() {
+        return Err(format!("build succeeded but exe missing: {}", exe.display()));
+    }
+    Ok(exe)
 }
 
 #[derive(Message, Clone)]

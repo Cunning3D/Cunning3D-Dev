@@ -9,7 +9,7 @@ use crate::tabs_system::{EditorTab, EditorTabContext};
 use bevy::asset::AssetEvent;
 use bevy::prelude::*;
 use bevy_egui::egui;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -39,7 +39,6 @@ impl HotReloadLog {
     pub fn push(&self, level: LogLevel, msg: impl Into<String>, elapsed_s: f32) {
         if let Ok(mut e) = self.entries.lock() {
             e.push(HotReloadEntry { level, message: msg.into(), elapsed_s });
-            let len = e.len(); if len > 2000 { e.drain(0..len - 2000); }
         }
         self.rev.fetch_add(1, Ordering::Relaxed);
     }
@@ -81,7 +80,7 @@ pub fn sync_hot_reload_jobs_snapshot_system(
 ) {
     let Some(jobs) = jobs.as_deref() else { return; };
     let active: Vec<CompileJobSnapshot> = jobs.jobs().values()
-        .filter(|j| j.kind == "compile_rust_plugin")
+        .filter(|j| j.kind == "compile_rust_plugin" || j.kind == "compile_runtime_module")
         .map(|j| {
             let plugin = j
                 .title
@@ -121,6 +120,76 @@ pub fn sync_hot_reload_jobs_snapshot_system(
         })
         .collect();
     snap.update(active);
+}
+
+/// Mirror compile job line logs into both HotReloadLog and ConsoleLog (full stream).
+pub fn mirror_compile_job_logs_system(
+    jobs: Option<Res<crate::app_jobs::AppJobs>>,
+    time: Res<Time>,
+    console: Option<Res<crate::console::ConsoleLog>>,
+    hot_log: Option<Res<HotReloadLog>>,
+    mut cursors: Local<HashMap<crate::app_jobs::JobId, usize>>,
+) {
+    let Some(jobs) = jobs.as_deref() else { return; };
+    if console.is_none() && hot_log.is_none() {
+        return;
+    }
+
+    let t = time.elapsed_secs();
+    let mut active_ids: HashSet<crate::app_jobs::JobId> = HashSet::new();
+
+    for job in jobs.jobs().values() {
+        if job.kind != "compile_rust_plugin" && job.kind != "compile_runtime_module" {
+            continue;
+        }
+        active_ids.insert(job.id);
+        let cursor = cursors.entry(job.id).or_insert(0);
+        if *cursor > job.log.len() {
+            *cursor = job.log.len();
+        }
+
+        let kind = if job.kind == "compile_runtime_module" {
+            "runtime-module"
+        } else {
+            "plugin-build"
+        };
+        let prefix = format!("[{kind}][{}]", job.title);
+        for line in job.log.iter().skip(*cursor) {
+            if line.message.trim().is_empty() {
+                continue;
+            }
+            let full = format!("{prefix} {}", line.message);
+            match line.level {
+                crate::app_jobs::JobLogLevel::Info => {
+                    if let Some(c) = console.as_deref() {
+                        c.info(full.clone());
+                    }
+                    if let Some(hl) = hot_log.as_deref() {
+                        hl.info(full, t);
+                    }
+                }
+                crate::app_jobs::JobLogLevel::Warning => {
+                    if let Some(c) = console.as_deref() {
+                        c.warning(full.clone());
+                    }
+                    if let Some(hl) = hot_log.as_deref() {
+                        hl.warn(full, t);
+                    }
+                }
+                crate::app_jobs::JobLogLevel::Error => {
+                    if let Some(c) = console.as_deref() {
+                        c.error(full.clone());
+                    }
+                    if let Some(hl) = hot_log.as_deref() {
+                        hl.error(full, t);
+                    }
+                }
+            }
+        }
+        *cursor = job.log.len();
+    }
+
+    cursors.retain(|id, _| active_ids.contains(id));
 }
 
 /// Bevy system: forward asset hot-reload events into `HotReloadLog`.

@@ -3,16 +3,23 @@ use std::any::TypeId;
 use std::sync::Arc;
 
 use crate::cunning_core::traits::node_interface::{
-    NodeInteraction, NodeOp, NodeParameters, ServiceProvider,
+    GizmoContext, GizmoDrawBuffer, GizmoPart, GizmoState, NodeInteraction, NodeOp,
+    NodeParameters, ServiceProvider, XformGizmoMode,
 };
+use crate::gizmos::standard::StandardGizmo;
+use crate::gizmos::{GizmoActionQueue, GizmoBinding, GizmoMovedEvent};
 use crate::libs::geometry::geo_ref::GeometryRef;
 use crate::mesh::{Attribute, BezierCurvePrim, GeoPrimitive, Geometry, VertexId};
 use crate::nodes::parameter::{Parameter, ParameterUIType, ParameterValue};
+use crate::nodes::structs::NodeGraphResource;
 use crate::register_node;
 
 use crate::libs::algorithms::algorithms_runtime::unity_spline::{
     calculate_knot_rotation, BezierKnot, MetaData, Spline, SplineContainer, TangentMode,
     CATMULL_ROM_TENSION,
+};
+use crate::libs::algorithms::algorithms_runtime::unity_spline::editor::{
+    HandleOrientation, PivotMode, SelectableElement, SplineSelectionState,
 };
 use crate::libs::geometry::attrs;
 use std::collections::HashMap;
@@ -264,6 +271,213 @@ impl NodeInteraction for UnitySplineNode {
         // Later: extend to a full tool panel (palette, modes, advanced widgets).
         self.draw_hud(ui, services, node_id);
     }
+
+    fn draw_gizmos(
+        &self,
+        buffer: &mut GizmoDrawBuffer,
+        context: &GizmoContext,
+        gizmo_state: &mut GizmoState,
+        services: &dyn ServiceProvider,
+        node_id: uuid::Uuid,
+    ) {
+        let (Some(node_graph_res), Some(actions), Some(spline_tool_state)) = (
+            get_service_ref::<NodeGraphResource>(services),
+            get_service_ref::<GizmoActionQueue>(services),
+            get_service_ref::<crate::nodes::spline::tool_state::SplineToolState>(services),
+        ) else {
+            return;
+        };
+
+        if spline_tool_state.selection.selected_elements.is_empty() {
+            return;
+        }
+
+        let Some(node) = node_graph_res.0.nodes.get(&node_id) else {
+            return;
+        };
+        let Some(container) = node
+            .parameters
+            .iter()
+            .find(|p| p.name == "spline")
+            .and_then(|p| match &p.value {
+                ParameterValue::UnitySpline(c) => Some(c.clone()),
+                _ => None,
+            })
+        else {
+            return;
+        };
+
+        let ctx =
+            update_spline_transform_ctx(spline_tool_state.ctx, &container, &spline_tool_state.selection);
+        let mode = gizmo_state.xform_mode;
+        let show_translate = matches!(
+            mode,
+            XformGizmoMode::Aggregate | XformGizmoMode::Move | XformGizmoMode::All
+        );
+        let show_scale = matches!(
+            mode,
+            XformGizmoMode::Aggregate | XformGizmoMode::Scale | XformGizmoMode::All
+        );
+        let show_rotate = matches!(mode, XformGizmoMode::Aggregate | XformGizmoMode::All);
+
+        let mut changed_any = false;
+
+        if show_translate {
+            let mut gizmo_pos = ctx.pivot_position_world;
+            if StandardGizmo::draw_translate(
+                buffer,
+                context,
+                gizmo_state,
+                &mut gizmo_pos,
+                ctx.handle_rotation_world,
+                node_id,
+            ) {
+                actions.push(GizmoMovedEvent {
+                    binding: GizmoBinding::SplineSelectionTranslate { node_id },
+                    new_position: gizmo_pos,
+                });
+                changed_any = true;
+            }
+        }
+
+        if show_scale {
+            let mut total_scale = Vec3::ONE;
+            if StandardGizmo::draw_scale(
+                buffer,
+                context,
+                gizmo_state,
+                ctx.pivot_position_world,
+                &mut total_scale,
+                ctx.handle_rotation_world,
+                node_id,
+            ) {
+                actions.push(GizmoMovedEvent {
+                    binding: GizmoBinding::SplineSelectionScale { node_id },
+                    new_position: total_scale,
+                });
+                changed_any = true;
+            }
+        }
+
+        if show_rotate {
+            let mut base_rot_deg = quat_to_euler_yxz_deg(ctx.handle_rotation_world);
+            if gizmo_state.active_node_id == Some(node_id)
+                && matches!(
+                    gizmo_state.active_part,
+                    Some(
+                        GizmoPart::RotateX
+                            | GizmoPart::RotateY
+                            | GizmoPart::RotateZ
+                            | GizmoPart::RotateScreen
+                    )
+                )
+            {
+                if let Some(v) = gizmo_state.initial_transform_pos {
+                    base_rot_deg = v;
+                }
+            }
+
+            let mut rotate_abs_deg = base_rot_deg;
+            if StandardGizmo::draw_rotate(
+                buffer,
+                context,
+                gizmo_state,
+                ctx.pivot_position_world,
+                &mut rotate_abs_deg,
+                node_id,
+            ) {
+                actions.push(GizmoMovedEvent {
+                    binding: GizmoBinding::SplineSelectionRotate { node_id },
+                    // Send total drag delta (from drag-start orientation). Handler converts to frame-step delta.
+                    new_position: rotate_abs_deg - base_rot_deg,
+                });
+                changed_any = true;
+            }
+        }
+
+        if changed_any {
+            gizmo_state.graph_modified = true;
+        }
+    }
 }
 
 register_node!("Spline", "Spline", UnitySplineNode, UnitySplineNode);
+
+#[inline]
+fn get_service_ref<T: 'static>(provider: &dyn ServiceProvider) -> Option<&T> {
+    provider
+        .get_service(TypeId::of::<T>())
+        .and_then(|s| s.downcast_ref::<T>())
+}
+
+#[inline]
+fn quat_to_euler_yxz_deg(q: Quat) -> Vec3 {
+    let (y, x, z) = q.to_euler(bevy::prelude::EulerRot::YXZ);
+    Vec3::new(x.to_degrees(), y.to_degrees(), z.to_degrees())
+}
+
+fn update_spline_transform_ctx(
+    mut ctx: crate::libs::algorithms::algorithms_runtime::unity_spline::editor::TransformContext,
+    c: &SplineContainer,
+    sel: &SplineSelectionState,
+) -> crate::libs::algorithms::algorithms_runtime::unity_spline::editor::TransformContext {
+    let spline_owner_knot = |e: SelectableElement| match e {
+        SelectableElement::Knot(k) => Some((k.spline_index, k.knot_index)),
+        SelectableElement::Tangent(t) => Some((t.spline_index, t.knot_index)),
+    };
+
+    ctx.handle_rotation_world = match ctx.handle_orientation {
+        HandleOrientation::Global => Quat::IDENTITY,
+        HandleOrientation::Parent => c.local_to_world.to_scale_rotation_translation().1,
+        HandleOrientation::Element => {
+            let (spline_index, knot_index) = sel
+                .active_element
+                .and_then(spline_owner_knot)
+                .unwrap_or((0, 0));
+            if spline_index < c.splines.len() && knot_index < c.splines[spline_index].count() {
+                let parent = c.local_to_world.to_scale_rotation_translation().1;
+                parent * c.splines[spline_index].knots[knot_index].rotation
+            } else {
+                Quat::IDENTITY
+            }
+        }
+    };
+
+    ctx.pivot_position_world = match ctx.pivot_mode {
+        PivotMode::Pivot => {
+            if let Some((si, ki)) = sel.active_element.and_then(spline_owner_knot) {
+                if si < c.splines.len() && ki < c.splines[si].count() {
+                    c.local_to_world.transform_point3(c.splines[si].knots[ki].position)
+                } else {
+                    ctx.pivot_position_world
+                }
+            } else {
+                ctx.pivot_position_world
+            }
+        }
+        PivotMode::Center => {
+            let mut sum = Vec3::ZERO;
+            let mut n = 0.0f32;
+            let mut seen: std::collections::HashSet<(usize, usize)> =
+                std::collections::HashSet::new();
+            for &e in sel.selected_elements.iter() {
+                if let Some((si, ki)) = spline_owner_knot(e) {
+                    if !seen.insert((si, ki)) {
+                        continue;
+                    }
+                    if si < c.splines.len() && ki < c.splines[si].count() {
+                        sum += c.local_to_world.transform_point3(c.splines[si].knots[ki].position);
+                        n += 1.0;
+                    }
+                }
+            }
+            if n > 0.0 {
+                sum / n
+            } else {
+                ctx.pivot_position_world
+            }
+        }
+    };
+
+    ctx
+}

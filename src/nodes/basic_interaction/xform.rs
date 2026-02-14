@@ -3,7 +3,7 @@
 use crate::{
     cunning_core::traits::node_interface::{
         GizmoContext, GizmoDrawBuffer, GizmoState, NodeInteraction, NodeOp, NodeParameters,
-        ServiceProvider,
+        ServiceProvider, XformGizmoMode,
     },
     gizmos::{GizmoActionQueue, GizmoBinding, GizmoMovedEvent},
     gizmos::standard::StandardGizmo,
@@ -99,6 +99,10 @@ impl NodeInteraction for TransformNode {
         _node_id: Uuid,
     ) {
         if let Some(gizmo_state) = get_service_ref::<GizmoState>(services) {
+            ui.label(format!(
+                "Xform Mode: {:?}   (Q Aggregate | W Move | E Scale | R All)",
+                gizmo_state.xform_mode
+            ));
             StandardGizmo::draw_status_hud(ui, gizmo_state);
         }
     }
@@ -159,16 +163,32 @@ impl NodeInteraction for TransformNode {
 
         let mut changed_any = false;
 
+        let mode = gizmo_state.xform_mode;
+        let show_translate = matches!(
+            mode,
+            XformGizmoMode::Aggregate | XformGizmoMode::Move | XformGizmoMode::All
+        );
+        let show_scale = matches!(
+            mode,
+            XformGizmoMode::Aggregate | XformGizmoMode::Scale | XformGizmoMode::All
+        );
+        let show_rotate = matches!(
+            mode,
+            XformGizmoMode::Aggregate | XformGizmoMode::All
+        );
+
         // 1. Translate
         let mut gizmo_pos = centroid + translate;
-        if StandardGizmo::draw_translate(
-            buffer,
-            context,
-            gizmo_state,
-            &mut gizmo_pos,
-            current_rot,
-            node_id,
-        ) {
+        if show_translate
+            && StandardGizmo::draw_translate(
+                buffer,
+                context,
+                gizmo_state,
+                &mut gizmo_pos,
+                current_rot,
+                node_id,
+            )
+        {
             translate = gizmo_pos - centroid;
             actions.push(GizmoMovedEvent {
                 binding: GizmoBinding::ParamVec3 {
@@ -183,15 +203,17 @@ impl NodeInteraction for TransformNode {
         // 2. Scale
         let current_pos = centroid + translate;
         let mut new_scale = scale;
-        if StandardGizmo::draw_scale(
-            buffer,
-            context,
-            gizmo_state,
-            current_pos,
-            &mut new_scale,
-            current_rot,
-            node_id,
-        ) {
+        if show_scale
+            && StandardGizmo::draw_scale(
+                buffer,
+                context,
+                gizmo_state,
+                current_pos,
+                &mut new_scale,
+                current_rot,
+                node_id,
+            )
+        {
             scale = new_scale;
             actions.push(GizmoMovedEvent {
                 binding: GizmoBinding::ParamVec3 {
@@ -205,14 +227,16 @@ impl NodeInteraction for TransformNode {
 
         // 3. Rotate
         let mut new_rot = rotate_deg;
-        if StandardGizmo::draw_rotate(
-            buffer,
-            context,
-            gizmo_state,
-            current_pos,
-            &mut new_rot,
-            node_id,
-        ) {
+        if show_rotate
+            && StandardGizmo::draw_rotate(
+                buffer,
+                context,
+                gizmo_state,
+                current_pos,
+                &mut new_rot,
+                node_id,
+            )
+        {
             rotate_deg = new_rot;
             actions.push(GizmoMovedEvent {
                 binding: GizmoBinding::ParamVec3 {

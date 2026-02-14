@@ -87,12 +87,6 @@ impl ConsoleLog {
 
         if let Ok(mut entries) = self.entries.lock() {
             entries.push(entry);
-
-            // Keep only last 1000 entries
-            let len = entries.len();
-            if len > 1000 {
-                entries.drain(0..len - 1000);
-            }
         }
         self.rev.fetch_add(1, Ordering::Relaxed);
     }

@@ -6,7 +6,7 @@ use crate::{
     camera::CameraController,
     console,
     cunning_core::plugin_system::PluginSystem,
-    debug_settings, node_editor_settings, settings, ui_settings,
+    build_settings, debug_settings, node_editor_settings, settings, ui_settings,
     MainCamera,
 };
 use crate::cunning_core::registries::{node_registry::NodeRegistry, tab_registry::TabRegistry};
@@ -47,6 +47,7 @@ pub(crate) fn setup_registries(
     mut ui_settings: ResMut<ui_settings::UiSettings>,
     mut node_editor_settings: ResMut<node_editor_settings::NodeEditorSettings>,
     mut debug_settings: ResMut<debug_settings::DebugSettings>,
+    mut build_settings: ResMut<build_settings::BuildSettings>,
 ) {
     tab_registry.scan_and_load();
     node_registry.scan_and_load();
@@ -55,6 +56,7 @@ pub(crate) fn setup_registries(
     ui_settings::apply_from_settings(&*settings_registry, &*settings_stores, &mut *ui_settings);
     node_editor_settings::apply_from_settings(&*settings_registry, &*settings_stores, &mut *node_editor_settings);
     debug_settings::apply_from_settings(&*settings_registry, &*settings_stores, &mut *debug_settings);
+    build_settings::apply_from_settings(&*settings_registry, &*settings_stores, &mut *build_settings);
     let plugin_system = PluginSystem::default();
     let plugin_dir = "plugins";
     if !std::path::Path::new(plugin_dir).exists() {

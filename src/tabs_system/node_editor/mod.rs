@@ -497,19 +497,27 @@ impl EditorTab for NodeEditorTab {
                 drawing::GridRippleState { active: true, center, start_time: start }
             });
             ui.allocate_ui_at_rect(editor_rect, |ui| {
+                ui.set_clip_rect(editor_rect);
                 ui.push_id("ne_grid", |ui| {
                     drawing::draw_grid(ui, editor_rect, self.pan, self.zoom, context.node_editor_settings, context.ui_invalidator, ripple.as_ref());
                 });
             });
-            drawing::handle_node_input(self, ui, context, editor_rect);
+            ui.allocate_ui_at_rect(editor_rect, |ui| {
+                ui.set_clip_rect(editor_rect);
+                drawing::handle_node_input(self, ui, context, editor_rect);
+            });
 
-            draw_foreach_overlays(ui, self, context, editor_rect);
-            draw_network_boxes(ui, self, context, editor_rect);
-            draw_sticky_notes(ui, self, context, editor_rect);
-            draw_promote_notes(ui, self, context, editor_rect);
+            ui.allocate_ui_at_rect(editor_rect, |ui| {
+                ui.set_clip_rect(editor_rect);
+                draw_foreach_overlays(ui, self, context, editor_rect);
+                draw_network_boxes(ui, self, context, editor_rect);
+                draw_sticky_notes(ui, self, context, editor_rect);
+                draw_promote_notes(ui, self, context, editor_rect);
+            });
             poll_voice_events(self, context);
 
             ui.allocate_ui_at_rect(editor_rect, |ui| {
+                ui.set_clip_rect(editor_rect);
                 ui.push_id(("ne_nodes", editor_rect_id), |ui| {
                     drawing::paint_nodes_retained(
                         ui,
@@ -524,12 +532,15 @@ impl EditorTab for NodeEditorTab {
             });
 
             // Alignment snap-lines (same visual language as other dashed guides)
-            if !self.snap_lines.is_empty() {
-                let snap_color = Color32::from_gray(180);
-                for (p1, p2) in &self.snap_lines {
-                    drawing::draw_dashed_line(ui, [*p1, *p2], snap_color, 5.0, 5.0);
+            ui.allocate_ui_at_rect(editor_rect, |ui| {
+                ui.set_clip_rect(editor_rect);
+                if !self.snap_lines.is_empty() {
+                    let snap_color = Color32::from_gray(180);
+                    for (p1, p2) in &self.snap_lines {
+                        drawing::draw_dashed_line(ui, [*p1, *p2], snap_color, 5.0, 5.0);
+                    }
                 }
-            }
+            });
 
             handle_radial_menu(self, ui, context, editor_rect);
             // Connections + previews must be clipped to the node-editor rect (prevents bleed into 3D viewport).

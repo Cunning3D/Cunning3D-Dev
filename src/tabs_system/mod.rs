@@ -88,6 +88,8 @@ pub struct EditorTabContext<'a> {
     pub open_settings_window_writer: &'a mut MessageWriter<'a, crate::ui::OpenSettingsWindowEvent>,
     pub open_ai_workspace_window_writer:
         &'a mut MessageWriter<'a, crate::ui::OpenAiWorkspaceWindowEvent>,
+    pub open_hot_reload_window_writer:
+        &'a mut MessageWriter<'a, crate::ui::OpenHotReloadWindowEvent>,
     pub set_camera_view_writer:
         &'a mut MessageWriter<'a, crate::viewport_options::SetCameraViewEvent>,
     pub camera_rotate_writer: &'a mut MessageWriter<'a, crate::viewport_options::CameraRotateEvent>,
@@ -116,6 +118,8 @@ pub struct EditorTabContext<'a> {
     pub runtime_module_state: &'a crate::runtime_module::RuntimeModuleState,
     pub runtime_module_log: &'a crate::runtime_module::RuntimeModuleLog,
     pub rust_code_changes: &'a crate::rust_code_watch::RustCodeChanges,
+    pub hot_update_prompt: &'a mut crate::rust_code_watch::HotUpdatePrompt,
+    pub hot_reload_log: &'a crate::tabs_system::pane::hot_reload::HotReloadLog,
     /// The Bevy window entity this tab is currently rendering into.
     pub window_entity: Entity,
 }
@@ -385,6 +389,7 @@ pub struct EditorUiSystemParam<'w> {
     pub node_editor_settings: Res<'w, crate::node_editor_settings::NodeEditorSettings>,
     pub open_settings_window_writer: MessageWriter<'w, crate::ui::OpenSettingsWindowEvent>,
     pub open_ai_workspace_window_writer: MessageWriter<'w, crate::ui::OpenAiWorkspaceWindowEvent>,
+    pub open_hot_reload_window_writer: MessageWriter<'w, crate::ui::OpenHotReloadWindowEvent>,
     pub ui_changed_writer: MessageWriter<'w, crate::UiChanged>,
     pub voxel_tool_state: ResMut<'w, crate::coverlay_bevy_ui::VoxelToolState>,
     pub voxel_overlay_settings: ResMut<'w, crate::coverlay_bevy_ui::VoxelOverlaySettings>,
@@ -395,6 +400,8 @@ pub struct EditorUiSystemParam<'w> {
     pub runtime_module_state: Res<'w, crate::runtime_module::RuntimeModuleState>,
     pub runtime_module_log: Res<'w, crate::runtime_module::RuntimeModuleLog>,
     pub rust_code_changes: Res<'w, crate::rust_code_watch::RustCodeChanges>,
+    pub hot_update_prompt: ResMut<'w, crate::rust_code_watch::HotUpdatePrompt>,
+    pub hot_reload_log: Res<'w, crate::tabs_system::pane::hot_reload::HotReloadLog>,
 }
 
 pub fn show_editor_ui(world: &mut World) {
@@ -500,6 +507,7 @@ pub fn show_editor_ui(world: &mut World) {
         voice_service,
         mut open_settings_window_writer,
         mut open_ai_workspace_window_writer,
+        mut open_hot_reload_window_writer,
         mut ui_changed_writer,
         mut set_camera_view_writer,
         mut camera_rotate_writer,
@@ -518,6 +526,8 @@ pub fn show_editor_ui(world: &mut World) {
         runtime_module_state,
         runtime_module_log,
         rust_code_changes,
+        mut hot_update_prompt,
+        hot_reload_log,
         ..
     } = params;
 
@@ -546,6 +556,7 @@ pub fn show_editor_ui(world: &mut World) {
             open_node_info_window_writer: &mut open_node_info_window_writer,
             open_settings_window_writer: &mut open_settings_window_writer,
             open_ai_workspace_window_writer: &mut open_ai_workspace_window_writer,
+            open_hot_reload_window_writer: &mut open_hot_reload_window_writer,
             set_camera_view_writer: &mut set_camera_view_writer,
             camera_rotate_writer: &mut camera_rotate_writer,
             display_options: &mut *display_options,
@@ -573,6 +584,8 @@ pub fn show_editor_ui(world: &mut World) {
             runtime_module_state: &*runtime_module_state,
             runtime_module_log: &*runtime_module_log,
             rust_code_changes: &*rust_code_changes,
+            hot_update_prompt: &mut *hot_update_prompt,
+            hot_reload_log: &*hot_reload_log,
             window_entity,
         };
 
@@ -649,6 +662,7 @@ pub fn show_editor_ui(world: &mut World) {
                         }
                     }
                 });
+                draw_hot_update_prompt(egui_context.get_mut(), &mut cx);
             }
             crate::ui::LayoutMode::Tablet => {
                 // --- TABLET LAYOUT ---
@@ -737,6 +751,7 @@ pub fn show_editor_ui(world: &mut World) {
                             });
                     }
                 });
+                draw_hot_update_prompt(egui_context.get_mut(), &mut cx);
             }
             crate::ui::LayoutMode::Desktop => {
                 // --- DESKTOP LAYOUT ---
@@ -777,96 +792,102 @@ pub fn show_editor_ui(world: &mut World) {
                         ui.allocate_space(egui::vec2(ui.available_width(), bottom_h));
                     });
 
-                let mut tab_ui = TabUi { context: &mut cx };
+                {
+                    let mut tab_ui = TabUi { context: &mut cx };
 
-                let has_outliner = tab_viewer
-                    .dock_state
-                    .iter_all_tabs()
-                    .any(|(_k, t)| t.title().text() == "Outliner");
-                if !tab_viewer.did_strip_outliner || has_outliner {
-                    strip_outliner_from_dock_state(&mut tab_viewer.dock_state);
-                    tab_viewer.did_strip_outliner = true;
-                }
-
-                egui::CentralPanel::default().frame(egui::Frame::NONE).show(egui_context.get_mut(), |ui| {
-                    // Global safe inset: keep ALL tabs away from left/right window edges,
-                    // but do NOT paint an opaque background over the viewport.
-                    let full = ui.max_rect();
-                    let inset = crate::app::window_frame::WINDOW_SAFE_INSET_LP;
-                    let inner_min_x = (full.min.x + inset).min(full.max.x);
-                    let inner_max_x = (full.max.x - inset).max(full.min.x);
-                    let inner = egui::Rect::from_min_max(
-                        egui::pos2(inner_min_x, full.min.y),
-                        egui::pos2(inner_max_x, full.max.y),
-                    );
-
-                    // Paint only the left/right gutters as a single background layer.
-                    if inner.min.x > full.min.x + 0.5 {
-                        ui.painter().rect_filled(
-                            egui::Rect::from_min_max(full.min, egui::pos2(inner.min.x, full.max.y)),
-                            egui::CornerRadius::ZERO,
-                            bg,
-                        );
-                    }
-                    if inner.max.x < full.max.x - 0.5 {
-                        ui.painter().rect_filled(
-                            egui::Rect::from_min_max(egui::pos2(inner.max.x, full.min.y), full.max),
-                            egui::CornerRadius::ZERO,
-                            bg,
-                        );
+                    let has_outliner = tab_viewer
+                        .dock_state
+                        .iter_all_tabs()
+                        .any(|(_k, t)| t.title().text() == "Outliner");
+                    if !tab_viewer.did_strip_outliner || has_outliner {
+                        strip_outliner_from_dock_state(&mut tab_viewer.dock_state);
+                        tab_viewer.did_strip_outliner = true;
                     }
 
-                    ui.allocate_ui_at_rect(inner, |ui| {
-                        DockArea::new(&mut tab_viewer.dock_state)
-                            .id(egui::Id::new("main_dock_area"))
-                            .style(style)
-                            .show_add_buttons(true)
-                            .show_add_popup(true)
-                            .show_inside(ui, &mut tab_ui);
+                    egui::CentralPanel::default().frame(egui::Frame::NONE).show(egui_context.get_mut(), |ui| {
+                        // Global safe inset: keep ALL tabs away from left/right window edges,
+                        // but do NOT paint an opaque background over the viewport.
+                        let full = ui.max_rect();
+                        let inset = crate::app::window_frame::WINDOW_SAFE_INSET_LP;
+                        let inner_min_x = (full.min.x + inset).min(full.max.x);
+                        let inner_max_x = (full.max.x - inset).max(full.min.x);
+                        let inner = egui::Rect::from_min_max(
+                            egui::pos2(inner_min_x, full.min.y),
+                            egui::pos2(inner_max_x, full.max.y),
+                        );
+
+                        // Paint only the left/right gutters as a single background layer.
+                        if inner.min.x > full.min.x + 0.5 {
+                            ui.painter().rect_filled(
+                                egui::Rect::from_min_max(full.min, egui::pos2(inner.min.x, full.max.y)),
+                                egui::CornerRadius::ZERO,
+                                bg,
+                            );
+                        }
+                        if inner.max.x < full.max.x - 0.5 {
+                            ui.painter().rect_filled(
+                                egui::Rect::from_min_max(egui::pos2(inner.max.x, full.min.y), full.max),
+                                egui::CornerRadius::ZERO,
+                                bg,
+                            );
+                        }
+
+                        ui.allocate_ui_at_rect(inner, |ui| {
+                            DockArea::new(&mut tab_viewer.dock_state)
+                                .id(egui::Id::new("main_dock_area"))
+                                .style(style)
+                                .show_add_buttons(true)
+                                .show_add_popup(true)
+                                .show_inside(ui, &mut tab_ui);
+                        });
                     });
-                });
 
-                // Convert egui-dock "window surfaces" into real OS windows (Bevy Window entities).
-                // This enables minimizing the main window while keeping detached panels usable.
-                let surf_count = tab_viewer.dock_state.surfaces_count();
-                if surf_count > 1 {
-                    for si in (1..surf_count).rev() {
-                        let surface_index = egui_dock::SurfaceIndex(si);
-                        let Some(surface) = tab_viewer.dock_state.remove_surface(surface_index) else {
-                            continue;
-                        };
-                        let (mut tree, win_state) = match surface {
-                            egui_dock::Surface::Window(tree, win_state) => (tree, win_state),
-                            _ => continue,
-                        };
+                    // Convert egui-dock "window surfaces" into real OS windows (Bevy Window entities).
+                    // This enables minimizing the main window while keeping detached panels usable.
+                    let surf_count = tab_viewer.dock_state.surfaces_count();
+                    if surf_count > 1 {
+                        for si in (1..surf_count).rev() {
+                            let surface_index = egui_dock::SurfaceIndex(si);
+                            let Some(surface) = tab_viewer.dock_state.remove_surface(surface_index) else {
+                                continue;
+                            };
+                            let (mut tree, win_state) = match surface {
+                                egui_dock::Surface::Window(tree, win_state) => (tree, win_state),
+                                _ => continue,
+                            };
 
-                        let base_rect = {
-                            let r = win_state.rect();
-                            if r == egui::Rect::NOTHING {
-                                egui::Rect::from_min_size(egui::pos2(120.0, 120.0), egui::vec2(1100.0, 800.0))
-                            } else {
-                                r
+                            let base_rect = {
+                                let r = win_state.rect();
+                                if r == egui::Rect::NOTHING {
+                                    egui::Rect::from_min_size(egui::pos2(120.0, 120.0), egui::vec2(1100.0, 800.0))
+                                } else {
+                                    r
+                                }
+                            };
+
+                            // Extract all tabs out of the detached surface.
+                            let mut tabs: Vec<Box<dyn EditorTab>> = Vec::new();
+                            for n in tree.iter_mut() {
+                                if let egui_dock::Node::Leaf { tabs: leaf_tabs, .. } = n {
+                                    tabs.append(&mut std::mem::take(leaf_tabs));
+                                }
                             }
-                        };
 
-                        // Extract all tabs out of the detached surface.
-                        let mut tabs: Vec<Box<dyn EditorTab>> = Vec::new();
-                        for n in tree.iter_mut() {
-                            if let egui_dock::Node::Leaf { tabs: leaf_tabs, .. } = n {
-                                tabs.append(&mut std::mem::take(leaf_tabs));
+                            // Spawn one OS window per detached tab.
+                            for (i, tab) in tabs.into_iter().enumerate() {
+                                let id = FloatingTabId(Uuid::new_v4());
+                                let title = tab.title().text().to_string();
+                                floating_tabs.tabs.insert(id.clone(), tab);
+                                let d = (i as f32) * 28.0;
+                                let rect = egui::Rect::from_min_size(base_rect.min + egui::vec2(d, d), base_rect.size());
+                                float_tab_to_window_writer.write(FloatTabToWindowEvent { title, initial_rect: rect, id });
                             }
-                        }
-
-                        // Spawn one OS window per detached tab.
-                        for (i, tab) in tabs.into_iter().enumerate() {
-                            let id = FloatingTabId(Uuid::new_v4());
-                            let title = tab.title().text().to_string();
-                            floating_tabs.tabs.insert(id.clone(), tab);
-                            let d = (i as f32) * 28.0;
-                            let rect = egui::Rect::from_min_size(base_rect.min + egui::vec2(d, d), base_rect.size());
-                            float_tab_to_window_writer.write(FloatTabToWindowEvent { title, initial_rect: rect, id });
                         }
                     }
+
+                    // UE-like hot update prompt (in-app, bottom-right).
+                    // Important: reuse the existing `&mut cx` borrow held by `tab_ui` to avoid double-borrow.
+                    draw_hot_update_prompt(egui_context.get_mut(), &mut *tab_ui.context);
                 }
             }
         }
@@ -959,6 +980,147 @@ pub fn show_editor_ui(world: &mut World) {
     }
 }
 
+fn draw_hot_update_prompt(ctx: &egui::Context, cx: &mut EditorTabContext) {
+    let n = cx.rust_code_changes.len();
+    if n > cx.hot_update_prompt.seen_count {
+        cx.hot_update_prompt.open = n > 0;
+        cx.hot_update_prompt.seen_count = n;
+        if n > 0 {
+            cx.hot_update_prompt.fade_out_started_at = None;
+        }
+    }
+    if !cx.hot_update_prompt.open {
+        return;
+    }
+    use egui::{Align2, Color32, CornerRadius, Frame, Margin, RichText, Stroke};
+
+    // Anchor to 3D viewport bottom-right (not whole app window), clipped by viewport rect.
+    let viewport_rect = cx
+        .viewport_layout
+        .logical_rect
+        .unwrap_or_else(|| ctx.viewport_rect());
+    let anchor_pos = egui::pos2(viewport_rect.max.x - 16.0, viewport_rect.max.y - 16.0);
+
+    egui::Area::new(egui::Id::new("hot_update_prompt"))
+        .pivot(Align2::RIGHT_BOTTOM)
+        .fixed_pos(anchor_pos)
+        .constrain(false)
+        .order(egui::Order::Foreground)
+        .interactable(true)
+        .show(ctx, |ui| {
+            ui.set_clip_rect(viewport_rect);
+            Frame::NONE
+                .fill(Color32::from_rgba_unmultiplied(18, 18, 22, 220))
+                .stroke(Stroke::new(
+                    1.0,
+                    Color32::from_rgba_unmultiplied(80, 200, 120, 120),
+                ))
+                .corner_radius(CornerRadius::same(10))
+                .inner_margin(Margin::same(10))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("Code changed").strong().color(Color32::from_rgb(230, 230, 230)));
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui.small_button("Close").clicked() {
+                                cx.hot_update_prompt.open = false;
+                                cx.hot_update_prompt.fade_out_started_at = None;
+                            }
+                            if ui.small_button("Ignore").clicked() {
+                                cx.rust_code_changes.clear();
+                                cx.hot_update_prompt.open = false;
+                                cx.hot_update_prompt.seen_count = 0;
+                                cx.hot_update_prompt.fade_out_started_at = None;
+                            }
+                        });
+                    });
+                    ui.add_space(2.0);
+                    ui.label(
+                        RichText::new(if n > 0 {
+                            format!("{n} file(s) changed. Hot reload now?")
+                        } else {
+                            "No pending code changes.".to_string()
+                        })
+                        .color(Color32::from_rgb(180, 180, 180)),
+                    );
+                    if n > 0 {
+                        let files = cx.rust_code_changes.list();
+                        ui.add_space(4.0);
+                        let show_n = files.len().min(4);
+                        for p in files.iter().take(show_n) {
+                            ui.label(RichText::new(p.display().to_string()).monospace().color(Color32::from_rgb(170, 170, 170)));
+                        }
+                        if files.len() > show_n {
+                            ui.label(RichText::new(format!("+{} more...", files.len() - show_n)).monospace().color(Color32::from_rgb(140, 140, 140)));
+                        }
+                    }
+
+                    ui.add_space(6.0);
+                    ui.horizontal(|ui| {
+                        let yes = ui
+                            .add_enabled(n > 0, egui::Button::new(RichText::new("Hot Reload").strong()))
+                            .clicked();
+                        if yes {
+                            cx.open_hot_reload_window_writer.write_default();
+                            let files = cx.rust_code_changes.list();
+                            match crate::rust_code_watch::decide_update(&files) {
+                                crate::rust_code_watch::UpdateDecision::LiveReloadRuntimeModule => {
+                                    let _ = crate::runtime_module::build_jobs::request_compile_runtime_module(
+                                        crate::runtime_module::build_jobs::CompileRuntimeModuleRequest::editor_runtime(),
+                                    );
+                                }
+                                crate::rust_code_watch::UpdateDecision::HotRestart | crate::rust_code_watch::UpdateDecision::None => {
+                                    let _ = crate::hot_restart::request_hot_restart(true);
+                                }
+                            }
+                            cx.rust_code_changes.clear();
+                            cx.hot_update_prompt.seen_count = 0;
+                            cx.hot_update_prompt.fade_out_started_at = None;
+                        }
+                    });
+
+                    ui.add_space(4.0);
+                    ui.collapsing("Details", |ui| {
+                        ui.set_min_width(520.0);
+                        ui.label(RichText::new("Changed files").strong());
+                        ui.separator();
+                        if n == 0 {
+                            ui.label(RichText::new("(none)").monospace().color(Color32::from_rgb(140, 140, 140)));
+                        } else {
+                            let files = cx.rust_code_changes.list();
+                            egui::ScrollArea::vertical().max_height(180.0).show(ui, |ui| {
+                                for p in files {
+                                    ui.label(
+                                        RichText::new(p.display().to_string())
+                                            .monospace()
+                                            .color(Color32::from_rgb(170, 170, 170)),
+                                    );
+                                }
+                            });
+                        }
+                        ui.separator();
+                        ui.label(RichText::new("Build log (live)").strong());
+                        let tail = cx.hot_reload_log.entries();
+                        let start = tail.len().saturating_sub(120);
+                        egui::ScrollArea::vertical().max_height(160.0).show(ui, |ui| {
+                            for e in tail.iter().skip(start) {
+                                let tag = match e.level {
+                                    crate::console::LogLevel::Info => "INFO",
+                                    crate::console::LogLevel::Warning => "WARN",
+                                    crate::console::LogLevel::Error => "ERR ",
+                                    crate::console::LogLevel::Debug => "DBG ",
+                                };
+                                ui.label(
+                                    RichText::new(format!("[{tag}] {}", e.message))
+                                        .monospace()
+                                        .color(Color32::from_rgb(140, 140, 140)),
+                                );
+                            }
+                        });
+                    });
+                });
+        });
+}
+
 /// Renders UI for all floating (native) windows based on FloatingTabRegistry.
 pub fn show_floating_tabs_ui(world: &mut World) {
     // Collect window entities first to avoid holding long-lived borrows across iterations.
@@ -1036,6 +1198,7 @@ pub fn show_floating_tabs_ui(world: &mut World) {
             voice_service,
             mut open_settings_window_writer,
             mut open_ai_workspace_window_writer,
+            mut open_hot_reload_window_writer,
             mut ui_changed_writer,
             mut set_camera_view_writer,
             mut camera_rotate_writer,
@@ -1054,6 +1217,8 @@ pub fn show_floating_tabs_ui(world: &mut World) {
             runtime_module_state,
             runtime_module_log,
             rust_code_changes,
+            mut hot_update_prompt,
+            hot_reload_log,
             ..
         } = params;
 
@@ -1085,6 +1250,7 @@ pub fn show_floating_tabs_ui(world: &mut World) {
                     open_node_info_window_writer: &mut open_node_info_window_writer,
                     open_settings_window_writer: &mut open_settings_window_writer,
                     open_ai_workspace_window_writer: &mut open_ai_workspace_window_writer,
+                    open_hot_reload_window_writer: &mut open_hot_reload_window_writer,
                     set_camera_view_writer: &mut set_camera_view_writer,
                     camera_rotate_writer: &mut camera_rotate_writer,
                     display_options: &mut *display_options,
@@ -1112,6 +1278,8 @@ pub fn show_floating_tabs_ui(world: &mut World) {
                     runtime_module_state: &*runtime_module_state,
                     runtime_module_log: &*runtime_module_log,
                     rust_code_changes: &*rust_code_changes,
+                    hot_update_prompt: &mut *hot_update_prompt,
+                    hot_reload_log: &*hot_reload_log,
                     window_entity: entity,
                 };
 

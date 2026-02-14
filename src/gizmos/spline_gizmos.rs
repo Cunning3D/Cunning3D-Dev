@@ -1,4 +1,3 @@
-use crate::gizmos::constants::*;
 use crate::gizmos::material::GizmoOverlayExt;
 use crate::gizmos::renderer::GizmoMaterial;
 use crate::gizmos::{GizmoBinding, GizmoColor, GizmoInteraction, GizmoTag};
@@ -10,8 +9,6 @@ use crate::libs::algorithms::algorithms_runtime::unity_spline::{
 };
 use crate::nodes::parameter::ParameterValue;
 use crate::nodes::spline::tool_state::SplineToolState;
-use crate::nodes::spline::tool_state::SplineTransformHandle;
-use crate::nodes::spline::tool_state::SplineTransformTool;
 use crate::ui::UiState;
 use crate::{
     nodes::{NodeId, NodeType},
@@ -43,7 +40,6 @@ pub fn sync_spline_gizmos(
     mut giz_xray: Gizmos<crate::gizmos::SelectedCurveXrayGizmos>,
     gizmo_query: Query<(Entity, &GizmoBinding, Option<&GizmoInteraction>), With<GizmoTag>>,
     mut cache: Local<SplineGizmoCache>,
-    cam_q: Query<(&Camera, &GlobalTransform), With<crate::MainCamera>>,
 ) {
     let selected_node_id = if ui_state.selected_nodes.len() == 1 {
         ui_state.selected_nodes.iter().next().copied()
@@ -111,8 +107,8 @@ pub fn sync_spline_gizmos(
                 .push(get_sampled_positions(&mut s, c.local_to_world, samples));
         }
     }
-    let col_front = Color::srgb(0.4, 0.7, 1.0);
-    let col_xray = Color::srgba(0.4, 0.7, 1.0, 0.2);
+    let col_front = Color::srgb(0.6, 0.9, 1.0);
+    let col_xray = Color::srgba(0.6, 0.9, 1.0, 0.3);
     for pts in cache.polylines.iter() {
         if pts.len() < 2 {
             continue;
@@ -125,113 +121,6 @@ pub fn sync_spline_gizmos(
     if let Some(h) = spline_tool_state.hovered_curve {
         giz_front.sphere(h.world_pos, 0.035, Color::srgb(1.0, 0.9, 0.2));
         giz_xray.sphere(h.world_pos, 0.035, Color::srgba(1.0, 0.9, 0.2, 0.2));
-    }
-
-    // Transform handles (visual only; picking/dragging is handled in input.rs; no Curve impact).
-    if matches!(
-        spline_tool_state.tool,
-        SplineTransformTool::Rotate | SplineTransformTool::Scale
-    ) {
-        if let Ok((cam, cam_xf)) = cam_q.single() {
-            let pivot = spline_tool_state.ctx.pivot_position_world;
-            let dist = cam_xf.translation().distance(pivot);
-            let size = (dist * SPLINE_HANDLE_SIZE_FACTOR).max(SPLINE_HANDLE_SIZE_MIN);
-            let rot = spline_tool_state.ctx.handle_rotation_world;
-            let ax = (rot * Vec3::X).normalize_or_zero();
-            let ay = (rot * Vec3::Y).normalize_or_zero();
-            let az = (rot * Vec3::Z).normalize_or_zero();
-            let col_x = Color::srgb(1.0, 0.2, 0.2);
-            let col_y = Color::srgb(0.2, 1.0, 0.2);
-            let col_z = Color::srgb(0.2, 0.6, 1.0);
-            let hot = spline_tool_state
-                .active_handle
-                .or(spline_tool_state.hovered_handle);
-
-            let ring_alpha = 0.85;
-            let ring_alpha_xray = 0.25;
-
-            // Axes
-            let (cx, cy, cz) = (
-                if matches!(
-                    hot,
-                    Some(SplineTransformHandle::ScaleX | SplineTransformHandle::RotateX)
-                ) {
-                    mul_rgb(col_x, 1.2)
-                } else {
-                    col_x
-                },
-                if matches!(
-                    hot,
-                    Some(SplineTransformHandle::ScaleY | SplineTransformHandle::RotateY)
-                ) {
-                    mul_rgb(col_y, 1.2)
-                } else {
-                    col_y
-                },
-                if matches!(
-                    hot,
-                    Some(SplineTransformHandle::ScaleZ | SplineTransformHandle::RotateZ)
-                ) {
-                    mul_rgb(col_z, 1.2)
-                } else {
-                    col_z
-                },
-            );
-            giz_front.line(pivot, pivot + ax * size, cx);
-            giz_front.line(pivot, pivot + ay * size, cy);
-            giz_front.line(pivot, pivot + az * size, cz);
-
-            // Rotation rings
-            if spline_tool_state.tool == SplineTransformTool::Rotate {
-                draw_ring(
-                    &mut giz_front,
-                    &mut giz_xray,
-                    pivot,
-                    ax,
-                    size,
-                    col_x,
-                    ring_alpha,
-                    ring_alpha_xray,
-                    hot == Some(SplineTransformHandle::RotateX),
-                );
-                draw_ring(
-                    &mut giz_front,
-                    &mut giz_xray,
-                    pivot,
-                    ay,
-                    size,
-                    col_y,
-                    ring_alpha,
-                    ring_alpha_xray,
-                    hot == Some(SplineTransformHandle::RotateY),
-                );
-                draw_ring(
-                    &mut giz_front,
-                    &mut giz_xray,
-                    pivot,
-                    az,
-                    size,
-                    col_z,
-                    ring_alpha,
-                    ring_alpha_xray,
-                    hot == Some(SplineTransformHandle::RotateZ),
-                );
-                // Screen ring (camera forward)
-                let _ = cam; // only needed for future gating (viewport tool active)
-                let fwd = cam_xf.forward().as_vec3();
-                draw_ring(
-                    &mut giz_front,
-                    &mut giz_xray,
-                    pivot,
-                    fwd,
-                    size * 1.1,
-                    Color::WHITE,
-                    0.5,
-                    0.15,
-                    hot == Some(SplineTransformHandle::RotateScreen),
-                );
-            }
-        }
     }
 
     let mut required = std::collections::HashSet::new();
@@ -295,7 +184,7 @@ pub fn sync_spline_gizmos(
             } else if is_selected {
                 Color::srgb(1.0, 0.9, 0.2)
             } else {
-                Color::srgb(0.4, 0.7, 1.0)
+                Color::srgb(0.6, 0.9, 1.0)
             };
             // World-space teardrop: flat in local XZ plane, tip points along local +Z.
             // Orientation matches Unity semantics: derived from knot.rotation + tangent_out (no neighbor fallback).
@@ -383,53 +272,6 @@ pub fn sync_spline_gizmos(
             }
         }
     }
-}
-
-fn draw_ring(
-    giz_front: &mut Gizmos<crate::gizmos::SelectedCurveGizmos>,
-    giz_xray: &mut Gizmos<crate::gizmos::SelectedCurveXrayGizmos>,
-    center: Vec3,
-    normal: Vec3,
-    radius: f32,
-    color: Color,
-    alpha: f32,
-    alpha_xray: f32,
-    is_hot: bool,
-) {
-    let n = normal.normalize_or_zero();
-    let up = if n.abs_diff_eq(Vec3::Y, 1e-3) {
-        Vec3::X
-    } else {
-        Vec3::Y
-    };
-    let u = n.cross(up).normalize_or_zero();
-    let v = n.cross(u).normalize_or_zero();
-    let segs = SPLINE_RING_SEGMENTS.max(16);
-    let mut prev = center + u * radius;
-    let mut prev_x = prev;
-    let col = if is_hot { mul_rgb(color, 1.2) } else { color };
-    let cs = col.to_srgba();
-    let col_front = Color::srgba(cs.red, cs.green, cs.blue, alpha);
-    let col_xray = Color::srgba(cs.red, cs.green, cs.blue, alpha_xray);
-    for i in 1..=segs {
-        let t = (i as f32) / (segs as f32) * std::f32::consts::TAU;
-        let p = center + (u * t.cos() + v * t.sin()) * radius;
-        giz_front.line(prev, p, col_front);
-        giz_xray.line(prev_x, p, col_xray);
-        prev = p;
-        prev_x = p;
-    }
-}
-
-#[inline]
-fn mul_rgb(color: Color, factor: f32) -> Color {
-    let c = color.to_srgba();
-    Color::srgba(
-        (c.red * factor).min(1.0),
-        (c.green * factor).min(1.0),
-        (c.blue * factor).min(1.0),
-        c.alpha,
-    )
 }
 
 fn update_or_spawn_gizmo_with_mesh(

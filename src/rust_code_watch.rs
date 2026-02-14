@@ -5,6 +5,14 @@ use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+#[derive(Resource, Default)]
+pub struct HotUpdatePrompt {
+    pub open: bool,
+    pub seen_count: usize,
+    /// When set, the prompt will fade out and then close (seconds from egui `ctx.input().time`).
+    pub fade_out_started_at: Option<f64>,
+}
+
 #[derive(Resource, Default, Clone)]
 pub struct RustCodeChanges {
     inner: Arc<Mutex<RustCodeChangesInner>>,
@@ -26,6 +34,9 @@ impl RustCodeChanges {
     }
     pub fn list(&self) -> Vec<PathBuf> {
         self.inner.lock().ok().map(|s| s.pending.clone()).unwrap_or_default()
+    }
+    pub fn len(&self) -> usize {
+        self.inner.lock().ok().map(|s| s.pending.len()).unwrap_or(0)
     }
     pub fn clear(&self) {
         if let Ok(mut s) = self.inner.lock() {
@@ -75,6 +86,7 @@ pub struct RustCodeWatchPlugin;
 impl Plugin for RustCodeWatchPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<RustCodeChanges>()
+            .init_resource::<HotUpdatePrompt>()
             .add_systems(Startup, start_rust_watch_thread_system);
     }
 }
@@ -109,11 +121,11 @@ fn start_rust_watch_thread_system(mut commands: Commands, changes: Res<RustCodeC
 }
 
 fn watch_dirs() -> Vec<PathBuf> {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     vec![
-        PathBuf::from("src"),
-        PathBuf::from("crates"),
-        PathBuf::from("runtime"),
-        PathBuf::from("plugins"),
+        root.join("src"),
+        root.join("crates"),
+        root.join("runtime"),
     ]
 }
 

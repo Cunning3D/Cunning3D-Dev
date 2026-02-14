@@ -10,9 +10,6 @@ use crate::gizmos::control_id::ControlIdState;
 use crate::gizmos::GizmoMovedEvent;
 use crate::libs::algorithms::algorithms_runtime::unity_spline::editor::get_nearest_point_on_curve_ray;
 use crate::libs::algorithms::algorithms_runtime::unity_spline::editor::{
-    apply_rotation_ctx, apply_scale_ctx,
-};
-use crate::libs::algorithms::algorithms_runtime::unity_spline::editor::{
     HandleOrientation, PivotMode, SelectableElement,
 };
 use crate::libs::algorithms::algorithms_runtime::unity_spline::TangentMode;
@@ -28,7 +25,7 @@ use crate::nodes::spline::tool_state::SplineDrawState;
 use crate::nodes::spline::tool_state::SplineEditMode;
 use crate::nodes::spline::tool_state::{HoveredCurve, SplineTransformTool};
 use crate::nodes::spline::tool_state::{
-    SplineAxisConstraint, SplineToolState, SplineTransformHandle,
+    SplineAxisConstraint, SplineToolState,
 };
 use crate::tabs_system::{FloatingEditorTabs, TabViewer, Viewport3DTab};
 use crate::ui::FloatingTabRegistry;
@@ -257,62 +254,6 @@ pub fn handle_gizmo_interaction(p: CurveGizmoInputParams) {
             }
         };
         ctx
-    }
-
-    #[inline]
-    fn signed_angle_about_axis(a: Vec3, b: Vec3, axis: Vec3) -> f32 {
-        let aa = a.normalize_or_zero();
-        let bb = b.normalize_or_zero();
-        let ax = axis.normalize_or_zero();
-        let cross = aa.cross(bb);
-        let sin = ax.dot(cross);
-        let cos = (aa.dot(bb)).clamp(-1.0, 1.0);
-        sin.atan2(cos)
-    }
-
-    fn closest_points_ray_line(
-        ray_origin: Vec3,
-        ray_dir: Vec3,
-        line_origin: Vec3,
-        line_dir: Vec3,
-    ) -> (Vec3, Vec3) {
-        let w0 = ray_origin - line_origin;
-        let a = ray_dir.dot(ray_dir);
-        let b = ray_dir.dot(line_dir);
-        let c = line_dir.dot(line_dir);
-        let d = ray_dir.dot(w0);
-        let e = line_dir.dot(w0);
-        let denom = a * c - b * b;
-        let (sc, tc) = if denom < 1e-5 {
-            (0.0, if b > c { d / b } else { e / c })
-        } else {
-            ((b * e - c * d) / denom, (a * e - b * d) / denom)
-        };
-        (ray_origin + ray_dir * sc, line_origin + line_dir * tc)
-    }
-
-    fn distance_sq_ray_point(ray_origin: Vec3, ray_dir: Vec3, point: Vec3) -> (f32, Vec3) {
-        let w = point - ray_origin;
-        let proj = w.dot(ray_dir);
-        if proj < 0.0 {
-            return ((ray_origin - point).length_squared(), ray_origin);
-        }
-        let closest = ray_origin + ray_dir * proj;
-        ((closest - point).length_squared(), closest)
-    }
-
-    fn distance_sq_ray_segment(ray_origin: Vec3, ray_dir: Vec3, p0: Vec3, p1: Vec3) -> (f32, f32) {
-        let seg_dir = p1 - p0;
-        let seg_len_sq = seg_dir.length_squared();
-        if seg_len_sq < 1e-5 {
-            return ((ray_origin - p0).length_squared(), 0.0);
-        }
-        let (_, p_line) = closest_points_ray_line(ray_origin, ray_dir, p0, seg_dir);
-        let t = (p_line - p0).dot(seg_dir) / seg_len_sq;
-        let t_clamped = t.clamp(0.0, 1.0);
-        let p_seg = p0 + seg_dir * t_clamped;
-        let (dist_sq, _) = distance_sq_ray_point(ray_origin, ray_dir, p_seg);
-        (dist_sq, t_clamped)
     }
 
     fn resolve_cda_hud_spline_target(
@@ -900,314 +841,31 @@ pub fn handle_gizmo_interaction(p: CurveGizmoInputParams) {
                 );
             }
         }
+        // Spline now follows the global xform hotkeys (Q/W/E/R).
+        // Legacy spline-specific rotate/scale handles are removed; keep spline tool state in Move.
+        spline_tool_state.tool = SplineTransformTool::Move;
+        if keyboard.just_pressed(KeyCode::KeyQ) {
+            console_log.info("Spline Xform: Aggregate (Q)");
+        }
         if keyboard.just_pressed(KeyCode::KeyW) {
-            spline_tool_state.tool = SplineTransformTool::Move;
-            spline_tool_state.mode = SplineEditMode::Edit; // W exits Draw (pressed button pops up)
+            spline_tool_state.mode = SplineEditMode::Edit; // W exits Draw
             spline_tool_state.draw_state = None;
-            console_log.info("Spline Tool: Move (W)");
+            console_log.info("Spline Xform: Move (W)");
         }
         if keyboard.just_pressed(KeyCode::KeyE) {
-            spline_tool_state.tool = SplineTransformTool::Rotate;
-            console_log.info("Spline Tool: Rotate (E)");
+            console_log.info("Spline Xform: Scale (E)");
         }
         if keyboard.just_pressed(KeyCode::KeyR) {
-            spline_tool_state.tool = SplineTransformTool::Scale;
-            console_log.info("Spline Tool: Scale (R)");
+            console_log.info("Spline Xform: All (R)");
         }
 
-        // Clear handle drag when leaving rotate/scale or on mouse release.
+        // Clear incremental xform drag cache on mouse release.
         if !is_pressed {
-            spline_tool_state.active_handle = None;
             spline_tool_state.drag_last_world = None;
             spline_tool_state.drag_last_scalar = None;
         }
-        spline_tool_state.hovered_handle = None;
 
-        // Unity-like Rotate/Scale gizmo handles (ray-based picking + hot lock; no screen-space).
-        if matches!(
-            spline_tool_state.tool,
-            SplineTransformTool::Rotate | SplineTransformTool::Scale
-        ) {
-            let dist = camera_transform
-                .translation()
-                .distance(spline_tool_state.ctx.pivot_position_world);
-            let size = (dist * SPLINE_HANDLE_SIZE_FACTOR).max(SPLINE_HANDLE_SIZE_MIN);
-            let ring_thick = (size * 0.12).max(0.02);
-            let axis_thick = (size * 0.12).max(0.02);
-
-            // Compute hover handle if not actively dragging.
-            if spline_tool_state.active_handle.is_none() {
-                let mut best: Option<(SplineTransformHandle, f32)> = None; // (handle, dist_world)
-                let rot = spline_tool_state.ctx.handle_rotation_world;
-                let ax = rot * Vec3::X;
-                let ay = rot * Vec3::Y;
-                let az = rot * Vec3::Z;
-
-                if spline_tool_state.tool == SplineTransformTool::Rotate {
-                    let pivot = spline_tool_state.ctx.pivot_position_world;
-                    let candidates = [
-                        (SplineTransformHandle::RotateX, ax, size),
-                        (SplineTransformHandle::RotateY, ay, size),
-                        (SplineTransformHandle::RotateZ, az, size),
-                        (
-                            SplineTransformHandle::RotateScreen,
-                            camera_transform.forward().as_vec3(),
-                            size * 1.1,
-                        ),
-                    ];
-                    for (h, axis, r) in candidates {
-                        if let Some(t) = ray.intersect_plane(pivot, InfinitePlane3d::new(axis)) {
-                            let hit = ray.get_point(t);
-                            let d = ((hit - pivot).length() - r).abs();
-                            if d <= ring_thick && best.map_or(true, |b| d < b.1) {
-                                best = Some((h, d));
-                            }
-                        }
-                    }
-                }
-
-                if spline_tool_state.tool == SplineTransformTool::Scale {
-                    let pivot = spline_tool_state.ctx.pivot_position_world;
-                    let segs = [
-                        (SplineTransformHandle::ScaleX, pivot, pivot + ax * size),
-                        (SplineTransformHandle::ScaleY, pivot, pivot + ay * size),
-                        (SplineTransformHandle::ScaleZ, pivot, pivot + az * size),
-                    ];
-                    for (h, a, b) in segs {
-                        let (d2, _t) = distance_sq_ray_segment(ray.origin, *ray.direction, a, b);
-                        let d = d2.sqrt();
-                        if d <= axis_thick && best.map_or(true, |bb| d < bb.1) {
-                            best = Some((h, d));
-                        }
-                    }
-                    let (d2, _) = distance_sq_ray_point(ray.origin, *ray.direction, pivot);
-                    let d = d2.sqrt();
-                    let u_thick = (size * 0.18).max(0.03);
-                    if d <= u_thick && best.map_or(true, |bb| d < bb.1) {
-                        best = Some((SplineTransformHandle::ScaleUniform, d));
-                    }
-                }
-
-                if let Some((h, _d)) = best {
-                    spline_tool_state.hovered_handle = Some(h);
-                }
-            }
-
-            // Start handle drag
-            if just_clicked {
-                if let Some(h) = spline_tool_state.hovered_handle {
-                    spline_tool_state.active_handle = Some(h);
-                    spline_tool_state.drag_last_world = None;
-                    spline_tool_state.drag_last_scalar = None;
-                    let pivot = spline_tool_state.ctx.pivot_position_world;
-                    let rot = spline_tool_state.ctx.handle_rotation_world;
-                    let axis = match h {
-                        SplineTransformHandle::RotateX => rot * Vec3::X,
-                        SplineTransformHandle::RotateY => rot * Vec3::Y,
-                        SplineTransformHandle::RotateZ => rot * Vec3::Z,
-                        SplineTransformHandle::RotateScreen => camera_transform.forward().as_vec3(),
-                        SplineTransformHandle::ScaleX => rot * Vec3::X,
-                        SplineTransformHandle::ScaleY => rot * Vec3::Y,
-                        SplineTransformHandle::ScaleZ => rot * Vec3::Z,
-                        SplineTransformHandle::ScaleUniform => camera_transform.forward().as_vec3(),
-                    };
-                    match h {
-                        SplineTransformHandle::RotateX
-                        | SplineTransformHandle::RotateY
-                        | SplineTransformHandle::RotateZ
-                        | SplineTransformHandle::RotateScreen => {
-                            if let Some(t) = ray.intersect_plane(pivot, InfinitePlane3d::new(axis))
-                            {
-                                spline_tool_state.drag_last_world = Some(ray.get_point(t));
-                            }
-                        }
-                        SplineTransformHandle::ScaleX
-                        | SplineTransformHandle::ScaleY
-                        | SplineTransformHandle::ScaleZ => {
-                            let (_, p_axis) = closest_points_ray_line(
-                                ray.origin,
-                                *ray.direction,
-                                pivot,
-                                axis.normalize_or_zero(),
-                            );
-                            spline_tool_state.drag_last_scalar = Some(
-                                (p_axis - pivot)
-                                    .dot(axis.normalize_or_zero())
-                                    .abs()
-                                    .max(1e-4),
-                            );
-                        }
-                        SplineTransformHandle::ScaleUniform => {
-                            let n = camera_transform.forward().as_vec3();
-                            if let Some(t) = ray.intersect_plane(pivot, InfinitePlane3d::new(n)) {
-                                spline_tool_state.drag_last_scalar =
-                                    Some((ray.get_point(t) - pivot).length().max(1e-4));
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Apply handle drag
-            if is_pressed {
-                if let Some(h) = spline_tool_state.active_handle {
-                    let ng = &mut node_graph_res.0;
-                    if let Some(node_id) = selected_node_id {
-                        if let Some(node) = ng.nodes.get_mut(&node_id) {
-                            if let Some(param) =
-                                node.parameters.iter_mut().find(|p| p.name == "spline")
-                            {
-                                if let ParameterValue::UnitySpline(c) = &mut param.value {
-                                    let ctx = update_spline_transform_ctx(
-                                        spline_tool_state.ctx,
-                                        c,
-                                        &spline_tool_state.selection,
-                                    );
-                                    match (spline_tool_state.tool, h) {
-                                        (
-                                            SplineTransformTool::Rotate,
-                                            SplineTransformHandle::RotateX,
-                                        )
-                                        | (
-                                            SplineTransformTool::Rotate,
-                                            SplineTransformHandle::RotateY,
-                                        )
-                                        | (
-                                            SplineTransformTool::Rotate,
-                                            SplineTransformHandle::RotateZ,
-                                        )
-                                        | (
-                                            SplineTransformTool::Rotate,
-                                            SplineTransformHandle::RotateScreen,
-                                        ) => {
-                                            let axis_world = match h {
-                                                SplineTransformHandle::RotateX => {
-                                                    (ctx.handle_rotation_world * Vec3::X)
-                                                        .normalize_or_zero()
-                                                }
-                                                SplineTransformHandle::RotateY => {
-                                                    (ctx.handle_rotation_world * Vec3::Y)
-                                                        .normalize_or_zero()
-                                                }
-                                                SplineTransformHandle::RotateZ => {
-                                                    (ctx.handle_rotation_world * Vec3::Z)
-                                                        .normalize_or_zero()
-                                                }
-                                                SplineTransformHandle::RotateScreen => {
-                                                    camera_transform
-                                                        .forward()
-                                                        .as_vec3()
-                                                        .normalize_or_zero()
-                                                }
-                                                _ => Vec3::Y,
-                                            };
-                                            if let Some(t) = ray.intersect_plane(
-                                                ctx.pivot_position_world,
-                                                InfinitePlane3d::new(axis_world),
-                                            ) {
-                                                let hit = ray.get_point(t);
-                                                let last = spline_tool_state
-                                                    .drag_last_world
-                                                    .unwrap_or(hit);
-                                                let angle = signed_angle_about_axis(
-                                                    last - ctx.pivot_position_world,
-                                                    hit - ctx.pivot_position_world,
-                                                    axis_world,
-                                                );
-                                                apply_rotation_ctx(
-                                                    c,
-                                                    &spline_tool_state.selection.selected_elements,
-                                                    Quat::from_axis_angle(axis_world, angle),
-                                                    ctx,
-                                                );
-                                                spline_tool_state.drag_last_world = Some(hit);
-                                            }
-                                        }
-                                        (SplineTransformTool::Scale, _) => {
-                                            let rot = ctx.handle_rotation_world;
-                                            let pivot = ctx.pivot_position_world;
-                                            let last = spline_tool_state
-                                                .drag_last_scalar
-                                                .unwrap_or(1.0)
-                                                .max(1e-4);
-                                            let mut current = last;
-                                            let mut scale_vec = Vec3::ONE;
-                                            match h {
-                                                SplineTransformHandle::ScaleX
-                                                | SplineTransformHandle::ScaleY
-                                                | SplineTransformHandle::ScaleZ => {
-                                                    let axis_world = match h {
-                                                        SplineTransformHandle::ScaleX => {
-                                                            (rot * Vec3::X).normalize_or_zero()
-                                                        }
-                                                        SplineTransformHandle::ScaleY => {
-                                                            (rot * Vec3::Y).normalize_or_zero()
-                                                        }
-                                                        SplineTransformHandle::ScaleZ => {
-                                                            (rot * Vec3::Z).normalize_or_zero()
-                                                        }
-                                                        _ => Vec3::X,
-                                                    };
-                                                    let (_, p_axis) = closest_points_ray_line(
-                                                        ray.origin,
-                                                        *ray.direction,
-                                                        pivot,
-                                                        axis_world,
-                                                    );
-                                                    current = (p_axis - pivot)
-                                                        .dot(axis_world)
-                                                        .abs()
-                                                        .max(1e-4);
-                                                    let s = (current / last).clamp(0.01, 100.0);
-                                                    scale_vec = match h {
-                                                        SplineTransformHandle::ScaleX => {
-                                                            Vec3::new(s, 1.0, 1.0)
-                                                        }
-                                                        SplineTransformHandle::ScaleY => {
-                                                            Vec3::new(1.0, s, 1.0)
-                                                        }
-                                                        SplineTransformHandle::ScaleZ => {
-                                                            Vec3::new(1.0, 1.0, s)
-                                                        }
-                                                        _ => Vec3::splat(s),
-                                                    };
-                                                }
-                                                SplineTransformHandle::ScaleUniform => {
-                                                    let n = camera_transform.forward().as_vec3();
-                                                    if let Some(t) = ray.intersect_plane(
-                                                        pivot,
-                                                        InfinitePlane3d::new(n),
-                                                    ) {
-                                                        current = (ray.get_point(t) - pivot)
-                                                            .length()
-                                                            .max(1e-4);
-                                                    }
-                                                    let s = (current / last).clamp(0.01, 100.0);
-                                                    scale_vec = Vec3::splat(s);
-                                                }
-                                                _ => {}
-                                            }
-                                            apply_scale_ctx(
-                                                c,
-                                                &spline_tool_state.selection.selected_elements,
-                                                scale_vec,
-                                                ctx,
-                                            );
-                                            spline_tool_state.drag_last_scalar = Some(current);
-                                        }
-                                        _ => {}
-                                    }
-                                    ng.mark_dirty(node_id);
-                                    drop(ng);
-                                    graph_changed_writer.write_default();
-                                    return;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        // Legacy spline rotate/scale handle gizmo removed.
 
         if keyboard.just_pressed(KeyCode::KeyC) {
             let Some(node_id) = selected_node_id else {

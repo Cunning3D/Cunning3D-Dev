@@ -1296,6 +1296,95 @@ fn show_parameter(
                             if ui.checkbox(&mut curve_data.is_closed, "").changed() { changed = true; }
                             gpu_label(ui, "Close Curve", FontId::proportional(14.0), ui.visuals().text_color());
                         });
+
+                        let add_pos_id = ui.make_persistent_id(("curve_points_add_pos", _param_name));
+                        let mut add_pos = ui.ctx().data_mut(|d| {
+                            d.get_persisted::<[f32; 3]>(add_pos_id)
+                                .unwrap_or([0.0, 0.0, 0.0])
+                        });
+                        ui.horizontal(|ui| {
+                            gpu_label(
+                                ui,
+                                "Add Point",
+                                FontId::proportional(14.0),
+                                ui.visuals().text_color(),
+                            );
+                            let cx = ui
+                                .add(egui::DragValue::new(&mut add_pos[0]).speed(0.1).prefix("X "))
+                                .changed();
+                            let cy = ui
+                                .add(egui::DragValue::new(&mut add_pos[1]).speed(0.1).prefix("Y "))
+                                .changed();
+                            let cz = ui
+                                .add(egui::DragValue::new(&mut add_pos[2]).speed(0.1).prefix("Z "))
+                                .changed();
+                            let _ = (cx, cy, cz);
+                            if ui.small_button("Add").clicked() {
+                                curve_data.points.push(
+                                    crate::nodes::parameter::CurveControlPoint::new(
+                                        bevy::prelude::Vec3::new(
+                                            add_pos[0],
+                                            add_pos[1],
+                                            add_pos[2],
+                                        ),
+                                    ),
+                                );
+                                changed = true;
+                            }
+                        });
+                        ui.ctx()
+                            .data_mut(|d| d.insert_persisted(add_pos_id, add_pos));
+
+                        let mut remove_idx: Option<usize> = None;
+                        egui::ScrollArea::vertical()
+                            .max_height(180.0)
+                            .show(ui, |ui| {
+                                for (idx, pt) in curve_data.points.iter_mut().enumerate() {
+                                    ui.horizontal(|ui| {
+                                        gpu_label(
+                                            ui,
+                                            format!("#{}", idx),
+                                            FontId::proportional(13.0),
+                                            ui.visuals().weak_text_color(),
+                                        );
+                                        let mut p = pt.position;
+                                        let px = ui
+                                            .add(
+                                                egui::DragValue::new(&mut p.x)
+                                                    .speed(0.1)
+                                                    .prefix("X "),
+                                            )
+                                            .changed();
+                                        let py = ui
+                                            .add(
+                                                egui::DragValue::new(&mut p.y)
+                                                    .speed(0.1)
+                                                    .prefix("Y "),
+                                            )
+                                            .changed();
+                                        let pz = ui
+                                            .add(
+                                                egui::DragValue::new(&mut p.z)
+                                                    .speed(0.1)
+                                                    .prefix("Z "),
+                                            )
+                                            .changed();
+                                        if px || py || pz {
+                                            pt.position = p;
+                                            changed = true;
+                                        }
+                                        if ui.small_button("Remove").clicked() {
+                                            remove_idx = Some(idx);
+                                        }
+                                    });
+                                }
+                            });
+                        if let Some(i) = remove_idx {
+                            if i < curve_data.points.len() {
+                                curve_data.points.remove(i);
+                                changed = true;
+                            }
+                        }
                     });
                 }
             }

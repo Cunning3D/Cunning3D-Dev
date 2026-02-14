@@ -16,6 +16,8 @@ pub struct CompileRuntimeModuleRequest {
     pub crate_dir: PathBuf,
     pub release: bool,
     pub hot_load: bool,
+    /// Cargo target dir to use for this build (from Settings → General/Build).
+    pub target_dir: Option<PathBuf>,
 }
 
 impl CompileRuntimeModuleRequest {
@@ -25,6 +27,7 @@ impl CompileRuntimeModuleRequest {
             crate_dir: PathBuf::from("runtime").join("editor_runtime"),
             release: false,
             hot_load: true,
+            target_dir: None,
         }
     }
 }
@@ -74,19 +77,28 @@ impl Plugin for RuntimeModuleBuildJobsPlugin {
 
 fn enqueue_compile_runtime_jobs_from_queue_system(
     q: Res<CompileRuntimeModuleQueue>,
+    build_settings: Res<crate::build_settings::BuildSettings>,
     mut jobs: ResMut<crate::app_jobs::AppJobs>,
 ) {
-    for r in q.rx.try_iter() {
+    for mut r in q.rx.try_iter() {
+        if r.target_dir.is_none() {
+            r.target_dir = Some(build_settings.cargo_target_dir_runtime_modules());
+        }
         jobs.enqueue(Box::new(CompileRuntimeModuleJob { req: r }));
     }
 }
 
 fn compile_runtime_module_requests_to_jobs_system(
     mut req: MessageReader<CompileRuntimeModuleRequestMsg>,
+    build_settings: Res<crate::build_settings::BuildSettings>,
     mut jobs: ResMut<crate::app_jobs::AppJobs>,
 ) {
     for r in req.read() {
-        jobs.enqueue(Box::new(CompileRuntimeModuleJob { req: r.0.clone() }));
+        let mut r = r.0.clone();
+        if r.target_dir.is_none() {
+            r.target_dir = Some(build_settings.cargo_target_dir_runtime_modules());
+        }
+        jobs.enqueue(Box::new(CompileRuntimeModuleJob { req: r }));
     }
 }
 
@@ -136,7 +148,7 @@ impl JobRunnable for CompileRuntimeModuleJob {
             let args = if req.release { vec!["build", "--release"] } else { vec!["build"] };
             let cargo = crate::cunning_core::plugin_system::rust_build::find_cargo().unwrap_or_else(|| PathBuf::from("cargo"));
             let args_ref: Vec<&str> = args.iter().map(|s| *s).collect();
-            let (ok, raw_log) = run_cargo_streaming(&cargo, &crate_dir, &args_ref, &cx).map_err(JobError::from)?;
+            let (ok, raw_log) = run_cargo_streaming(&cargo, &crate_dir, &args_ref, &cx, req.target_dir.as_deref()).map_err(JobError::from)?;
             if !ok {
                 return Ok(Box::new(CompileRuntimeModuleOutput {
                     module_name: req.module_name,
@@ -146,7 +158,7 @@ impl JobRunnable for CompileRuntimeModuleJob {
                     raw_log,
                 }) as JobOutput);
             }
-            let built = expected_windows_dll_path(&crate_dir, req.release)?;
+            let built = expected_windows_dll_path(&crate_dir, req.release, req.target_dir.as_deref())?;
             let copied = crate::cunning_core::plugin_system::rust_build::copy_versioned(
                 &built,
                 &crate::runtime_module::runtime_modules_dir(),
@@ -164,7 +176,7 @@ impl JobRunnable for CompileRuntimeModuleJob {
     }
 }
 
-fn expected_windows_dll_path(crate_dir: &Path, release: bool) -> Result<PathBuf, JobError> {
+fn expected_windows_dll_path(crate_dir: &Path, release: bool, target_dir: Option<&Path>) -> Result<PathBuf, JobError> {
     let mode = if release { "release" } else { "debug" };
     let name = {
         let s = std::fs::read_to_string(crate_dir.join("Cargo.toml"))
@@ -180,7 +192,8 @@ fn expected_windows_dll_path(crate_dir: &Path, release: bool) -> Result<PathBuf,
         }
         found.ok_or_else(|| JobError::from("Failed to read crate name from Cargo.toml"))?
     };
-    let dll = crate_dir.join("target").join(mode).join(format!("{name}.dll"));
+    let base = target_dir.map(|p| p.to_path_buf()).unwrap_or_else(|| crate_dir.join("target"));
+    let dll = base.join(mode).join(format!("{name}.dll"));
     if !dll.exists() { return Err(JobError::from(format!("Build OK but missing output DLL: {}", dll.display()))); }
     Ok(dll)
 }
@@ -190,12 +203,17 @@ fn run_cargo_streaming(
     cwd: &Path,
     args: &[&str],
     cx: &JobContext,
+    target_dir: Option<&Path>,
 ) -> Result<(bool, String), String> {
     let mut cmd = Command::new(cargo_path);
     cmd.current_dir(cwd)
         .args(args)
+        .env_remove("CARGO_TARGET_DIR")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    if let Some(td) = target_dir {
+        cmd.env("CARGO_TARGET_DIR", td);
+    }
     let mut child = cmd.spawn().map_err(|e| format!("spawn cargo failed: {e}"))?;
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();

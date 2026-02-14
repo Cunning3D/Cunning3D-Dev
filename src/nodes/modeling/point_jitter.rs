@@ -64,10 +64,7 @@ impl NodeParameters for PointJitterNode {
 
 impl NodeOp for PointJitterNode {
     fn compute(&self, params: &[Parameter], inputs: &[Arc<dyn GeometryRef>]) -> Arc<Geometry> {
-        let mats: Vec<Arc<Geometry>> = inputs.iter().map(|g| Arc::new(g.materialize())).collect();
-        let Some(input) = mats.first() else {
-            return Arc::new(Geometry::new());
-        };
+        let Some(input) = inputs.first().map(|g| g.materialize()) else { return Arc::new(Geometry::new()); };
 
         let group = get_string(params, "group", "");
         let scale = get_float(params, "scale", 0.1).max(0.0);
@@ -81,13 +78,13 @@ impl NodeOp for PointJitterNode {
         // - empty group => all points
         // - existing named point group => use it
         // - otherwise parse Houdini-style index pattern
-        let point_count = out_geo.points().len();
-        let selection: Option<ElementGroupMask> = if group.trim().is_empty() {
+        let group = group.trim();
+        let selection: Option<ElementGroupMask> = if group.is_empty() {
             None
-        } else if let Some(mask) = out_geo.get_point_group(group.trim()) {
+        } else if let Some(mask) = out_geo.get_point_group(group) {
             Some(mask.clone())
         } else {
-            Some(parse_pattern(group.trim(), point_count))
+            Some(parse_pattern(group, out_geo.points().len()))
         };
 
         if let Some(p_attr) = out_geo.get_point_attribute_mut(attrs::P) {

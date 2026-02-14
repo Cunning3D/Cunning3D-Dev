@@ -68,6 +68,15 @@ pub enum GizmoPart {
     RotateScreen,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum XformGizmoMode {
+    #[default]
+    Aggregate,
+    Move,
+    Scale,
+    All,
+}
+
 #[derive(Resource, Default)]
 pub struct GizmoState {
     pub active_node_id: Option<Uuid>,
@@ -75,6 +84,7 @@ pub struct GizmoState {
     pub drag_start_pos: Option<Vec3>,
     pub drag_start_ray: Option<(Vec3, Vec3)>, // Origin, Direction
     pub initial_transform_pos: Option<Vec3>,
+    pub xform_mode: XformGizmoMode,
     pub graph_modified: bool,
 }
 

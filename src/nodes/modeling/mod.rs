@@ -1,6 +1,8 @@
+pub mod add;
 pub mod boolean;
 pub mod clip;
 pub mod connectivity;
+pub mod convertline;
 pub mod copy_to_points;
 pub mod fuse_node;
 pub mod measure;
@@ -9,6 +11,7 @@ pub mod point_jitter;
 pub mod poly_bevel;
 pub mod poly_extrude;
 pub mod polyframe;
+pub mod polypath;
 pub mod remesh_node;
 pub mod resample;
 pub mod reverse;

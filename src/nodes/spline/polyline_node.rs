@@ -52,15 +52,19 @@ impl NodeOp for PolylineNode {
         let segments = get_int(params, PARAM_SEGMENTS, 8).max(1) as usize;
 
         let mut geo = Geometry::new();
-        let mut positions = Vec::with_capacity(segments + 1);
-        let mut vertices = Vec::with_capacity(segments + 1);
+        let n = segments + 1;
+        let mut positions = Vec::with_capacity(n);
+        let mut vertices = Vec::with_capacity(n);
 
+        let step = length / segments as f32;
+        let mut z = 0.0f32;
         for i in 0..=segments {
-            let t = i as f32 / segments as f32;
-            let p = Vec3::new(0.0, 0.0, length * t);
+            let z_i = if i == segments { length } else { z };
+            let p = Vec3::new(0.0, 0.0, z_i);
             let pid = geo.add_point();
             vertices.push(geo.add_vertex(pid));
             positions.push(p);
+            z += step;
         }
 
         geo.insert_point_attribute(attrs::P, Attribute::new_auto(positions));

@@ -100,7 +100,7 @@ impl PaneTab for ConsoleTab {
 
             if ui.button("Copy All").clicked() {
                 let text = console_log.get_all_text();
-                ui.output_mut(|o| o.commands.push(egui::OutputCommand::CopyText(text)));
+                ui.ctx().copy_text(text);
             }
 
             ui.checkbox(&mut self.auto_scroll, "Auto-scroll");

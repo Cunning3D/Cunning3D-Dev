@@ -86,6 +86,7 @@ pub mod tabs_system;
 use crate::tabs_system::viewport_3d::grid::grid_params::grid_params;
 mod console;
 mod debug_settings;
+mod build_settings;
 mod gizmos;
 mod hot_restart;
 pub mod mesh;
@@ -383,7 +384,7 @@ fn main() {
             focused_mode: UpdateMode::Continuous,
             unfocused_mode: UpdateMode::reactive_low_power(std::time::Duration::from_secs(60)),
         })
-        // Use small splash window: borderless, centered (non-transparent to avoid white flash)
+        // Use small splash window: borderless, centered.
         .add_plugins((
             DefaultPlugins
                 .set(AssetPlugin {
@@ -396,7 +397,7 @@ fn main() {
                         title: "Cunning3D Splash".into(),
                         resolution: (SPLASH_WIDTH as u32, SPLASH_HEIGHT as u32).into(),
                         decorations: false,
-                        transparent: false,
+                        transparent: true,
                         position: WindowPosition::Centered(MonitorSelection::Primary),
                         ..default()
                     }),
@@ -533,6 +534,7 @@ fn main() {
         .init_resource::<ui_settings::UiSettings>()
         .init_resource::<node_editor_settings::NodeEditorSettings>()
         .init_resource::<debug_settings::DebugSettings>()
+        .init_resource::<build_settings::BuildSettings>()
         // 3D scene and theme init on Editor entry; registries and plugins loaded by Launcher
         .add_systems(
             OnEnter(AppState::Editor),
@@ -562,13 +564,12 @@ fn main() {
         )
         .add_systems(
             Update,
-            crate::cunning_core::plugin_system::hot_reload_shortcut_system
-                .run_if(in_state(AppState::Editor))
-                .before(show_editor_ui),
+            crate::tabs_system::pane::hot_reload::sync_hot_reload_jobs_snapshot_system
+                .run_if(in_state(AppState::Editor)),
         )
         .add_systems(
             Update,
-            crate::tabs_system::pane::hot_reload::sync_hot_reload_jobs_snapshot_system
+            crate::tabs_system::pane::hot_reload::mirror_compile_job_logs_system
                 .run_if(in_state(AppState::Editor)),
         )
         .add_systems(
@@ -602,6 +603,12 @@ fn main() {
         .add_systems(
             Update,
             debug_settings::sync_from_settings_stores
+                .run_if(in_state(AppState::Editor))
+                .before(show_editor_ui),
+        )
+        .add_systems(
+            Update,
+            build_settings::sync_from_settings_stores
                 .run_if(in_state(AppState::Editor))
                 .before(show_editor_ui),
         )

@@ -192,6 +192,13 @@ pub fn process_input_system(
             ButtonState::Released => false,
         };
         let _ = context_params.with_window_context(event.window, |mut window_context| {
+            // Fallback: if this window didn't receive CursorMoved, use current OS cursor position
+            // from the window component itself.
+            if let Some(p) = window_context.window.cursor_position() {
+                let scale_factor = egui_settings.scale_factor;
+                let (x, y): (f32, f32) = (p / scale_factor).into();
+                window_context.ctx.mouse_position = egui::pos2(x, y);
+            }
             let blocked = occlusion
                 .0
                 .get(&event.window.index().index())

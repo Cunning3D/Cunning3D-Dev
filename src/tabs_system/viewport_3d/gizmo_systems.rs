@@ -1,6 +1,8 @@
 use crate::cunning_core::registries::node_registry::NodeRegistry;
 use crate::cunning_core::scripting::ScriptNodeState;
+use crate::cunning_core::traits::node_interface::XformGizmoMode;
 use crate::gizmos::GizmoActionQueue;
+use crate::nodes::spline::tool_state::SplineToolState;
 use crate::nodes::NodeGraphResource;
 use crate::tabs_system::{FloatingEditorTabs, TabViewer, Viewport3DTab};
 use crate::ui::FloatingTabRegistry;
@@ -30,9 +32,11 @@ pub struct GizmoSystemParams<'w, 's> {
     ui_state: Option<Res<'w, UiState>>,
     script_node_state: Option<Res<'w, ScriptNodeState>>,
     gizmo_action_queue: Option<Res<'w, GizmoActionQueue>>,
+    spline_tool_state: Option<Res<'w, SplineToolState>>,
     gizmo_state: Option<ResMut<'w, GizmoState>>,
     interaction_state: Option<ResMut<'w, ViewportInteractionState>>,
     mouse_button: Option<Res<'w, ButtonInput<MouseButton>>>,
+    keyboard: Option<Res<'w, ButtonInput<KeyCode>>>,
     primary_window_query: Query<'w, 's, &'static Window, With<PrimaryWindow>>,
     windows_query: Query<'w, 's, (Entity, &'static Window)>,
     camera_query: Query<
@@ -60,9 +64,11 @@ pub fn draw_interactive_gizmos_system(mut p: GizmoSystemParams<'_, '_>) {
         ui_state,
         script_node_state,
         gizmo_action_queue,
+        spline_tool_state,
         gizmo_state,
         interaction_state,
         mouse_button,
+        keyboard,
     ) = match (
         p.buffer.as_mut(),
         p.node_graph_res.as_mut(),
@@ -74,9 +80,11 @@ pub fn draw_interactive_gizmos_system(mut p: GizmoSystemParams<'_, '_>) {
         p.ui_state.as_ref(),
         p.script_node_state.as_ref(),
         p.gizmo_action_queue.as_ref(),
+        p.spline_tool_state.as_ref(),
         p.gizmo_state.as_mut(),
         p.interaction_state.as_mut(),
         p.mouse_button.as_ref(),
+        p.keyboard.as_ref(),
     ) {
         (
             Some(buffer),
@@ -89,9 +97,11 @@ pub fn draw_interactive_gizmos_system(mut p: GizmoSystemParams<'_, '_>) {
             Some(ui_state),
             Some(script_node_state),
             Some(gizmo_action_queue),
+            Some(spline_tool_state),
             Some(gizmo_state),
             Some(interaction_state),
             Some(mouse_button),
+            Some(keyboard),
         ) => (
             buffer,
             node_graph_res,
@@ -103,9 +113,11 @@ pub fn draw_interactive_gizmos_system(mut p: GizmoSystemParams<'_, '_>) {
             ui_state,
             script_node_state,
             gizmo_action_queue,
+            spline_tool_state,
             gizmo_state,
             interaction_state,
             mouse_button,
+            keyboard,
         ),
         _ => return,
     };
@@ -205,6 +217,47 @@ pub fn draw_interactive_gizmos_system(mut p: GizmoSystemParams<'_, '_>) {
         .logical_viewport_rect()
         .map(|r| r.contains(cursor_pos))
         .unwrap_or(true);
+
+    // Global xform mode hotkeys (viewport-gated, only when Transform/Spline is selected).
+    if cursor_in_view {
+        let has_xform_target = ui_state.selected_nodes.iter().any(|id| {
+            node_graph_res
+                .0
+                .nodes
+                .get(id)
+                .map(|n| {
+                    let name = n.node_type.name();
+                    name == "Transform" || name == "Spline"
+                })
+                .unwrap_or(false)
+        });
+        if has_xform_target {
+            let mut switched = false;
+            if keyboard.just_pressed(KeyCode::KeyQ) {
+                gizmo_state.xform_mode = XformGizmoMode::Aggregate;
+                switched = true;
+            }
+            if keyboard.just_pressed(KeyCode::KeyW) {
+                gizmo_state.xform_mode = XformGizmoMode::Move;
+                switched = true;
+            }
+            if keyboard.just_pressed(KeyCode::KeyE) {
+                gizmo_state.xform_mode = XformGizmoMode::Scale;
+                switched = true;
+            }
+            if keyboard.just_pressed(KeyCode::KeyR) {
+                gizmo_state.xform_mode = XformGizmoMode::All;
+                switched = true;
+            }
+            if switched {
+                gizmo_state.active_node_id = None;
+                gizmo_state.active_part = None;
+                gizmo_state.drag_start_pos = None;
+                gizmo_state.drag_start_ray = None;
+                gizmo_state.initial_transform_pos = None;
+            }
+        }
+    }
     let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_pos) else {
         return;
     };
@@ -275,6 +328,7 @@ pub fn draw_interactive_gizmos_system(mut p: GizmoSystemParams<'_, '_>) {
             node_graph_res: &**node_graph_res,
             script_node_state: &**script_node_state,
             gizmo_action_queue: &**gizmo_action_queue,
+            spline_tool_state: &**spline_tool_state,
         };
 
         for (node_id, factory) in interactions {
@@ -312,6 +366,7 @@ struct DispatchServiceProvider<'a> {
     node_graph_res: &'a NodeGraphResource,
     script_node_state: &'a ScriptNodeState,
     gizmo_action_queue: &'a GizmoActionQueue,
+    spline_tool_state: &'a SplineToolState,
 }
 
 impl<'a> ServiceProvider for DispatchServiceProvider<'a> {
@@ -324,6 +379,9 @@ impl<'a> ServiceProvider for DispatchServiceProvider<'a> {
         }
         if service_type == std::any::TypeId::of::<GizmoActionQueue>() {
             return Some(self.gizmo_action_queue);
+        }
+        if service_type == std::any::TypeId::of::<SplineToolState>() {
+            return Some(self.spline_tool_state);
         }
         None
     }
