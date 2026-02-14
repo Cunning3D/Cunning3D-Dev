@@ -19,6 +19,7 @@ pub enum CDAPropertyTab {
     #[default]
     Basic,
     Params,
+    Exports,
     Overlay,
     Help,
     Icon,

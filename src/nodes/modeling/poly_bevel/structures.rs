@@ -182,6 +182,22 @@ pub struct BevelParams {
     // Debug
     pub invert_profile: bool,
     pub corner_scale: f32,
+    pub debug_spoke_order: i32,          // 0=Default, 1=Reverse, 2=Rotate+1, 3=Rotate-1
+    pub debug_swap_left_right: bool,     // swap left/right boundary ownership
+    pub debug_invert_face_normals: bool, // multiply face normals by -1 before bevel
+    pub debug_flip_output_winding: bool, // reverse all output polygons winding
+    pub debug_disable_strip_orient: bool, // disable quad orientation fix in edge strips
+    pub debug_disable_face_rebuild_orient: bool, // disable rebuilt face winding correction
+    pub debug_invert_edge_dirs: bool,    // invert per-spoke edge direction vectors
+    pub debug_invert_edge_ends: bool,    // mirror edge endpoints around the corner (consistent with inverted dirs)
+    pub debug_swap_offsets_lr: bool,     // swap per-spoke offset_l/offset_r inputs into boundary builder
+    pub debug_swap_face_pair_normals: bool, // swap face normals with pair face normals
+    pub debug_invert_pair_face_normals: bool, // multiply pair-face normals by -1
+    pub debug_invert_arc_for: bool,      // invert arc_for forward flag (profile direction)
+    pub debug_disable_adjust_offsets: bool, // disable adjust_offsets pass (loop_slide pre-pass)
+    pub debug_disable_offset_limit: bool,   // disable overlap clamp limit_offset
+    pub debug_disable_square_in_vmesh: bool, // disable SquareIn tri-corner weld branch
+    pub debug_disable_square_out_adj_vmesh: bool, // disable SquareOut special adj vmesh
 }
 
 impl Default for BevelParams {
@@ -213,6 +229,22 @@ impl Default for BevelParams {
             material: -1,
             invert_profile: false,
             corner_scale: 1.0,
+            debug_spoke_order: 0,
+            debug_swap_left_right: false,
+            debug_invert_face_normals: false,
+            debug_flip_output_winding: false,
+            debug_disable_strip_orient: false,
+            debug_disable_face_rebuild_orient: false,
+            debug_invert_edge_dirs: false,
+            debug_invert_edge_ends: false,
+            debug_swap_offsets_lr: false,
+            debug_swap_face_pair_normals: false,
+            debug_invert_pair_face_normals: false,
+            debug_invert_arc_for: false,
+            debug_disable_adjust_offsets: false,
+            debug_disable_offset_limit: false,
+            debug_disable_square_in_vmesh: false,
+            debug_disable_square_out_adj_vmesh: false,
         }
     }
 }
@@ -244,6 +276,22 @@ impl BevelParams {
         material: i32,
         invert_profile: bool,
         corner_scale: f32,
+        debug_spoke_order: i32,
+        debug_swap_left_right: bool,
+        debug_invert_face_normals: bool,
+        debug_flip_output_winding: bool,
+        debug_disable_strip_orient: bool,
+        debug_disable_face_rebuild_orient: bool,
+        debug_invert_edge_dirs: bool,
+        debug_invert_edge_ends: bool,
+        debug_swap_offsets_lr: bool,
+        debug_swap_face_pair_normals: bool,
+        debug_invert_pair_face_normals: bool,
+        debug_invert_arc_for: bool,
+        debug_disable_adjust_offsets: bool,
+        debug_disable_offset_limit: bool,
+        debug_disable_square_in_vmesh: bool,
+        debug_disable_square_out_adj_vmesh: bool,
     ) -> Self {
         use super::pipeline_v2::math::{PRO_CIRCLE_R, PRO_SQUARE_IN_R, PRO_SQUARE_R};
 
@@ -328,6 +376,22 @@ impl BevelParams {
             material,
             invert_profile,
             corner_scale,
+            debug_spoke_order,
+            debug_swap_left_right,
+            debug_invert_face_normals,
+            debug_flip_output_winding,
+            debug_disable_strip_orient,
+            debug_disable_face_rebuild_orient,
+            debug_invert_edge_dirs,
+            debug_invert_edge_ends,
+            debug_swap_offsets_lr,
+            debug_swap_face_pair_normals,
+            debug_invert_pair_face_normals,
+            debug_invert_arc_for,
+            debug_disable_adjust_offsets,
+            debug_disable_offset_limit,
+            debug_disable_square_in_vmesh,
+            debug_disable_square_out_adj_vmesh,
         }
     }
 }

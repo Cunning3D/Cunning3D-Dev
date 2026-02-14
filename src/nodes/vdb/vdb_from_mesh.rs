@@ -11,6 +11,7 @@ use bevy::prelude::*;
 use dashmap::DashSet;
 #[cfg(not(target_arch = "wasm32"))]
 use rayon::prelude::*;
+use rustc_hash::FxHashMap;
 use std::collections::HashMap;
 
 // Parry3d Imports
@@ -196,13 +197,13 @@ pub fn compute_vdb_from_mesh(
 
     // Process each chunk in parallel using Global Parry Query (Robust)
     #[cfg(not(target_arch = "wasm32"))]
-    let chunks_map: HashMap<IVec3, Chunk> = active_chunks
+    let chunks_map: FxHashMap<IVec3, Chunk> = active_chunks
         .par_iter()
         .map(|&chunk_idx| process_active_chunk(chunk_idx, limit, voxel_size, &trimesh, &identity))
         .collect();
 
     #[cfg(target_arch = "wasm32")]
-    let chunks_map: HashMap<IVec3, Chunk> = active_chunks
+    let chunks_map: FxHashMap<IVec3, Chunk> = active_chunks
         .iter()
         .map(|&chunk_idx| process_active_chunk(chunk_idx, limit, voxel_size, &trimesh, &identity))
         .collect();

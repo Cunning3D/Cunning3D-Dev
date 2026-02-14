@@ -658,15 +658,31 @@ impl Render for AiWorkspaceWindow {
         // Sidebar drag handle
         let sidebar_handle = drag_handle("sidebar-handle", ResizeDirection::Horizontal).on_mouse_down(MouseButton::Left, cx.listener(Self::resize_sidebar_start));
 
-        // Header bar
+        // Window caption bar (TOPMOST): drag + window controls only.
         let tx_snap = self.ui_tx.clone();
         let tx_shut = self.ui_tx.clone();
         let tx_new = self.ui_tx.clone();
         let pin_icon = if self.is_pinned { "📌" } else { "📍" };
         let voice_on = self.state.snapshot.voice_assistant_enabled;
         let tx_voice = self.ui_tx.clone();
-        let header = h_flex()
+        let caption_bar = h_flex()
             .flex_none()
+            .w_full()
+            .h(px(28.0))
+            .px(Spacing::Base06.px())
+            .gap(Spacing::Base04.px())
+            .border_b_1()
+            .border_color(ThemeColors::border())
+            .bg(ThemeColors::bg_secondary())
+            .child(div().flex_1().window_control_area(WindowControlArea::Drag))
+            .child(div().font_family(WINDOW_CHROME_ICON_FONT_FAMILY).window_control_area(WindowControlArea::Min).child(Button::new("minimize", WINDOW_CHROME_GLYPH_MIN).style(ButtonStyle::Icon).on_click(move |_, window, _| window.minimize_window())))
+            .child(div().font_family(WINDOW_CHROME_ICON_FONT_FAMILY).window_control_area(WindowControlArea::Max).child(Button::new("maximize", WINDOW_CHROME_GLYPH_MAX).style(ButtonStyle::Icon).on_click(move |_, window, _| window.titlebar_double_click())))
+            .child(div().font_family(WINDOW_CHROME_ICON_FONT_FAMILY).window_control_area(WindowControlArea::Close).child(Button::new("close", WINDOW_CHROME_GLYPH_CLOSE).style(ButtonStyle::Icon).on_click(move |_, _, _| { let _ = tx_shut.send(UiToHost::Shutdown); })));
+
+        // Toolbar (workspace actions)
+        let toolbar = h_flex()
+            .flex_none()
+            .w_full()
             .h(px(32.0))
             .px(Spacing::Base08.px())
             .gap(Spacing::Base06.px())
@@ -674,23 +690,15 @@ impl Render for AiWorkspaceWindow {
             .border_color(ThemeColors::border())
             .bg(ThemeColors::bg_secondary())
             .child(Label::new("AI Workspace").size(LabelSize::Small).color(LabelColor::Primary))
-            .child(div().flex_1().window_control_area(WindowControlArea::Drag))
             .child(self.mode_selector.clone())
             .child(Button::new("model-btn", model_name).style(ButtonStyle::Subtle).on_click(cx.listener(|this, _, window, cx| this.toggle_model_selector(&ToggleModelSelector, window, cx))))
             .child(Button::new("provider-settings", "⚙").style(ButtonStyle::Icon).on_click(cx.listener(|this, _, window, cx| this.toggle_provider_settings(window, cx))))
-            .child(
-                Button::new("voice-assistant", "🎙")
-                    .style(ButtonStyle::Icon)
-                    .toggle_state(voice_on)
-                    .on_click(move |_, _, _| { let _ = tx_voice.send(UiToHost::SetVoiceAssistantEnabled { enabled: !voice_on }); })
-            )
+            .child(Button::new("voice-assistant", "🎙").style(ButtonStyle::Icon).toggle_state(voice_on).on_click(move |_, _, _| { let _ = tx_voice.send(UiToHost::SetVoiceAssistantEnabled { enabled: !voice_on }); }))
             .child(Button::new("voice-settings", "🔊").style(ButtonStyle::Icon).on_click(cx.listener(|this, _, window, cx| this.toggle_voice_settings(window, cx))))
             .child(Button::new("new-session", "+ New").style(ButtonStyle::Tinted(TintColor::Accent)).on_click(move |_, _, _| { let _ = tx_new.send(UiToHost::NewSession); }))
             .child(Button::new("pin-window", pin_icon).style(ButtonStyle::Icon).toggle_state(self.is_pinned).on_click(cx.listener(|this, _, window, cx| this.toggle_pin(window, cx))))
             .child(Button::new("refresh", "↻").style(ButtonStyle::Icon).on_click(move |_, _, _| { let _ = tx_snap.send(UiToHost::RequestSnapshot); }))
-            .child(div().font_family(WINDOW_CHROME_ICON_FONT_FAMILY).window_control_area(WindowControlArea::Min).child(Button::new("minimize", WINDOW_CHROME_GLYPH_MIN).style(ButtonStyle::Icon).on_click(move |_, window, _| window.minimize_window())))
-            .child(div().font_family(WINDOW_CHROME_ICON_FONT_FAMILY).window_control_area(WindowControlArea::Max).child(Button::new("maximize", WINDOW_CHROME_GLYPH_MAX).style(ButtonStyle::Icon).on_click(move |_, window, _| window.titlebar_double_click())))
-            .child(div().font_family(WINDOW_CHROME_ICON_FONT_FAMILY).window_control_area(WindowControlArea::Close).child(Button::new("close", WINDOW_CHROME_GLYPH_CLOSE).style(ButtonStyle::Icon).on_click(move |_, _, _| { let _ = tx_shut.send(UiToHost::Shutdown); })));
+            .child(div().flex_1());
 
         // Token usage bar
         let token_info = active_session.as_ref().map(|s| {
@@ -787,13 +795,14 @@ impl Render for AiWorkspaceWindow {
             .child(chat_handle)
             .child(chat_content);
 
-        // Full layout with header
+        // Full layout with caption bar + toolbar
         let content_with_header = v_flex()
             .flex_1()
             .h_full()
             .bg(ThemeColors::bg_primary())
             .overflow_hidden()
-            .child(header)
+            .child(caption_bar)
+            .child(toolbar)
             .child(main_content);
 
         // Main layout: Sidebar | Handle | (Header + Editor + Chat)

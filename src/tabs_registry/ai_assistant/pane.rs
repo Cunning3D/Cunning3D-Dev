@@ -23,7 +23,12 @@ const MAX_VISIBLE_TOOL_LOGS: usize = 12;
 const MAX_VISIBLE_TOOL_NAMES: usize = 16;
 const MAX_MESSAGES: usize = 260;
 const MAX_RENDER_CHARS_PER_MESSAGE: usize = 2200;
+const MAX_RENDER_CHARS_TOOL_LOG_EXPANDED: usize = 5200;
 const MAX_PROMPT_CHAT_MESSAGES: usize = 40;
+const TOOL_LOG_PREVIEW_CHARS: usize = 92;
+const TOOL_LOG_TEXT_ALPHA: u8 = 165; // ~65% opacity
+const TOOL_LOG_BG_ALPHA: u8 = 150; // ~59% opacity
+const TOOL_LOG_FONT_PX: f32 = 10.0;
 
 const QUICK_ACTIONS: [(&str, &str); 6] = [
     (
@@ -258,8 +263,14 @@ impl AiAssistantPane {
                 match result {
                     Ok(turn) => {
                         self.last_error = None;
-                        for tool_log in turn.tool_logs {
-                            self.push_message(ChatMessage::tool_log(format!("🔧 {tool_log}")));
+                        if !turn.tool_logs.is_empty() {
+                            let joined = turn
+                                .tool_logs
+                                .into_iter()
+                                .map(|s| format!("🔧 {s}"))
+                                .collect::<Vec<_>>()
+                                .join("\n");
+                            self.push_message(ChatMessage::tool_log(joined));
                         }
                         if !turn.assistant_text.trim().is_empty() {
                             self.push_message(ChatMessage::assistant(turn.assistant_text));
@@ -403,15 +414,15 @@ impl AiAssistantPane {
                             return;
                         }
 
-                        for message in &self.messages {
-                            self.render_message_row(ui, message);
+                        for (msg_idx, message) in self.messages.iter().enumerate() {
+                            self.render_message_row(ui, msg_idx, message);
                             ui.add_space(6.0);
                         }
                     });
             });
     }
 
-    fn render_message_row(&self, ui: &mut Ui, message: &ChatMessage) {
+    fn render_message_row(&self, ui: &mut Ui, msg_idx: usize, message: &ChatMessage) {
         let align_right = matches!(message.role, MessageRole::User);
         let layout = if align_right {
             Layout::right_to_left(Align::Min)
@@ -420,6 +431,39 @@ impl AiAssistantPane {
         };
 
         ui.with_layout(layout, |ui| {
+            if message.kind == MessageKind::ToolLog {
+                let (fill, border) = (
+                    Color32::from_rgba_unmultiplied(30, 37, 48, TOOL_LOG_BG_ALPHA),
+                    Color32::from_rgba_unmultiplied(70, 84, 104, (TOOL_LOG_BG_ALPHA as u16 * 3 / 4) as u8),
+                );
+                let text = Color32::from_rgba_unmultiplied(235, 242, 250, TOOL_LOG_TEXT_ALPHA);
+                let preview = truncate_chars(&tool_log_preview_line(&message.text), TOOL_LOG_PREVIEW_CHARS);
+                let expanded = truncate_chars(&message.text, MAX_RENDER_CHARS_TOOL_LOG_EXPANDED);
+
+                Frame::group(ui.style())
+                    .fill(fill)
+                    .stroke(egui::Stroke::new(1.0, border))
+                    .inner_margin(Margin::symmetric(8, 6))
+                    .show(ui, |ui| {
+                        ui.set_max_width(640.0);
+                        egui::CollapsingHeader::new(
+                            RichText::new(preview).monospace().color(text).size(TOOL_LOG_FONT_PX),
+                        )
+                        .default_open(false)
+                        .id_source(("ai_assistant_tool_log", msg_idx))
+                        .show(ui, |ui| {
+                            ui.add_space(2.0);
+                            ui.label(
+                                RichText::new(expanded)
+                                    .monospace()
+                                    .color(text)
+                                    .size(TOOL_LOG_FONT_PX),
+                            );
+                        });
+                    });
+                return;
+            }
+
             let (title, fill, border) = match (message.role, message.kind) {
                 (_, MessageKind::ToolLog) => (
                     "Tool Log",
@@ -495,12 +539,13 @@ impl AiAssistantPane {
                 ui.label(RichText::new("最近工具日志").strong());
                 ui.add_space(4.0);
 
-                let logs: Vec<&str> = self
+                let logs: Vec<(usize, &str)> = self
                     .messages
                     .iter()
+                    .enumerate()
                     .rev()
-                    .filter(|message| message.kind == MessageKind::ToolLog)
-                    .map(|message| message.text.as_str())
+                    .filter(|(_, message)| message.kind == MessageKind::ToolLog)
+                    .map(|(i, message)| (i, message.text.as_str()))
                     .take(MAX_VISIBLE_TOOL_LOGS)
                     .collect();
 
@@ -509,8 +554,26 @@ impl AiAssistantPane {
                     return;
                 }
 
-                for log in logs.into_iter().rev() {
-                    ui.label(RichText::new(truncate_chars(log, 160)).small().monospace());
+                let text = Color32::from_rgba_unmultiplied(235, 242, 250, TOOL_LOG_TEXT_ALPHA);
+                for (i, log) in logs.into_iter().rev() {
+                    let preview = truncate_chars(&tool_log_preview_line(log), 90);
+                    egui::CollapsingHeader::new(
+                        RichText::new(preview)
+                            .monospace()
+                            .color(text)
+                            .size(TOOL_LOG_FONT_PX),
+                    )
+                        .default_open(false)
+                        .id_source(("ai_assistant_tool_log_side", i))
+                        .show(ui, |ui| {
+                            ui.add_space(2.0);
+                            ui.label(
+                                RichText::new(truncate_chars(log, MAX_RENDER_CHARS_TOOL_LOG_EXPANDED))
+                                    .monospace()
+                                    .color(text)
+                                    .size(TOOL_LOG_FONT_PX),
+                            );
+                        });
                 }
             });
     }
@@ -1005,6 +1068,31 @@ fn summarize_tool_output(output: &ToolOutput) -> String {
     } else {
         "ok".to_string()
     }
+}
+
+fn tool_log_preview_line(log: &str) -> String {
+    let s = log.trim();
+    let s0 = s.lines().next().unwrap_or("").trim();
+    if let Some(rest) = s0.strip_prefix("🔧 ") {
+        return tool_log_preview_line(rest);
+    }
+    if let Some(rest) = s0.strip_prefix("调用 `") {
+        if let Some((name, _)) = rest.split_once('`') {
+            return format!("↪ {name}  (click to expand)");
+        }
+    }
+    if let Some(rest) = s0.strip_prefix('`') {
+        if let Some((name, tail)) = rest.split_once('`') {
+            let tail = tail.trim_start();
+            if tail.starts_with("完成") {
+                return format!("✓ {name}  (done)");
+            }
+            if tail.starts_with("失败") {
+                return format!("✗ {name}  (failed)");
+            }
+        }
+    }
+    truncate_chars(s0, 72)
 }
 
 fn truncate_chars(text: &str, max_chars: usize) -> String {

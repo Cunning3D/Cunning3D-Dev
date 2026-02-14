@@ -1,6 +1,6 @@
 use bevy::prelude::*;
+use rustc_hash::FxHashMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 pub const CHUNK_SIZE: i32 = 16;
@@ -50,18 +50,26 @@ impl Chunk {
 }
 
 #[derive(Clone, Debug)]
-pub struct VoxelGrid { pub voxel_size: f32, pub chunks: HashMap<IVec3, Chunk>, pub background_value: f32 }
+pub struct VoxelGrid { pub voxel_size: f32, pub chunks: FxHashMap<IVec3, Chunk>, pub background_value: f32 }
 
 impl VoxelGrid {
-    pub fn new(voxel_size: f32, background_value: f32) -> Self { Self { voxel_size, chunks: HashMap::new(), background_value } }
+    pub fn new(voxel_size: f32, background_value: f32) -> Self { Self { voxel_size, chunks: FxHashMap::default(), background_value } }
     pub fn get_voxel(&self, x: i32, y: i32, z: i32) -> f32 {
         let (chunk_pos, local_pos) = self.get_chunk_coord(x, y, z);
         self.chunks.get(&chunk_pos).map(|c| c.get(local_pos.x, local_pos.y, local_pos.z)).unwrap_or(self.background_value)
     }
     pub fn set_voxel(&mut self, x: i32, y: i32, z: i32, val: f32) {
         let (chunk_pos, local_pos) = self.get_chunk_coord(x, y, z);
-        if !self.chunks.contains_key(&chunk_pos) && (val - self.background_value).abs() < f32::EPSILON { return; }
-        self.chunks.entry(chunk_pos).or_insert_with(|| Chunk::new(self.background_value)).set(local_pos.x, local_pos.y, local_pos.z, val);
+        if (val - self.background_value).abs() < f32::EPSILON {
+            if let Some(chunk) = self.chunks.get_mut(&chunk_pos) {
+                chunk.set(local_pos.x, local_pos.y, local_pos.z, val);
+            }
+            return;
+        }
+        self.chunks
+            .entry(chunk_pos)
+            .or_insert_with(|| Chunk::new(self.background_value))
+            .set(local_pos.x, local_pos.y, local_pos.z, val);
     }
     fn get_chunk_coord(&self, x: i32, y: i32, z: i32) -> (IVec3, IVec3) {
         let (cx, cy, cz) = (x.div_euclid(CHUNK_SIZE), y.div_euclid(CHUNK_SIZE), z.div_euclid(CHUNK_SIZE));

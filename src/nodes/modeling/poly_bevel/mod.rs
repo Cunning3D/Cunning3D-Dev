@@ -11,6 +11,7 @@ use std::sync::Arc;
 
 pub mod builder;
 pub mod pipeline_v2;
+pub mod spokes;
 pub mod structures;
 
 use builder::BevelBuilder;
@@ -238,6 +239,125 @@ impl NodeParameters for PolyBevelNode {
                 ParameterValue::Float(1.0),
                 ParameterUIType::FloatSlider { min: 0.0, max: 2.0 },
             ),
+            Parameter::new(
+                "debug_spoke_order",
+                "Spoke Order",
+                "Debug",
+                ParameterValue::Int(0),
+                ParameterUIType::Dropdown {
+                    choices: vec![
+                        ("Default".into(), 0),
+                        ("Reverse".into(), 1),
+                        ("Rotate +1".into(), 2),
+                        ("Rotate -1".into(), 3),
+                    ],
+                },
+            ),
+            Parameter::new(
+                "debug_swap_left_right",
+                "Swap Left/Right",
+                "Debug",
+                ParameterValue::Bool(false),
+                ParameterUIType::Toggle,
+            ),
+            Parameter::new(
+                "debug_invert_face_normals",
+                "Invert Face Normals",
+                "Debug",
+                ParameterValue::Bool(false),
+                ParameterUIType::Toggle,
+            ),
+            Parameter::new(
+                "debug_flip_output_winding",
+                "Flip Output Winding",
+                "Debug",
+                ParameterValue::Bool(false),
+                ParameterUIType::Toggle,
+            ),
+            Parameter::new(
+                "debug_disable_strip_orient",
+                "Disable Strip Orient Fix",
+                "Debug",
+                ParameterValue::Bool(false),
+                ParameterUIType::Toggle,
+            ),
+            Parameter::new(
+                "debug_disable_face_rebuild_orient",
+                "Disable Face Rebuild Orient Fix",
+                "Debug",
+                ParameterValue::Bool(false),
+                ParameterUIType::Toggle,
+            ),
+            Parameter::new(
+                "debug_invert_edge_dirs",
+                "Invert Edge Dirs",
+                "Debug",
+                ParameterValue::Bool(false),
+                ParameterUIType::Toggle,
+            ),
+            Parameter::new(
+                "debug_invert_edge_ends",
+                "Invert Edge Ends",
+                "Debug",
+                ParameterValue::Bool(false),
+                ParameterUIType::Toggle,
+            ),
+            Parameter::new(
+                "debug_swap_offsets_lr",
+                "Swap Offsets L/R",
+                "Debug",
+                ParameterValue::Bool(false),
+                ParameterUIType::Toggle,
+            ),
+            Parameter::new(
+                "debug_swap_face_pair_normals",
+                "Swap Face/Pair Normals",
+                "Debug",
+                ParameterValue::Bool(false),
+                ParameterUIType::Toggle,
+            ),
+            Parameter::new(
+                "debug_invert_pair_face_normals",
+                "Invert Pair Face Normals",
+                "Debug",
+                ParameterValue::Bool(false),
+                ParameterUIType::Toggle,
+            ),
+            Parameter::new(
+                "debug_invert_arc_for",
+                "Invert Arc Direction",
+                "Debug",
+                ParameterValue::Bool(false),
+                ParameterUIType::Toggle,
+            ),
+            Parameter::new(
+                "debug_disable_adjust_offsets",
+                "Disable Adjust Offsets",
+                "Debug",
+                ParameterValue::Bool(false),
+                ParameterUIType::Toggle,
+            ),
+            Parameter::new(
+                "debug_disable_offset_limit",
+                "Disable Offset Limit",
+                "Debug",
+                ParameterValue::Bool(false),
+                ParameterUIType::Toggle,
+            ),
+            Parameter::new(
+                "debug_disable_square_in_vmesh",
+                "Disable SquareIn VMesh",
+                "Debug",
+                ParameterValue::Bool(false),
+                ParameterUIType::Toggle,
+            ),
+            Parameter::new(
+                "debug_disable_square_out_adj_vmesh",
+                "Disable SquareOut Adj VMesh",
+                "Debug",
+                ParameterValue::Bool(false),
+                ParameterUIType::Toggle,
+            ),
         ]
     }
 }
@@ -300,6 +420,28 @@ impl NodeOp for PolyBevelNode {
         let debug_flip_input = get_param_bool(params, "debug_flip_input", false);
         let invert_profile = get_param_bool(params, "debug_invert_profile", false);
         let corner_scale = get_param_float(params, "debug_corner_scale", 1.0);
+        let debug_spoke_order = get_param_int(params, "debug_spoke_order", 0);
+        let debug_swap_left_right = get_param_bool(params, "debug_swap_left_right", false);
+        let debug_invert_face_normals = get_param_bool(params, "debug_invert_face_normals", false);
+        let debug_flip_output_winding = get_param_bool(params, "debug_flip_output_winding", false);
+        let debug_disable_strip_orient = get_param_bool(params, "debug_disable_strip_orient", false);
+        let debug_disable_face_rebuild_orient =
+            get_param_bool(params, "debug_disable_face_rebuild_orient", false);
+        let debug_invert_edge_dirs = get_param_bool(params, "debug_invert_edge_dirs", false);
+        let debug_invert_edge_ends = get_param_bool(params, "debug_invert_edge_ends", false);
+        let debug_swap_offsets_lr = get_param_bool(params, "debug_swap_offsets_lr", false);
+        let debug_swap_face_pair_normals =
+            get_param_bool(params, "debug_swap_face_pair_normals", false);
+        let debug_invert_pair_face_normals =
+            get_param_bool(params, "debug_invert_pair_face_normals", false);
+        let debug_invert_arc_for = get_param_bool(params, "debug_invert_arc_for", false);
+        let debug_disable_adjust_offsets =
+            get_param_bool(params, "debug_disable_adjust_offsets", false);
+        let debug_disable_offset_limit = get_param_bool(params, "debug_disable_offset_limit", false);
+        let debug_disable_square_in_vmesh =
+            get_param_bool(params, "debug_disable_square_in_vmesh", false);
+        let debug_disable_square_out_adj_vmesh =
+            get_param_bool(params, "debug_disable_square_out_adj_vmesh", false);
 
         let src_owned;
         let src: &Geometry = if debug_flip_input {
@@ -597,6 +739,22 @@ impl NodeOp for PolyBevelNode {
             material,
             invert_profile,
             corner_scale,
+            debug_spoke_order,
+            debug_swap_left_right,
+            debug_invert_face_normals,
+            debug_flip_output_winding,
+            debug_disable_strip_orient,
+            debug_disable_face_rebuild_orient,
+            debug_invert_edge_dirs,
+            debug_invert_edge_ends,
+            debug_swap_offsets_lr,
+            debug_swap_face_pair_normals,
+            debug_invert_pair_face_normals,
+            debug_invert_arc_for,
+            debug_disable_adjust_offsets,
+            debug_disable_offset_limit,
+            debug_disable_square_in_vmesh,
+            debug_disable_square_out_adj_vmesh,
         );
         let pipeline = BevelPipeline::new_with_params(src, topo, graph, bp);
         Arc::new(pipeline.execute())

@@ -8,6 +8,7 @@ use bevy::prelude::*;
 use uuid::Uuid;
 
 use crate::cunning_core::cda::library::{global_cda_library, CdaAssetRef};
+use crate::cunning_core::cda::{CDAAsset, CDAInterface};
 use crate::nodes::parameter::ParameterValue;
 use crate::nodes::{CDANodeData, Node, NodeGraph, NodeGraphResource, NodeType};
 
@@ -65,8 +66,43 @@ struct CdaBridgeRecord {
 
 fn parse_uuid_from_asset_json(s: &str) -> Option<Uuid> {
     let v: serde_json::Value = serde_json::from_str(s).ok()?;
-    let u = v.get("uuid")?.as_str()?;
+    let u = v
+        .get("meta")
+        .and_then(|m| m.get("uuid"))
+        .and_then(|x| x.as_str())?;
     Uuid::parse_str(u).ok()
+}
+
+fn ensure_bridge_asset_in_memory(asset_ref: &CdaAssetRef, asset_name: &str, asset_source_json: &str) {
+    // Unity "empty bridge CDA" may have no on-disk .cda. In that case, reconstruct a minimal
+    // editor-side CDAAsset from the runtime (GAME) json so we can rebuild ports and connect inputs.
+    let Some(lib) = global_cda_library() else { return };
+    if lib.get(asset_ref.uuid).is_some() { return };
+    if asset_source_json.is_empty() { return };
+    let def: cunning_cda_runtime::asset::RuntimeDefinition = match serde_json::from_str(asset_source_json) {
+        Ok(v) => v,
+        Err(e) => {
+            warn!("bridge: asset_source_json parse failed (runtime def): {e}");
+            return;
+        }
+    };
+    let mut asset = CDAAsset::default();
+    asset.name = if !asset_name.is_empty() { asset_name.to_string() } else { def.meta.name.clone() };
+    asset.id = asset_ref.uuid;
+    asset.inputs = def
+        .inputs
+        .iter()
+        .enumerate()
+        .map(|(i, p)| CDAInterface::new(&p.name, Uuid::new_v4()).with_label(&p.name).with_order(i as i32))
+        .collect();
+    asset.outputs = def
+        .outputs
+        .iter()
+        .enumerate()
+        .map(|(i, p)| CDAInterface::new(&p.name, Uuid::new_v4()).with_label(&p.name).with_order(i as i32))
+        .collect();
+    lib.put(asset);
+    info!("bridge: created in-memory CDAAsset from asset_source_json (uuid={})", asset_ref.uuid);
 }
 
 pub fn import_bridge_on_enter(mut ng_res: ResMut<NodeGraphResource>, bridge: Res<BridgeStartup>) {
@@ -120,6 +156,9 @@ pub fn import_bridge_on_enter(mut ng_res: ResMut<NodeGraphResource>, bridge: Res
     } else {
         warn!("bridge: global_cda_library() is None (not initialized yet?)");
     }
+    if asset_ref.path.is_empty() {
+        ensure_bridge_asset_in_memory(&asset_ref, &rec.asset_name, &rec.asset_source_json);
+    }
 
     let mut graph = NodeGraph::new();
     let cda_id = Uuid::new_v4();
@@ -170,6 +209,7 @@ pub fn import_bridge_on_enter(mut ng_res: ResMut<NodeGraphResource>, bridge: Res
                     node_type,
                     bevy_egui::egui::Pos2::new(40.0, 120.0 + i as f32 * 90.0),
                 );
+                n.rebuild_parameters();
                 if kind == "spline" {
                     if let Some(inp) = inp {
                         if let Some(p) = n

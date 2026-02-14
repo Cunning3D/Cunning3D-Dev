@@ -32,6 +32,30 @@ pub struct CdaCoverlayUnit {
     pub default_on: bool,
 }
 
+/// CDA export behavior: keep black-box, or allow host-selected exports.
+#[derive(Clone, Copy, Serialize, Deserialize, Debug, PartialEq, Eq, Default)]
+pub enum CdaExportsMode {
+    #[default]
+    BlackBox,
+    Advanced,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub enum CdaExportKind {
+    NodeOutput { node_id: NodeId },
+    NodeParam { node_id: NodeId, param: String, #[serde(default)] channel: Option<u32> },
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct CdaExport {
+    pub name: String,
+    #[serde(default)]
+    pub label: String,
+    #[serde(default)]
+    pub order: i32,
+    pub kind: CdaExportKind,
+}
+
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct CDAAsset {
     // 基础信息
@@ -68,6 +92,12 @@ pub struct CDAAsset {
     pub hud_units: Vec<CdaHudUnit>,
     #[serde(default)]
     pub coverlay_units: Vec<CdaCoverlayUnit>,
+
+    /// Export behavior and endpoints for host-side partial evaluation.
+    #[serde(default)]
+    pub exports_mode: CdaExportsMode,
+    #[serde(default)]
+    pub exports: Vec<CdaExport>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug, Default)]
@@ -98,6 +128,8 @@ impl Default for CDAAsset {
             help_content: None,
             hud_units: Vec::new(),
             coverlay_units: Vec::new(),
+            exports_mode: CdaExportsMode::BlackBox,
+            exports: Vec::new(),
         }
     }
 }

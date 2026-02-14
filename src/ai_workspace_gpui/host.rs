@@ -740,9 +740,7 @@ impl AiWorkspaceHost {
                 }
             }
             UiToHost::UpdateGeminiSettings { api_key, model, model_image } => {
-                if !api_key.trim().is_empty() {
-                    self.gemini_settings.api_key = api_key;
-                }
+                if !api_key.trim().is_empty() { self.gemini_settings.api_key = api_key; }
                 self.gemini_api_key = {
                     let env = std::env::var("GEMINI_API_KEY").unwrap_or_default();
                     if !env.trim().is_empty() { env } else { self.gemini_settings.api_key.clone() }
@@ -752,10 +750,7 @@ impl AiWorkspaceHost {
                 self.gemini_settings.model_image = model_image;
                 self.gemini_client = Arc::new(GeminiClient::new(self.gemini_api_key.clone(), self.gemini_settings.model_pro.clone()));
                 Self::save_providers_settings(&self.gemini_settings, &self.openai_profiles);
-                let _ = self.ui_tx.send(HostToUi::ProvidersUpdated {
-                    profiles: self.provider_snapshots(),
-                    active_idx: self.active_provider_idx(),
-                });
+                let _ = self.ui_tx.send(HostToUi::ProvidersUpdated { profiles: self.provider_snapshots(), active_idx: self.active_provider_idx() });
             }
             UiToHost::UpdateOpenAiCompatProfile { profile_idx, name, base_url, api_key, models, selected_model } => {
                 if let Some(p) = self.openai_profiles.get_mut(profile_idx) {

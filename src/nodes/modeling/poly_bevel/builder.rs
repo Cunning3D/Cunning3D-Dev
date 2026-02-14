@@ -4,6 +4,7 @@ use crate::libs::geometry::mesh::Geometry;
 use crate::libs::geometry::topology::Topology;
 use bevy::prelude::*;
 use std::collections::HashMap;
+use super::spokes::spoke_fan;
 
 pub struct BevelBuilder<'a> {
     geo: &'a Geometry,
@@ -42,7 +43,7 @@ impl<'a> BevelBuilder<'a> {
         for (pid_idx, _) in self.geo.points().iter_enumerated() {
             let p_id = PointId::from(pid_idx);
             let mut is_involved = false;
-            for he in self.topo.iter_spoke_edges(p_id) {
+            for he in spoke_fan(self.topo, p_id) {
                 if let Some(di) = self.topo.half_edges.get_dense_index(he.into()) {
                     if di < edge_selection.len() && edge_selection[di] {
                         is_involved = true;
@@ -96,7 +97,7 @@ impl<'a> BevelBuilder<'a> {
 
         let mut edges_indices = Vec::new();
 
-        for he_id in self.topo.iter_spoke_edges(p_id) {
+        for he_id in spoke_fan(self.topo, p_id) {
             let is_selected = self
                 .topo
                 .half_edges

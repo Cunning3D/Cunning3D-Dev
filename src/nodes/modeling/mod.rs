@@ -5,6 +5,7 @@ pub mod copy_to_points;
 pub mod fuse_node;
 pub mod measure;
 pub mod mirror;
+pub mod point_jitter;
 pub mod poly_bevel;
 pub mod poly_extrude;
 pub mod polyframe;

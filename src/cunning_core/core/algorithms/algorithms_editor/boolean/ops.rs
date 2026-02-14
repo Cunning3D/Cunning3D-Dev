@@ -12,6 +12,7 @@ pub enum BooleanOperation {
     Union,
     Intersection,
     Difference,
+    Xor,
 }
 
 #[inline]
@@ -259,6 +260,7 @@ pub fn mesh_boolean(
                         if is_a { (!is_inside, false) } // Keep A Outside
                         else { (is_inside, true) }      // Keep B Inside (Reverse)
                     }
+                    BooleanOperation::Xor => (!is_inside, false),
                 };
                 
                 if keep {

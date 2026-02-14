@@ -38,6 +38,16 @@ pub enum HudAction {
         tangent: BezierTangent,
         length: f32,
     },
+    SetNodeParamInt {
+        node_id: NodeId,
+        param_name: String,
+        value: i32,
+    },
+    SetNodeParamFloat {
+        node_id: NodeId,
+        param_name: String,
+        value: f32,
+    },
 }
 
 #[derive(Resource, Default)]
@@ -109,6 +119,48 @@ pub fn apply_hud_actions_system(
             .entry(internal)
             .or_default()
             .insert("spline".to_string(), ParameterValue::UnitySpline(c));
+    }
+    fn set_node_param_int(
+        graph: &mut crate::nodes::NodeGraph,
+        node_id: NodeId,
+        param_name: &str,
+        value: i32,
+    ) -> bool {
+        let Some(node) = graph.nodes.get_mut(&node_id) else {
+            return false;
+        };
+        let Some(param) = node.parameters.iter_mut().find(|p| p.name == param_name) else {
+            return false;
+        };
+        if let ParameterValue::Int(cur) = &mut param.value {
+            if *cur == value {
+                return false;
+            }
+            *cur = value;
+            return true;
+        }
+        false
+    }
+    fn set_node_param_float(
+        graph: &mut crate::nodes::NodeGraph,
+        node_id: NodeId,
+        param_name: &str,
+        value: f32,
+    ) -> bool {
+        let Some(node) = graph.nodes.get_mut(&node_id) else {
+            return false;
+        };
+        let Some(param) = node.parameters.iter_mut().find(|p| p.name == param_name) else {
+            return false;
+        };
+        if let ParameterValue::Float(cur) = &mut param.value {
+            if (*cur - value).abs() <= f32::EPSILON {
+                return false;
+            }
+            *cur = value;
+            return true;
+        }
+        false
     }
 
     let actions = q.drain();
@@ -413,6 +465,40 @@ pub fn apply_hud_actions_system(
                                     }
                                 }
                             }
+                        }
+                    });
+                }
+            }
+            HudAction::SetNodeParamInt {
+                node_id,
+                param_name,
+                value,
+            } => {
+                let root = root_guard.as_mut().unwrap();
+                if set_node_param_int(root, node_id, &param_name, value) {
+                    dirty_root.insert(node_id);
+                } else {
+                    let path = node_editor_state.cda_path.clone();
+                    cda::navigation::with_graph_by_path_mut(root, &path, |ng| {
+                        if set_node_param_int(ng, node_id, &param_name, value) {
+                            dirty_path.insert(node_id);
+                        }
+                    });
+                }
+            }
+            HudAction::SetNodeParamFloat {
+                node_id,
+                param_name,
+                value,
+            } => {
+                let root = root_guard.as_mut().unwrap();
+                if set_node_param_float(root, node_id, &param_name, value) {
+                    dirty_root.insert(node_id);
+                } else {
+                    let path = node_editor_state.cda_path.clone();
+                    cda::navigation::with_graph_by_path_mut(root, &path, |ng| {
+                        if set_node_param_float(ng, node_id, &param_name, value) {
+                            dirty_path.insert(node_id);
                         }
                     });
                 }

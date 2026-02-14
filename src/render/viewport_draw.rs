@@ -391,7 +391,6 @@ pub(crate) fn draw_grid_labels_system(
             camera,
             camera_transform,
             viewport_rect,
-            vp,
             Vec3::new(x, 0.0, 0.0),
             x,
             p.major_step,
@@ -408,7 +407,6 @@ pub(crate) fn draw_grid_labels_system(
             camera,
             camera_transform,
             viewport_rect,
-            vp,
             Vec3::new(0.0, 0.0, z),
             z,
             p.major_step,
@@ -423,7 +421,6 @@ fn draw_grid_label_gpu(
     camera: &Camera,
     camera_transform: &GlobalTransform,
     viewport_rect: egui::Rect,
-    vp: bevy_egui::egui::Vec2,
     world: Vec3,
     v_m: f32,
     major_step: f32,
@@ -435,8 +432,8 @@ fn draw_grid_label_gpu(
     if ndc.z <= 0.0 {
         return;
     }
-    let x = (ndc.x + 1.0) / 2.0 * vp.x;
-    let y = (1.0 - ndc.y) / 2.0 * vp.y;
+    let x = viewport_rect.min.x + (ndc.x + 1.0) * 0.5 * viewport_rect.width();
+    let y = viewport_rect.min.y + (1.0 - ndc.y) * 0.5 * viewport_rect.height();
     let label = if major_step >= 1.0 {
         format!("{:.0}", v_m)
     } else if major_step >= 0.1 {
@@ -446,17 +443,45 @@ fn draw_grid_label_gpu(
     } else {
         format!("{:.3}", v_m)
     };
-    let color = if is_x_axis {
-        egui::Color32::from_rgb(160, 160, 160)
+    let fg = if is_x_axis {
+        egui::Color32::from_rgb(245, 245, 245)
     } else {
-        egui::Color32::from_rgb(160, 160, 160)
+        egui::Color32::from_rgb(232, 232, 232)
     };
-    let font_id = egui::FontId::monospace(12.0);
-    let galley = painter.layout(label, font_id, color, f32::INFINITY);
+    let outline = egui::Color32::from_rgba_unmultiplied(0, 0, 0, 250);
+    let font_id = egui::FontId::proportional(16.0);
+    let galley = painter.layout(label.clone(), font_id.clone(), fg, f32::INFINITY);
     let size = galley.size();
-    let rect = egui::Rect::from_min_size(egui::pos2(x - size.x / 2.0, y - size.y / 2.0), size);
+    let baseline_nudge = if is_x_axis { -10.0 } else { 10.0 };
+    let rect = egui::Rect::from_min_size(
+        egui::pos2((x - size.x * 0.5).round(), (y - size.y * 0.5 + baseline_nudge).round()),
+        size,
+    );
     if viewport_rect.intersects(rect) {
-        painter.galley(rect.min, galley, egui::Color32::PLACEHOLDER);
+        let bg = rect.expand2(egui::vec2(5.0, 3.0));
+        painter.rect_filled(
+            bg,
+            egui::CornerRadius::same(4),
+            egui::Color32::from_rgba_unmultiplied(8, 8, 8, 175),
+        );
+        // Multi-pass outline for a "sticker / texture" bold look.
+        let outline_galley = painter.layout(label.clone(), font_id.clone(), outline, f32::INFINITY);
+        let outline_offsets = [
+            egui::vec2(-1.0, 0.0),
+            egui::vec2(1.0, 0.0),
+            egui::vec2(0.0, -1.0),
+            egui::vec2(0.0, 1.0),
+            egui::vec2(-1.0, -1.0),
+            egui::vec2(1.0, -1.0),
+            egui::vec2(-1.0, 1.0),
+            egui::vec2(1.0, 1.0),
+        ];
+        for offset in outline_offsets {
+            painter.galley(rect.min + offset, outline_galley.clone(), outline);
+        }
+        let fill_galley = painter.layout(label, font_id, fg, f32::INFINITY);
+        painter.galley(rect.min + egui::vec2(0.0, 0.5), fill_galley, fg);
+        painter.galley(rect.min, galley, fg);
     }
 }
 

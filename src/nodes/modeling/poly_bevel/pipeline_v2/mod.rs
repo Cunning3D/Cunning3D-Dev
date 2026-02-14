@@ -6,6 +6,7 @@ use crate::libs::geometry::topology::Topology;
 use bevy::prelude::*;
 use rayon::prelude::*;
 use std::collections::HashMap;
+use super::spokes::spoke_fan;
 
 pub mod adjust_offsets;
 pub mod boundary;
@@ -41,7 +42,7 @@ use spacing::build_profile_spacing;
 use tri_corner::{tri_corner_test, tri_corner_vmesh};
 use vmesh::{cubic_subdiv, emit_vmesh_faces, interp_vmesh, VMeshGrid};
 
-// Thread-local workspace cache (avoids repeated allocation across calls)
+// Thread-local workspace 缓存 (避免跨调用重复分配)
 thread_local! {
     static WORKSPACE: std::cell::RefCell<BevelWorkspace> = std::cell::RefCell::new(BevelWorkspace::new());
 }
@@ -111,7 +112,7 @@ impl<'a> BevelPipeline<'a> {
     }
 
     fn build_output(&mut self) {
-        // v2: High-performance bevel pipeline, uses object pooling to avoid repeated allocations
+        // v2: 高性能 bevel 管线，使用对象池避免重复分配
         let mut dist = 0.0f32;
         let mut divisions = 1usize;
         for e in &self.graph.edges {
@@ -135,7 +136,7 @@ impl<'a> BevelPipeline<'a> {
         }
 
         // [OFFSET_LIMIT] Apply offset clamping if enabled (Blender bevel_limit_offset)
-        if self.params.clamp_overlap {
+        if self.params.clamp_overlap && !self.params.debug_disable_offset_limit {
             let edge_lengths: Vec<f32> = self
                 .graph
                 .edges
@@ -176,7 +177,7 @@ impl<'a> BevelPipeline<'a> {
         let n_prims = self.geo.primitives().len();
         let n_halfedges = self.topo.half_edges.len();
 
-        // Use thread-local workspace to reuse memory
+        // 使用 thread-local workspace 复用内存
         let (
             mut bev_edge,
             mut any_bev_point,
@@ -291,8 +292,13 @@ impl<'a> BevelPipeline<'a> {
                 }
             }
         }
+        if self.params.debug_invert_face_normals {
+            for n in &mut face_n_dense {
+                *n = -*n;
+            }
+        }
 
-        // Initialize dense map (workspace pre-allocated)
+        // 初始化 dense 映射表 (workspace 已预分配)
         for (pid_idx, _) in self.geo.points().iter_enumerated() {
             let pid = PointId::from(pid_idx);
             if let Some(di) = self.geo.points().get_dense_index(pid.into()) {
@@ -316,6 +322,18 @@ impl<'a> BevelPipeline<'a> {
         };
 
         // 1) corner_pt + BoundVert ring (Blender build_boundary / adjust_offsets / build_boundary(construct=false))
+        let debug_spoke_order = self.params.debug_spoke_order;
+        let mut debug_spokes = |spokes: &mut Vec<HalfEdgeId>| {
+            if spokes.len() <= 1 {
+                return;
+            }
+            match debug_spoke_order {
+                1 => spokes.reverse(),
+                2 => spokes.rotate_left(1),
+                3 => spokes.rotate_right(1),
+                _ => {}
+            }
+        };
         for pass in 0..2 {
             let mut pid_to_bv_idx: HashMap<PointId, usize> =
                 HashMap::with_capacity(self.graph.verts.len());
@@ -357,7 +375,8 @@ impl<'a> BevelPipeline<'a> {
                 if !p.is_valid() {
                     continue;
                 }
-                let spokes: Vec<HalfEdgeId> = self.topo.iter_spoke_edges(p).collect();
+                let mut spokes: Vec<HalfEdgeId> = spoke_fan(self.topo, p);
+                debug_spokes(&mut spokes);
                 if spokes.len() < 2 {
                     continue;
                 }
@@ -391,6 +410,27 @@ impl<'a> BevelPipeline<'a> {
                     } else {
                         Vec3::ZERO
                     });
+                }
+                if self.params.debug_swap_offsets_lr {
+                    std::mem::swap(&mut spoke_off_l, &mut spoke_off_r);
+                }
+                if self.params.debug_swap_face_pair_normals {
+                    std::mem::swap(&mut face_nos, &mut pair_face_nos);
+                }
+                if self.params.debug_invert_pair_face_normals {
+                    for n in &mut pair_face_nos {
+                        *n = -*n;
+                    }
+                }
+                if self.params.debug_invert_edge_ends {
+                    for e in &mut edge_ends {
+                        *e = v_pos + (v_pos - *e);
+                    }
+                }
+                if self.params.debug_invert_edge_dirs {
+                    for d in &mut edge_dirs {
+                        *d = -*d;
+                    }
                 }
                 let selcount = spoke_is_bev.iter().filter(|&&b| b).count();
                 if selcount == 0 {
@@ -427,7 +467,7 @@ impl<'a> BevelPipeline<'a> {
                         },
                         spread: self.params.spread,
                     };
-                    let b = boundary::build_boundary_lite(
+                    let mut b = boundary::build_boundary_lite(
                         &spokes,
                         &spoke_is_bev,
                         &edge_dirs,
@@ -439,6 +479,11 @@ impl<'a> BevelPipeline<'a> {
                         v_pos,
                         &lite,
                     );
+                    if self.params.debug_swap_left_right {
+                        for e in &mut b.edges {
+                            std::mem::swap(&mut e.left_bv, &mut e.right_bv);
+                        }
+                    }
                     let mk = if b.bnd_verts.len() <= 2 {
                         super::structures::MeshKind::None
                     } else if divisions <= 1 {
@@ -538,11 +583,14 @@ impl<'a> BevelPipeline<'a> {
                 }
 
                 let mut sectors: Vec<((usize, usize), u32)> = Vec::with_capacity(bnd_verts.len());
+                let mut bnd_pts: Vec<u32> = Vec::with_capacity(bnd_verts.len());
                 for bv in &bnd_verts {
+                    let pidx = add_point(bv.pos, &mut out_p) as u32;
+                    bnd_pts.push(pidx);
                     let (Some(a), Some(b)) = (bv.efirst, bv.elast) else {
                         continue;
                     };
-                    sectors.push(((a, b), add_point(bv.pos, &mut out_p) as u32));
+                    sectors.push(((a, b), pidx));
                 }
                 if sectors.is_empty() {
                     continue;
@@ -564,15 +612,52 @@ impl<'a> BevelPipeline<'a> {
                     if i_out == usize::MAX || i_in == usize::MAX {
                         continue;
                     }
-                    // Range-based sector match: find BV whose (efirst→elast) range covers i_out
-                    let pt = sectors.iter().find(|((a, b), _)| {
-                        if *a == *b { return i_out == *a; }
-                        if *a < *b { i_out > *a && i_out <= *b }
-                        else { i_out > *a || i_out <= *b }
-                    }).or_else(|| {
-                        // Fallback: exact match for degenerate/miter cases
-                        sectors.iter().find(|((a, b), _)| *a == i_in && *b == i_out)
-                    }).map(|(_, p)| *p);
+                    let exact_bv = |bv_idx: usize| -> bool {
+                        bnd_verts
+                            .get(bv_idx)
+                            .map(|bv| {
+                                bv.efirst == Some(i_in) && bv.elast == Some(i_out)
+                            })
+                            .unwrap_or(false)
+                    };
+                    // Prefer edge-local left/right ownership first (most stable for per-face corner).
+                    let mut pt: Option<u32> = edges_info
+                        .as_ref()
+                        .and_then(|edges| edges.get(i_out))
+                        .and_then(|info| {
+                            if let Some(li) = info.left_bv {
+                                if exact_bv(li) {
+                                    return bnd_pts.get(li).copied();
+                                }
+                            }
+                            if let Some(ri) = info.right_bv {
+                                if exact_bv(ri) {
+                                    return bnd_pts.get(ri).copied();
+                                }
+                            }
+                            info.left_bv
+                                .and_then(|li| bnd_pts.get(li).copied())
+                                .or_else(|| info.right_bv.and_then(|ri| bnd_pts.get(ri).copied()))
+                        });
+                    if pt.is_none() {
+                        // Fallback: sector matching by (incoming -> outgoing), then range.
+                        pt = sectors
+                            .iter()
+                            .find(|((a, b), _)| *a == i_in && *b == i_out)
+                            .or_else(|| {
+                                sectors.iter().find(|((a, b), _)| {
+                                    if *a == *b {
+                                        return i_out == *a;
+                                    }
+                                    if *a < *b {
+                                        i_out > *a && i_out <= *b
+                                    } else {
+                                        i_out > *a || i_out <= *b
+                                    }
+                                })
+                            })
+                            .map(|(_, p)| *p);
+                    }
                     if let (Some(pt), Some(di)) =
                         (pt, self.topo.half_edges.get_dense_index(he_out.into()))
                     {
@@ -585,6 +670,7 @@ impl<'a> BevelPipeline<'a> {
 
             if pass == 0
                 && self.params.loop_slide
+                && !self.params.debug_disable_adjust_offsets
                 && adjust_offsets::adjust_offsets(&mut self.graph, 6)
             {
                 continue;
@@ -623,7 +709,8 @@ impl<'a> BevelPipeline<'a> {
             if !p.is_valid() {
                 continue;
             }
-            let spokes: Vec<HalfEdgeId> = self.topo.iter_spoke_edges(p).collect();
+            let mut spokes: Vec<HalfEdgeId> = spoke_fan(self.topo, p);
+            debug_spokes(&mut spokes);
             if spokes.len() < 2 {
                 continue;
             }
@@ -721,6 +808,7 @@ impl<'a> BevelPipeline<'a> {
                     end,
                     u_pos,
                     v_pos,
+                    is_vertex_bevel,
                     selcount,
                     prev_dir,
                     next_dir,
@@ -784,7 +872,7 @@ impl<'a> BevelPipeline<'a> {
         let is_square_in = (pro_r - PRO_SQUARE_IN_R).abs() < 1e-6;
         let is_square_out = (pro_r - PRO_SQUARE_R).abs() < 1e-3;
         let _ = is_circle; // [CIRCLE_GUARD] Circle is the default path; SquareIn/SquareOut are opt-in branches.
-        if is_square_in && divisions > 1 {
+        if is_square_in && divisions > 1 && !self.params.debug_disable_square_in_vmesh {
             let ns = divisions;
             let ns2 = ns / 2;
             let odd = (ns & 1) == 1;
@@ -796,7 +884,8 @@ impl<'a> BevelPipeline<'a> {
                 if !p.is_valid() {
                     continue;
                 }
-                let spokes_all: Vec<HalfEdgeId> = self.topo.iter_spoke_edges(p).collect();
+                let mut spokes_all: Vec<HalfEdgeId> = spoke_fan(self.topo, p);
+                debug_spokes(&mut spokes_all);
                 let mut spokes: Vec<HalfEdgeId> = Vec::new();
                 for &he in &spokes_all {
                     if get_eidx(he, &he_to_eidx)
@@ -1042,7 +1131,8 @@ impl<'a> BevelPipeline<'a> {
                 let (u0, u1, v0, v1) = (p_u[i], p_u[i + 1], p_v[i], p_v[i + 1]);
                 let qa = out_p[v0] - out_p[u0];
                 let qb = out_p[u1] - out_p[u0];
-                let quad_fwd = qa.cross(qb).dot(a_n) >= 0.0;
+                let quad_fwd =
+                    self.params.debug_disable_strip_orient || qa.cross(qb).dot(a_n) >= 0.0;
                 let quad = if quad_fwd {
                     vec![u0, v0, v1, u1]
                 } else {
@@ -1078,7 +1168,8 @@ impl<'a> BevelPipeline<'a> {
             if !p.is_valid() {
                 continue;
             }
-            let spokes_all: Vec<HalfEdgeId> = self.topo.iter_spoke_edges(p).collect();
+            let mut spokes_all: Vec<HalfEdgeId> = spoke_fan(self.topo, p);
+            debug_spokes(&mut spokes_all);
             if spokes_all.len() < 3 || divisions < 2 {
                 continue;
             }
@@ -1179,6 +1270,27 @@ impl<'a> BevelPipeline<'a> {
                         Vec3::ZERO
                     });
                 }
+                if self.params.debug_swap_offsets_lr {
+                    std::mem::swap(&mut spoke_off_l_all, &mut spoke_off_r_all);
+                }
+                if self.params.debug_swap_face_pair_normals {
+                    std::mem::swap(&mut face_nos_all, &mut pair_face_nos_all);
+                }
+                if self.params.debug_invert_pair_face_normals {
+                    for n in &mut pair_face_nos_all {
+                        *n = -*n;
+                    }
+                }
+                if self.params.debug_invert_edge_ends {
+                    for e in &mut spoke_ends_all {
+                        *e = corner_pos + (corner_pos - *e);
+                    }
+                }
+                if self.params.debug_invert_edge_dirs {
+                    for d in &mut spoke_dirs_all {
+                        *d = -*d;
+                    }
+                }
                 let lite = boundary::BevelParamsLite {
                     offset: dist,
                     seg: divisions,
@@ -1194,7 +1306,7 @@ impl<'a> BevelPipeline<'a> {
                     },
                     spread: self.params.spread,
                 };
-                let bnd = boundary::build_boundary_lite(
+                let mut bnd = boundary::build_boundary_lite(
                     &spokes_all,
                     &spoke_is_bev_all,
                     &spoke_dirs_all,
@@ -1206,6 +1318,11 @@ impl<'a> BevelPipeline<'a> {
                     corner_pos,
                     &lite,
                 );
+                if self.params.debug_swap_left_right {
+                    for e in &mut bnd.edges {
+                        std::mem::swap(&mut e.left_bv, &mut e.right_bv);
+                    }
+                }
                 let mut arc_for: Vec<Option<(usize, bool)>> = vec![None; bnd.count];
                 for (s, info) in bnd.edges.iter().enumerate() {
                     if !info.is_bev {
@@ -1225,6 +1342,13 @@ impl<'a> BevelPipeline<'a> {
                         && bnd.bnd_verts[r].next == l
                     {
                         arc_for[r] = Some((s, false));
+                    }
+                }
+                if self.params.debug_invert_arc_for {
+                    for a in &mut arc_for {
+                        if let Some((_, fwd)) = a.as_mut() {
+                            *fwd = !*fwd;
+                        }
                     }
                 }
                 (
@@ -1379,7 +1503,11 @@ impl<'a> BevelPipeline<'a> {
 
             // Blender square_out_adj_vmesh: PRO_SQUARE_R + selcount>=3 + even segments (driven by real boundary + face normals).
             // [CIRCLE_GUARD] This block is ONLY for SquareOut. Circle path skips this entirely.
-            if is_square_out && selcount >= 3 && (divisions & 1) == 0 {
+            if is_square_out
+                && selcount >= 3
+                && (divisions & 1) == 0
+                && !self.params.debug_disable_square_out_adj_vmesh
+            {
                 let profiles: Vec<Vec3> = bnd.bnd_verts.iter().map(|bv| bv.pos).collect();
                 let middles: Vec<Vec3> = bnd
                     .bnd_verts
@@ -1547,7 +1675,7 @@ impl<'a> BevelPipeline<'a> {
             }
 
             // Blender tri_corner_adj_vmesh: strict tri_corner_test + cube-corner vmesh mapping (boundary-driven).
-            // [CIRCLE_GUARD] Circle CAN enter this tri_corner path (it excludes only SquareIn).
+            // Circle and SquareOut can use this path; only SquareIn is excluded.
             if !did_pipe && n_bndv == 3 && !is_square_in {
                 let offsets: Vec<f32> = spokes_all
                     .iter()
@@ -1703,7 +1831,11 @@ impl<'a> BevelPipeline<'a> {
                     n.normalize_or_zero()
                 };
                 let on = face_n_of(prim_id, &face_n_dense, self.geo).normalize_or_zero();
-                if nn.length_squared() > 1e-12 && on.length_squared() > 1e-12 && nn.dot(on) < 0.0 {
+                if !self.params.debug_disable_face_rebuild_orient
+                    && nn.length_squared() > 1e-12
+                    && on.length_squared() > 1e-12
+                    && nn.dot(on) < 0.0
+                {
                     vids.reverse();
                 }
                 out_polys.push(vids);
@@ -1760,6 +1892,16 @@ impl<'a> BevelPipeline<'a> {
 
         // Build output Geometry from (out_p, out_polys) with loop-normal semantics via vertex splitting:
         // one GeoVertex per polygon corner, each corner can have its own @N (Blender-style loop normals).
+        if self.params.debug_flip_output_winding {
+            for (pi, poly) in out_polys.iter_mut().enumerate() {
+                poly.reverse();
+                if let Some(cn) = out_poly_corner_n.get_mut(pi) {
+                    if cn.len() == poly.len() {
+                        cn.reverse();
+                    }
+                }
+            }
+        }
         let mut g = Geometry::new();
         for _ in 0..out_p.len() {
             let _ = g.points_mut().insert(());
@@ -1955,7 +2097,7 @@ impl<'a> BevelPipeline<'a> {
         }
         self.new_geo = g;
 
-        // Return workspace buffers for reuse
+        // 归还 workspace 缓冲区供下次复用
         WORKSPACE.with(|ws| {
             let mut ws = ws.borrow_mut();
             ws.bev_edge = bev_edge;
@@ -1964,7 +2106,7 @@ impl<'a> BevelPipeline<'a> {
             ws.face_normals_dense = face_n_dense;
             ws.dense_to_pid = dense_to_pid;
             ws.dense_to_he = dense_to_he;
-            ws.reset(); // Reset but keep capacity
+            ws.reset(); // 重置但保留 capacity
         });
     }
 
@@ -2090,7 +2232,7 @@ mod tests {
             }
         }
         let builder = super::super::builder::BevelBuilder::new(&g, topo.as_ref());
-        let graph = builder.build(&edge_sel, 3, 0.2, None);
+        let graph = builder.build(&edge_sel, 3, 0.2, None, None);
         let bp = BevelParams::from_node_params(
             0,
             0,
@@ -2116,6 +2258,22 @@ mod tests {
             -1,
             false,
             1.0,
+            0,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
         );
         let out = BevelPipeline::new_with_params(&g, topo.as_ref(), graph, bp).execute();
         assert!(out.points().len() > 8);
@@ -2131,5 +2289,95 @@ mod tests {
         }
         assert!(!any_bad);
         let _ = AttributeId::from("@P");
+    }
+
+    fn two_quads_plane() -> Geometry {
+        let mut g = Geometry::new();
+        for _ in 0..6 {
+            let _ = g.points_mut().insert(());
+        }
+        g.insert_point_attribute(
+            attrs::P,
+            Attribute::new(vec![
+                Vec3::new(0.0, 0.0, 0.0),
+                Vec3::new(1.0, 0.0, 0.0),
+                Vec3::new(2.0, 0.0, 0.0),
+                Vec3::new(0.0, 1.0, 0.0),
+                Vec3::new(1.0, 1.0, 0.0),
+                Vec3::new(2.0, 1.0, 0.0),
+            ]),
+        );
+        let pids: Vec<PointId> = (0..6).map(PointId::from).collect();
+        let vids: Vec<VertexId> = pids
+            .into_iter()
+            .map(|pid| VertexId::from(g.vertices_mut().insert(GeoVertex { point_id: pid })))
+            .collect();
+        let face = |a: usize, b: usize, c: usize, d: usize| {
+            GeoPrimitive::Polygon(PolygonPrim {
+                vertices: vec![vids[a], vids[b], vids[c], vids[d]],
+            })
+        };
+        for f in [face(0, 1, 4, 3), face(1, 2, 5, 4)] {
+            let _ = g.primitives_mut().insert(f);
+        }
+        g
+    }
+
+    #[test]
+    fn polybevel_boundary_vertex_spokes_do_not_flip_winding() {
+        let g = two_quads_plane();
+        let topo = g.get_topology();
+        let mut edge_sel = vec![false; topo.half_edges.len()];
+        // Select the shared interior edge by selecting both faces (boundary edges have no pair and are ignored).
+        for (he_idx, _) in topo.half_edges.iter_enumerated() {
+            let he = HalfEdgeId::from(he_idx);
+            let pair = topo.pair(he);
+            if !pair.is_valid() {
+                continue;
+            }
+            if let Some(di) = topo.half_edges.get_dense_index(he_idx) {
+                edge_sel[di] = true;
+            }
+            if let Some(di) = topo.half_edges.get_dense_index(pair.into()) {
+                edge_sel[di] = true;
+            }
+        }
+        let builder = super::super::builder::BevelBuilder::new(&g, topo.as_ref());
+        let graph = builder.build(&edge_sel, 2, 0.1, None, None);
+        let bp = BevelParams::from_node_params(
+            0, 0, 0.1, 2, 0, 0.5, String::new(), 0, 0, 0.1, true, true, false, String::new(),
+            false, false, false, false, false, 0, 0, -1, false, 1.0, 0, false, false, false, false,
+            false, false, false, false, false, false, false, false, false, false, false,
+        );
+        let out = BevelPipeline::new_with_params(&g, topo.as_ref(), graph, bp).execute();
+        let pts = out.get_point_position_attribute().unwrap_or(&[]);
+        let poly_n = |poly: &PolygonPrim| -> Vec3 {
+            let ids: Vec<Vec3> = poly
+                .vertices
+                .iter()
+                .filter_map(|&vid| out.vertices().get(vid.into()).map(|v| v.point_id))
+                .filter_map(|pid| out.points().get_dense_index(pid.into()).and_then(|di| pts.get(di).copied()))
+                .collect();
+            if ids.len() < 3 {
+                return Vec3::ZERO;
+            }
+            let mut n = Vec3::ZERO;
+            for i in 0..ids.len() {
+                let p0 = ids[i];
+                let p1 = ids[(i + 1) % ids.len()];
+                n.x += (p0.y - p1.y) * (p0.z + p1.z);
+                n.y += (p0.z - p1.z) * (p0.x + p1.x);
+                n.z += (p0.x - p1.x) * (p0.y + p1.y);
+            }
+            n.normalize_or_zero()
+        };
+        // Expect all faces to keep consistent +Z winding for this coplanar input.
+        for prim in out.primitives().iter() {
+            let GeoPrimitive::Polygon(p) = prim else { continue };
+            let n = poly_n(p);
+            if n.length_squared() > 1e-10 {
+                assert!(n.dot(Vec3::Z) >= 0.0);
+            }
+        }
     }
 }

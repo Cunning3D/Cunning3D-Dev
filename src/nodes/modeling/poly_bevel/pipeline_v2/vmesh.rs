@@ -81,13 +81,13 @@ fn emit_vmesh_result(vm: &VMeshGrid, ns: usize) -> VMeshResult {
                 let b = v_at(i, j, k + 1);
                 let c = v_at(i, j + 1, k + 1);
                 let d = v_at(i, j + 1, k);
-                polys.push(vec![a, d, c, b]);
+                polys.push(vec![a, b, c, d]);
             }
         }
     }
     if odd != 0 {
         let mut poly: Vec<usize> = (0..n_bndv).map(|i| v_at(i, ns2, ns2)).collect();
-        poly.reverse();
+        // poly is already CCW (0..n_bndv), which matches the hole boundary left by the grid (c->d was CW).
         if poly.len() >= 3 {
             polys.push(poly);
         }
@@ -526,13 +526,13 @@ pub fn emit_vmesh_faces(
                 let b = v_at(i, j, k + 1);
                 let c = v_at(i, j + 1, k + 1);
                 let d = v_at(i, j + 1, k);
-                out_polys.push(vec![a, d, c, b]);
+                out_polys.push(vec![a, b, c, d]);
             }
         }
     }
     if odd != 0 {
         let mut poly: Vec<usize> = (0..n_bndv).map(|i| v_at(i, ns2, ns2)).collect();
-        poly.reverse();
+        // poly is already CCW
         if poly.len() >= 3 {
             out_polys.push(poly);
         }

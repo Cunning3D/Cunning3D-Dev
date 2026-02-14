@@ -87,6 +87,7 @@ use crate::tabs_system::viewport_3d::grid::grid_params::grid_params;
 mod console;
 mod debug_settings;
 mod gizmos;
+mod hot_restart;
 pub mod mesh;
 mod node_editor_settings;
 mod public;
@@ -103,6 +104,8 @@ mod input;
 mod invalidator;
 mod render;
 mod scene;
+mod runtime_module;
+mod rust_code_watch;
 
 mod runtime_paths;
 
@@ -328,6 +331,9 @@ fn main() {
     let mut bridge_path: Option<String> = None;
     let mut bridge_ephemeral = false;
     let mut bridge_db_path: Option<String> = None;
+    let mut restore_state: Option<String> = None;
+    let mut handoff_port: Option<u16> = None;
+    let mut handoff_token: Option<String> = None;
     {
         let mut it = std::env::args().skip(1);
         while let Some(a) = it.next() {
@@ -343,6 +349,18 @@ fn main() {
                 bridge_ephemeral = true;
                 continue;
             }
+            if a == "--restore-state" {
+                restore_state = it.next();
+                continue;
+            }
+            if a == "--handoff-port" {
+                handoff_port = it.next().and_then(|s| s.parse::<u16>().ok());
+                continue;
+            }
+            if a == "--handoff-token" {
+                handoff_token = it.next();
+                continue;
+            }
         }
     }
     puffin::set_scopes_on(false); // Puffin off by default (enable via UI)
@@ -353,6 +371,11 @@ fn main() {
         })
         .insert_resource(bridge_db_sync::BridgeDb {
             path: bridge_db_path,
+        })
+        .insert_resource(hot_restart::HotRestartSettings {
+            restore_path: restore_state.map(std::path::PathBuf::from),
+            handoff_port,
+            handoff_token,
         })
         // Configure Winit for DCC/Editor Application.
         // Use Continuous when focused to avoid visible stutter/flash during camera interaction.
@@ -365,6 +388,7 @@ fn main() {
             DefaultPlugins
                 .set(AssetPlugin {
                     file_path: assets_dir,
+                    watch_for_changes_override: Some(true),
                     ..default()
                 })
                 .set(WindowPlugin {
@@ -389,6 +413,11 @@ fn main() {
         .add_plugins(app_jobs::AppJobsPlugin)
         .add_plugins(project::ProjectIoPlugin)
         .add_plugins(crate::cunning_core::plugin_system::PluginBuildJobsPlugin)
+        .add_plugins(crate::runtime_module::build_jobs::RuntimeModuleBuildJobsPlugin)
+        .add_plugins(crate::rust_code_watch::RustCodeWatchPlugin)
+        .init_resource::<crate::runtime_module::RuntimeModuleState>()
+        .init_resource::<crate::runtime_module::RuntimeModuleLog>()
+        .add_plugins(hot_restart::HotRestartPlugin)
         .add_plugins(crate::nodes::graph_model::GraphModelPlugin)
         .add_plugins(crate::nodes::ai_texture::AiTexturePlugin)
         .add_plugins(EguiPlugin)
@@ -466,7 +495,10 @@ fn main() {
         .add_message::<ui::OpenFilePickerEvent>()
         .add_message::<ui::FilePickerChosenEvent>()
         .add_message::<crate::cunning_core::plugin_system::CompileRustPluginRequest>()
+        .add_message::<crate::runtime_module::build_jobs::CompileRuntimeModuleRequestMsg>()
         .add_message::<ui::OpenAiWorkspaceWindowEvent>()
+        .add_message::<ui::OpenHotReloadWindowEvent>()
+        .add_message::<hot_restart::HotRestartSnapshotReady>()
         .add_message::<ui::OpenNodeInfoWindowEvent>()
         .add_message::<SetCameraViewEvent>()
         .add_message::<crate::viewport_options::CameraRotateEvent>()
@@ -482,6 +514,8 @@ fn main() {
         .init_resource::<crate::camera::TurntableRuntimeState>()
         .init_resource::<FloatingTabRegistry>()
         .init_resource::<console::ConsoleLog>()
+        .init_resource::<crate::tabs_system::pane::hot_reload::HotReloadLog>()
+        .init_resource::<crate::tabs_system::pane::hot_reload::HotReloadJobsSnapshot>()
         .init_resource::<crate::cunning_core::cda::CdaLibrary>()
         .init_resource::<input::NavigationInput>()
         .init_resource::<ui::TimelineState>()
@@ -493,7 +527,6 @@ fn main() {
         .init_resource::<settings::SettingsStores>()
         .init_resource::<crate::app::windowing::PendingNaiveWindows>()
         .init_resource::<crate::app::windowing::GpuiAiWorkspaceState>()
-        .init_resource::<crate::app::windowing::WinCornerClipState>()
         .init_resource::<AsyncComputeState>() // Phase 3: Async Compute
         .init_resource::<CookThrottleState>() // Cook throttle for interaction (10-15Hz during drag)
         .insert_resource(theme::ModernTheme::dark()) // Use dark theme by default
@@ -526,6 +559,26 @@ fn main() {
             crate::cunning_core::plugin_system::auto_reload_latest_plugins_system
                 .run_if(in_state(AppState::Editor))
                 .before(show_editor_ui),
+        )
+        .add_systems(
+            Update,
+            crate::cunning_core::plugin_system::hot_reload_shortcut_system
+                .run_if(in_state(AppState::Editor))
+                .before(show_editor_ui),
+        )
+        .add_systems(
+            Update,
+            crate::tabs_system::pane::hot_reload::sync_hot_reload_jobs_snapshot_system
+                .run_if(in_state(AppState::Editor)),
+        )
+        .add_systems(
+            Update,
+            crate::tabs_system::pane::hot_reload::log_asset_hot_reload_system
+                .run_if(in_state(AppState::Editor)),
+        )
+        .add_systems(
+            Update,
+            crate::runtime_module::runtime_tick_system.run_if(in_state(AppState::Editor)),
         )
         .add_systems(
             Update,
@@ -635,11 +688,6 @@ fn main() {
                 .run_if(in_state(AppState::Editor))
                 .after(crate::camera::camera_transition_system),
         )
-        .add_systems(
-            Update,
-            crate::app::windowing::apply_win_round_corners_system
-                .run_if(in_state(AppState::Editor)),
-        )
         // Camera parameters and multi-window management
         .add_systems(
             Update,
@@ -673,6 +721,7 @@ fn main() {
             (
                 crate::app::windowing::handle_float_tab_window_system,
                 crate::app::windowing::handle_open_settings_window_system,
+                crate::app::windowing::handle_open_hot_reload_window_system,
             )
                 .after(EguiSet::ProcessOutput),
         )

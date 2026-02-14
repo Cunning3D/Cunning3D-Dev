@@ -77,77 +77,112 @@ impl Plugin for CunningGridPlanePlugin {
 #[derive(Resource, Clone)]
 pub struct GridPlaneShader(pub Handle<Shader>);
 
+/// SDF vector-rendered digit atlas (line-segment geometry per glyph).
 fn create_font_atlas(images: &mut Assets<Image>) -> Handle<Image> {
     use bevy::asset::RenderAssetUsages;
     use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
     use bevy_image::{ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
 
-    // 12 chars: 0123456789-.
-    let w = 512;
-    let h = 384;
-    let mut data = vec![0u8; (w * h) as usize];
-    let font_5x7 = [
-        0x3E, 0x51, 0x49, 0x45, 0x3E, // 0
-        0x00, 0x42, 0x7F, 0x40, 0x00, // 1
-        0x42, 0x61, 0x51, 0x49, 0x46, // 2
-        0x21, 0x41, 0x45, 0x4B, 0x31, // 3
-        0x18, 0x14, 0x12, 0x7F, 0x10, // 4
-        0x27, 0x45, 0x45, 0x45, 0x39, // 5
-        0x3C, 0x4A, 0x49, 0x49, 0x30, // 6
-        0x01, 0x71, 0x09, 0x05, 0x03, // 7
-        0x36, 0x49, 0x49, 0x49, 0x36, // 8
-        0x06, 0x49, 0x49, 0x29, 0x1E, // 9
-        0x08, 0x08, 0x08, 0x08, 0x08, // -
-        0x00, 0x60, 0x60, 0x00, 0x00, // .
+    // 4×3 grid, 256px per cell → 1024×768 R8 SDF atlas
+    let (w, h, cs) = (1024usize, 768usize, 256usize);
+    let mut data = vec![0u8; w * h];
+
+    // Rounded digit shapes: arcs for curves, lines for straights (5×7 char space, y-down)
+    type S = (f32, f32, f32, f32);
+    let pi = std::f32::consts::PI;
+    let hp = pi * 0.5;
+    let arc = |cx: f32, cy: f32, r: f32, a0: f32, a1: f32| -> Vec<S> {
+        (0..8).map(|i| {
+            let t0 = a0 + (a1 - a0) * i as f32 / 8.0;
+            let t1 = a0 + (a1 - a0) * (i + 1) as f32 / 8.0;
+            (cx + r * t0.cos(), cy + r * t0.sin(), cx + r * t1.cos(), cy + r * t1.sin())
+        }).collect::<Vec<S>>()
+    };
+    let g: [Vec<S>; 12] = [
+        // 0: Oval (two semicircles + sides)
+        [arc(2.5, 1.8, 1.7, pi, 2.0*pi), vec![(4.2,1.8,4.2,5.2)],
+         arc(2.5, 5.2, 1.7, 0.0, pi),    vec![(0.8,5.2,0.8,1.8)]].concat(),
+        // 1: Vertical + flag + base serif
+        vec![(2.5,0.5,2.5,6.5),(1.3,1.8,2.5,0.5),(1.5,6.5,3.5,6.5)],
+        // 2: Top semicircle + diagonal + bottom bar
+        [arc(2.5, 2.0, 1.7, pi, 2.0*pi),
+         vec![(4.2,2.0,0.8,6.5),(0.8,6.5,4.2,6.5)]].concat(),
+        // 3: Two C-bumps opening left
+        [vec![(0.8,0.5,2.5,0.5)], arc(2.5, 2.0, 1.5, -hp, hp),
+         vec![(2.5,3.5,1.8,3.5)], arc(2.5, 5.0, 1.5, -hp, hp),
+         vec![(2.5,6.5,0.8,6.5)]].concat(),
+        // 4: Left upper + middle + right full
+        vec![(0.8,0.5,0.8,3.5),(0.8,3.5,4.2,3.5),(4.2,0.5,4.2,6.5)],
+        // 5: Top bar + left upper + bottom 3/4 arc
+        [vec![(4.2,0.5,0.8,0.5),(0.8,0.5,0.8,3.3),(0.8,3.3,2.5,3.3)],
+         arc(2.5, 5.0, 1.7, -hp, pi)].concat(),
+        // 6: Top arc + left side + bottom oval + right lower + mid bar
+        [arc(2.5, 1.8, 1.7, pi, 2.0*pi), vec![(0.8,1.8,0.8,5.2)],
+         arc(2.5, 5.2, 1.7, pi, 0.0), vec![(4.2,5.2,4.2,3.3),(0.8,3.3,4.2,3.3)]].concat(),
+        // 7: Top bar + right side
+        vec![(0.5,0.5,4.5,0.5),(4.5,0.5,4.5,6.5)],
+        // 8: Two ovals stacked
+        [arc(2.5, 1.8, 1.3, pi, 2.0*pi), vec![(3.8,1.8,3.8,3.5),(1.2,3.5,1.2,1.8)],
+         vec![(1.2,3.5,3.8,3.5)],
+         arc(2.5, 5.2, 1.7, pi, 0.0), vec![(4.2,5.2,4.2,3.5),(0.8,3.5,0.8,5.2)],
+         arc(2.5, 5.2, 1.7, 0.0, pi)].concat(),
+        // 9: Top oval + right side + bottom arc
+        [arc(2.5, 1.8, 1.7, 0.0, pi), vec![(0.8,1.8,0.8,3.3)],
+         vec![(0.8,3.3,4.2,3.3)],
+         arc(2.5, 1.8, 1.7, pi, 2.0*pi), vec![(4.2,1.8,4.2,5.2)],
+         arc(2.5, 5.2, 1.7, 0.0, pi)].concat(),
+        // -: Short bar
+        vec![(1.2,3.5,3.8,3.5)],
+        // .: Small cross
+        vec![(2.0,5.8,3.0,5.8),(2.5,5.3,2.5,6.3)],
     ];
-    for i in 0..12 {
-        let cw = 128;
-        let ch = 128;
-        let col_idx = i % 4;
-        let row_idx = i / 4;
-        let ox = col_idx * cw;
-        let oy = row_idx * ch;
-        let char_bytes = &font_5x7[i * 5..(i + 1) * 5];
-        let scale = 14;
-        let scale_f = scale as f32;
-        let margin_x = (cw - 5 * scale) / 2;
-        let margin_y = (ch - 7 * scale) / 2;
-        let ss: i32 = 4;
-        for y in 0..ch {
-            for x in 0..cw {
-                if x < margin_x || x >= margin_x + 5 * scale || y < margin_y || y >= margin_y + 7 * scale { continue; }
-                let mut hits: i32 = 0;
-                for sy in 0..ss {
-                    for sx in 0..ss {
-                        let subx = (x - margin_x) as f32 + (sx as f32 + 0.5) / ss as f32;
-                        let suby = (y - margin_y) as f32 + (sy as f32 + 0.5) / ss as f32;
-                        let fx = (subx / scale_f).floor() as i32;
-                        let fy = (suby / scale_f).floor() as i32;
-                        if fx >= 0 && fx < 5 && fy >= 0 && fy < 7 {
-                            let col_byte = char_bytes[fx as usize];
-                            hits += ((col_byte >> (fy as u32)) & 1) as i32;
-                        }
-                    }
+
+    // Uniform scale: fit 5×7 char in square cell with margin
+    let margin = cs as f32 * 0.08;
+    let avail = cs as f32 - 2.0 * margin;
+    let scale = avail / 7.0;
+    let ox_base = (cs as f32 - 5.0 * scale) * 0.5;
+    let oy_base = (cs as f32 - 7.0 * scale) * 0.5;
+    let stroke = 14.0f32; // large stroke → round 14px-radius corner fillets
+    let max_d = stroke + 8.0; // wide SDF encoding range for smooth gradients
+
+    for (ci, segs) in g.iter().enumerate() {
+        let (cx0, cy0) = ((ci % 4) * cs, (ci / 4) * cs);
+        for py in 0..cs {
+            for px in 0..cs {
+                let (fx, fy) = (px as f32 + 0.5, py as f32 + 0.5);
+                let mut min_d = f32::MAX;
+                for &(x0, y0, x1, y1) in segs {
+                    min_d = min_d.min(seg_dist(fx, fy,
+                        ox_base + x0 * scale, oy_base + y0 * scale,
+                        ox_base + x1 * scale, oy_base + y1 * scale));
                 }
-                if hits > 0 {
-                    let a = (hits as f32 / (ss * ss) as f32 * 255.0).round() as u8;
-                    let p_idx = (oy + y) * w + (ox + x);
-                    data[p_idx as usize] = a;
-                }
+                // SDF: 0.5 = edge, >0.5 = inside, <0.5 = outside
+                let v = 0.5 + (stroke - min_d) / (2.0 * max_d);
+                data[(cy0 + py) * w + (cx0 + px)] = (v.clamp(0.0, 1.0) * 255.0) as u8;
             }
         }
     }
+
     let mut image = Image::new_fill(
         Extent3d { width: w as u32, height: h as u32, depth_or_array_layers: 1 },
-        TextureDimension::D2,
-        &data,
-        TextureFormat::R8Unorm,
+        TextureDimension::D2, &data, TextureFormat::R8Unorm,
         RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
     );
     let mut desc = ImageSamplerDescriptor::default();
-    desc.set_filter(ImageFilterMode::Linear);
+    desc.set_filter(ImageFilterMode::Linear); // SDF + bilinear = perfect AA at any scale
     image.sampler = ImageSampler::Descriptor(desc);
     images.add(image)
+}
+
+/// Point-to-segment distance in pixel space.
+#[inline]
+fn seg_dist(px: f32, py: f32, x0: f32, y0: f32, x1: f32, y1: f32) -> f32 {
+    let (dx, dy) = (x1 - x0, y1 - y0);
+    let l2 = dx * dx + dy * dy;
+    if l2 < 1e-10 { return ((px - x0).powi(2) + (py - y0).powi(2)).sqrt(); }
+    let t = (((px - x0) * dx + (py - y0) * dy) / l2).clamp(0.0, 1.0);
+    ((px - x0 - t * dx).powi(2) + (py - y0 - t * dy).powi(2)).sqrt()
 }
 
 pub fn setup_grid_plane_system(

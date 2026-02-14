@@ -18,6 +18,7 @@ nalgebra = "0.34.1"
 parry3d = "0.13"
 puffin = { package = "cunning-puffin", path = "../../libs/puffin_source/puffin" }
 kiddo = "5.2.4"
+rustc-hash = "2.1"
 uuid = { version = "1.8.0", features = ["v4", "v5", "serde", "js"] }
 inventory = "0.3"
 redb = "2.1.0"

@@ -6,7 +6,6 @@ use bevy_egui::{
 
 use crate::{
     tabs_system::EditorTabContext,
-    app::window_frame::WINDOW_SAFE_INSET_LP,
     viewport_options::{DisplayMode, OpenNaiveWindowEvent},
 };
 use crate::coverlay_bevy_ui::{coverlay_collect_panels, CoverlayDockTab};
@@ -670,11 +669,9 @@ impl Viewport3DTab {
         let available_size = ui.available_size();
         self.viewport_size = Some(available_size);
         let (rect, response) = ui.allocate_exact_size(available_size, Sense::click_and_drag());
-        // Only the left sidebar gets an inset; the viewport itself stays full-rect.
-        let r = rect;
-        self.viewport_rect = Some(r);
+        self.viewport_rect = Some(rect);
         if context.viewport_layout.window_entity != Some(context.window_entity) { context.viewport_layout.window_entity = Some(context.window_entity); }
-        if context.viewport_layout.logical_rect != Some(r) { context.viewport_layout.logical_rect = Some(r); }
+        if context.viewport_layout.logical_rect != Some(rect) { context.viewport_layout.logical_rect = Some(rect); }
         let interaction_state = &mut context.viewport_interaction_state;
         let (was_r, was_m, was_a) = (interaction_state.is_right_button_dragged, interaction_state.is_middle_button_dragged, interaction_state.is_alt_left_button_dragged);
         let hovered = response.hovered();

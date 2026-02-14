@@ -253,9 +253,11 @@ pub fn compute_boolean(
             match subtract_mode {
                 0 => (BooleanOperation::Difference, geo_a, geo_b), // A - B
                 1 => (BooleanOperation::Difference, geo_b, geo_a), // B - A
-                _ => (BooleanOperation::Difference, geo_a, geo_b), // Default Both to A - B
+                2 => (BooleanOperation::Xor, geo_a, geo_b),        // Both (XOR)
+                _ => (BooleanOperation::Difference, geo_a, geo_b),
             }
         }
+        3 => (BooleanOperation::Xor, geo_a, geo_b), // Difference (XOR)
         _ => (BooleanOperation::Difference, geo_a, geo_b),
     };
 

@@ -11,7 +11,8 @@ use crate::nodes::parameter::{Parameter, ParameterUIType, ParameterValue};
 use crate::register_node;
 
 use crate::libs::algorithms::algorithms_runtime::unity_spline::{
-    MetaData, Spline, SplineContainer, TangentMode, CATMULL_ROM_TENSION,
+    calculate_knot_rotation, BezierKnot, MetaData, Spline, SplineContainer, TangentMode,
+    CATMULL_ROM_TENSION,
 };
 use crate::libs::geometry::attrs;
 use std::collections::HashMap;
@@ -25,6 +26,90 @@ fn default_container() -> SplineContainer {
     c.splines[0].knots.clear();
     c.splines[0].meta.clear();
     c
+}
+
+#[inline]
+fn sample_vec3_attr(attr: Option<&Attribute>, index: usize) -> Option<Vec3> {
+    let a = attr?;
+    if let Some(s) = a.as_slice::<Vec3>() {
+        return s.get(index).copied();
+    }
+    if let Some(pb) = a.as_paged::<Vec3>() {
+        return pb.get(index);
+    }
+    None
+}
+
+fn try_container_from_polyline_inputs(inputs: &[Arc<dyn GeometryRef>]) -> Option<SplineContainer> {
+    for input in inputs {
+        let geo = input.materialize();
+        let p_attr = geo.get_point_attribute(attrs::P);
+        if p_attr.is_none() {
+            continue;
+        }
+
+        let mut container = SplineContainer::default();
+        for prim in geo.primitives().iter() {
+            let GeoPrimitive::Polyline(line) = prim else {
+                continue;
+            };
+            if line.vertices.len() < 2 {
+                continue;
+            }
+
+            let mut positions: Vec<Vec3> = Vec::with_capacity(line.vertices.len());
+            for vid in &line.vertices {
+                let Some(v) = geo.vertices().get((*vid).into()) else {
+                    continue;
+                };
+                let Some(pidx) = geo.points().get_dense_index(v.point_id.into()) else {
+                    continue;
+                };
+                let Some(pos) = sample_vec3_attr(p_attr, pidx) else {
+                    continue;
+                };
+                positions.push(pos);
+            }
+            if positions.len() < 2 {
+                continue;
+            }
+
+            let mut spline = Spline::default();
+            spline.closed = line.closed;
+            for i in 0..positions.len() {
+                let p = positions[i];
+                let prev = if i > 0 {
+                    positions[i - 1]
+                } else if spline.closed {
+                    positions[positions.len() - 1]
+                } else {
+                    p
+                };
+                let next = if i + 1 < positions.len() {
+                    positions[i + 1]
+                } else if spline.closed {
+                    positions[0]
+                } else {
+                    p
+                };
+                spline.knots.push(BezierKnot {
+                    position: p,
+                    tangent_in: Vec3::ZERO,
+                    tangent_out: Vec3::ZERO,
+                    rotation: calculate_knot_rotation(prev, p, next, Vec3::Y),
+                });
+                spline
+                    .meta
+                    .push(MetaData::new(TangentMode::Linear, CATMULL_ROM_TENSION));
+            }
+            container.splines.push(spline);
+        }
+
+        if !container.splines.is_empty() {
+            return Some(container);
+        }
+    }
+    None
 }
 
 impl NodeParameters for UnitySplineNode {
@@ -56,9 +141,9 @@ impl NodeParameters for UnitySplineNode {
 }
 
 impl NodeOp for UnitySplineNode {
-    fn compute(&self, params: &[Parameter], _inputs: &[Arc<dyn GeometryRef>]) -> Arc<Geometry> {
+    fn compute(&self, params: &[Parameter], inputs: &[Arc<dyn GeometryRef>]) -> Arc<Geometry> {
         let mut g = Geometry::new();
-        let Some(container) =
+        let container = try_container_from_polyline_inputs(inputs).or_else(|| {
             params
                 .iter()
                 .find(|p| p.name == "spline")
@@ -66,7 +151,8 @@ impl NodeOp for UnitySplineNode {
                     ParameterValue::UnitySpline(c) => Some(c.clone()),
                     _ => None,
                 })
-        else {
+        });
+        let Some(container) = container else {
             return Arc::new(g);
         };
         if container.splines.is_empty() {

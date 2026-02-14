@@ -30,6 +30,18 @@ pub struct Topology {
     
     /// Map from Point ID -> One outgoing HalfEdge ID (if any)
     pub point_to_halfedge: HashMap<PointId, HalfEdgeId>,
+
+    /// O(1) point -> halfedge cache keyed by PointId.index with generation check.
+    #[serde(skip)]
+    point_to_halfedge_dense: Vec<HalfEdgeId>,
+    #[serde(skip)]
+    point_to_halfedge_gen: Vec<u32>,
+
+    /// O(1) primitive -> halfedge cache keyed by PrimId.index with generation check.
+    #[serde(skip)]
+    primitive_to_halfedge_dense: Vec<HalfEdgeId>,
+    #[serde(skip)]
+    primitive_to_halfedge_gen: Vec<u32>,
     
     /// Tracks boundary edges (edges where next_equivalent == self).
     pub boundary_halfedges: Vec<HalfEdgeId>,
@@ -102,11 +114,11 @@ impl Topology {
                 
                 // Record Primitive -> HalfEdge
                 if i == 0 {
-                    topo.primitive_to_halfedge.insert(prim_id, he_id);
+                    topo.set_primitive_start_halfedge(prim_id, he_id);
                 }
                 
                 // Record Point -> HalfEdge
-                topo.point_to_halfedge.insert(p_curr, he_id);
+                topo.set_point_start_halfedge(p_curr, he_id);
                 
                 // Register for equivalent linking
                 // Sort keys to group (u,v) and (v,u)
@@ -151,6 +163,104 @@ impl Topology {
     /// Iterates all points known to this topology.
     pub fn iter_points(&self) -> impl Iterator<Item = PointId> + '_ {
         self.point_to_halfedge.keys().copied()
+    }
+
+    #[inline]
+    fn ensure_point_cache_capacity(&mut self, point_id: PointId) {
+        let i = point_id.index as usize;
+        if i >= self.point_to_halfedge_dense.len() {
+            let new_len = i + 1;
+            self.point_to_halfedge_dense.resize(new_len, HalfEdgeId::INVALID);
+            self.point_to_halfedge_gen.resize(new_len, u32::MAX);
+        }
+    }
+
+    #[inline]
+    fn ensure_primitive_cache_capacity(&mut self, prim_id: PrimId) {
+        let i = prim_id.index as usize;
+        if i >= self.primitive_to_halfedge_dense.len() {
+            let new_len = i + 1;
+            self.primitive_to_halfedge_dense
+                .resize(new_len, HalfEdgeId::INVALID);
+            self.primitive_to_halfedge_gen.resize(new_len, u32::MAX);
+        }
+    }
+
+    #[inline]
+    fn set_point_start_halfedge(&mut self, point_id: PointId, he_id: HalfEdgeId) {
+        self.point_to_halfedge.insert(point_id, he_id);
+        self.ensure_point_cache_capacity(point_id);
+        let i = point_id.index as usize;
+        self.point_to_halfedge_dense[i] = he_id;
+        self.point_to_halfedge_gen[i] = point_id.generation;
+    }
+
+    #[inline]
+    fn clear_point_start_halfedge(&mut self, point_id: PointId) {
+        self.point_to_halfedge.remove(&point_id);
+        let i = point_id.index as usize;
+        if i < self.point_to_halfedge_dense.len() {
+            self.point_to_halfedge_dense[i] = HalfEdgeId::INVALID;
+            self.point_to_halfedge_gen[i] = u32::MAX;
+        }
+    }
+
+    #[inline]
+    fn get_point_start_halfedge(&self, point_id: PointId) -> HalfEdgeId {
+        let i = point_id.index as usize;
+        if i < self.point_to_halfedge_dense.len()
+            && self.point_to_halfedge_gen.get(i).copied().unwrap_or(u32::MAX) == point_id.generation
+        {
+            let he = self.point_to_halfedge_dense[i];
+            if he.is_valid() {
+                return he;
+            }
+        }
+        self.point_to_halfedge
+            .get(&point_id)
+            .copied()
+            .unwrap_or(HalfEdgeId::INVALID)
+    }
+
+    #[inline]
+    fn set_primitive_start_halfedge(&mut self, prim_id: PrimId, he_id: HalfEdgeId) {
+        self.primitive_to_halfedge.insert(prim_id, he_id);
+        self.ensure_primitive_cache_capacity(prim_id);
+        let i = prim_id.index as usize;
+        self.primitive_to_halfedge_dense[i] = he_id;
+        self.primitive_to_halfedge_gen[i] = prim_id.generation;
+    }
+
+    #[inline]
+    fn clear_primitive_start_halfedge(&mut self, prim_id: PrimId) {
+        self.primitive_to_halfedge.remove(&prim_id);
+        let i = prim_id.index as usize;
+        if i < self.primitive_to_halfedge_dense.len() {
+            self.primitive_to_halfedge_dense[i] = HalfEdgeId::INVALID;
+            self.primitive_to_halfedge_gen[i] = u32::MAX;
+        }
+    }
+
+    #[inline]
+    fn get_primitive_start_halfedge(&self, prim_id: PrimId) -> HalfEdgeId {
+        let i = prim_id.index as usize;
+        if i < self.primitive_to_halfedge_dense.len()
+            && self
+                .primitive_to_halfedge_gen
+                .get(i)
+                .copied()
+                .unwrap_or(u32::MAX)
+                == prim_id.generation
+        {
+            let he = self.primitive_to_halfedge_dense[i];
+            if he.is_valid() {
+                return he;
+            }
+        }
+        self.primitive_to_halfedge
+            .get(&prim_id)
+            .copied()
+            .unwrap_or(HalfEdgeId::INVALID)
     }
     
     // --- Traversal Helpers ---
@@ -239,11 +349,34 @@ impl Topology {
     
     /// Iterate all half-edges incident to a point (outgoing).
     pub fn iter_spoke_edges(&self, point_id: PointId) -> SpokeIterator {
-        let start_he = self.point_to_halfedge.get(&point_id).copied().unwrap_or(HalfEdgeId::INVALID);
+        let start_he = self.get_point_start_halfedge(point_id);
+        let mut first = start_he;
+        if start_he.is_valid() {
+            // Walk "backwards" around the vertex (pair->next) until boundary or cycle.
+            // This makes boundary vertices return a complete, stable fan instead of stopping mid-way.
+            let mut curr = start_he;
+            let mut it = 0;
+            loop {
+                let pair = self.pair(curr);
+                if !pair.is_valid() {
+                    break;
+                }
+                let nxt = self.next(pair);
+                if !nxt.is_valid() || nxt == start_he {
+                    break;
+                }
+                curr = nxt;
+                first = curr;
+                it += 1;
+                if it > 256 {
+                    break;
+                }
+            }
+        }
         SpokeIterator {
             topo: self,
-            start_he,
-            current_he: start_he,
+            start_he: first,
+            current_he: first,
             just_started: true,
         }
     }
@@ -269,16 +402,19 @@ impl Topology {
             let prim = he.primitive_index;
             
             // Remove from point map if this was the recorded spoke
-            if self.point_to_halfedge.get(&origin) == Some(&he_id) {
+            if self.get_point_start_halfedge(origin) == he_id {
                 // Try to find another spoke, or remove entry
                 let alt = self.iter_spoke_edges(origin).find(|&e| e != he_id);
-                if let Some(alt_he) = alt { self.point_to_halfedge.insert(origin, alt_he); }
-                else { self.point_to_halfedge.remove(&origin); }
+                if let Some(alt_he) = alt {
+                    self.set_point_start_halfedge(origin, alt_he);
+                } else {
+                    self.clear_point_start_halfedge(origin);
+                }
             }
             
             // Remove from primitive map if this was the start
-            if self.primitive_to_halfedge.get(&prim) == Some(&he_id) {
-                self.primitive_to_halfedge.remove(&prim);
+            if self.get_primitive_start_halfedge(prim) == he_id {
+                self.clear_primitive_start_halfedge(prim);
             }
             
             // Remove from boundary list if present
@@ -290,7 +426,9 @@ impl Topology {
     
     /// 批量移除指定 primitive 的所有 half-edges，O(k) 复杂度
     pub fn remove_primitive(&mut self, prim_id: PrimId) {
-        let Some(start) = self.primitive_to_halfedge.remove(&prim_id) else { return; };
+        let start = self.get_primitive_start_halfedge(prim_id);
+        if !start.is_valid() { return; }
+        self.clear_primitive_start_halfedge(prim_id);
         if !start.is_valid() { return; }
         
         // 收集这个面的所有 half-edges
@@ -324,7 +462,7 @@ impl Topology {
             };
             let he_id = self.insert_half_edge(he);
             face_hes.push(he_id);
-            self.point_to_halfedge.insert(point_ids[i], he_id);
+            self.set_point_start_halfedge(point_ids[i], he_id);
         }
         
         // 链接 next 指针
@@ -334,7 +472,7 @@ impl Topology {
         }
         
         let start = face_hes[0];
-        self.primitive_to_halfedge.insert(prim_id, start);
+        self.set_primitive_start_halfedge(prim_id, start);
         Some(start)
     }
     
@@ -370,7 +508,7 @@ impl Topology {
     }
 
     pub fn get_primitive_neighbors(&self, prim_id: PrimId) -> Vec<PrimId> {
-        let start_he = self.primitive_to_halfedge.get(&prim_id).copied().unwrap_or(HalfEdgeId::INVALID);
+        let start_he = self.get_primitive_start_halfedge(prim_id);
 
         if !start_he.is_valid() {
             return Vec::new();
@@ -427,22 +565,15 @@ impl<'a> Iterator for SpokeIterator<'a> {
         let yield_he = self.current_he;
         self.just_started = false;
 
-        // Move to next spoke:
-        // In manifold: pair -> next.
-        // In non-manifold: we need to find an "incoming" edge in the ring (dest == origin)
-        // and take its next.
-        
-        // Find 'pair' (an equivalent edge that is opposite)
-        let pair_he = self.topo.pair(self.current_he);
-        
-        if pair_he.is_valid() {
-            self.current_he = self.topo.next(pair_he);
+        // Move to next spoke around the vertex (outgoing at same origin):
+        // Use prev->pair, which continues correctly from a boundary edge into the adjacent interior edge.
+        let prev_he = self.topo.prev(self.current_he);
+        let next_he = self.topo.pair(prev_he);
+        self.current_he = if next_he.is_valid() {
+            next_he
         } else {
-            // Boundary or weird. 
-            // If boundary, maybe we stop? Or try to find another path?
-            // For standard boundary iteration:
-            self.current_he = HalfEdgeId::INVALID;
-        }
+            HalfEdgeId::INVALID
+        };
 
         Some(yield_he)
     }

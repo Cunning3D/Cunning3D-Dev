@@ -1,0 +1,11 @@
+[package]
+name = "editor_runtime"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+cunning_runtime_api = { path = "../../crates/cunning_runtime_api" }
+

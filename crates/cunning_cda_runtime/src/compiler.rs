@@ -35,7 +35,7 @@ pub struct ExecutionPlan {
 }
 
 pub fn compile(def: &RuntimeDefinition, reg: &RuntimeRegistry) -> Result<ExecutionPlan, CdaCompileError> {
-    if def.outputs.is_empty() {
+    if def.outputs.is_empty() && def.exports.is_empty() {
         return Err(CdaCompileError { asset_uuid: def.meta.uuid, asset_name: def.meta.name.clone(), kind: CdaCompileErrorKind::MissingOutputs });
     }
 

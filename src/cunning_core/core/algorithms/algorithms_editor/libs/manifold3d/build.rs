@@ -49,7 +49,7 @@ rustflags = ["-Zshare-generics=off"]
 
     let cxxflags = if cfg!(windows) { "/EHsc" } else { "" };
 
-    let glm = Config::new("glm").cxxflag(cxxflags).build();
+    let glm = Config::new("glm").profile("Release").cxxflag(cxxflags).build();
     println!("cargo:rustc-link-search=native={}", glm.display());
 
     // Ensure a fresh CMake build directory for manifold as well
@@ -59,6 +59,7 @@ rustflags = ["-Zshare-generics=off"]
     }
 
     Config::new("manifold")
+        .profile("Release")
         .cxxflag(cxxflags) //  MSVC flag to enable exception handling
         .define("CMAKE_BUILD_TYPE", "Release")
         .define("CMAKE_INSTALL_LIBDIR", "lib")
@@ -69,7 +70,15 @@ rustflags = ["-Zshare-generics=off"]
         .define("MANIFOLD_EXCEPTIONS", "OFF")
         .build();
 
-    cxx_build::bridge("src/lib.rs")
+    let mut b = cxx_build::bridge("src/lib.rs");
+    // Force MSVC runtime + iterator debug to match Rust (dynamic CRT, no debug iterators).
+    if env::var("CARGO_CFG_TARGET_ENV").ok().as_deref() == Some("msvc") {
+        b.flag("/MD")
+            .flag("/D_ITERATOR_DEBUG_LEVEL=0")
+            .flag("/D_HAS_ITERATOR_DEBUGGING=0")
+            .flag("/EHsc");
+    }
+    b
         .std("c++17")
         .file("src/manifold_rs.cpp")
         .include("./src")

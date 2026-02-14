@@ -78,7 +78,14 @@ pub fn offset_on_edge_between(
     // For PERCENT or ABSOLUTE offset types, just slide along emid
     match params.offset_type {
         OffsetType::Percent => {
-            let meetco = v_pos.lerp(v2_pos, params.offset / 100.0);
+            // Node-level Percent is pre-converted to absolute distance; convert back to edge t here.
+            let edge_len = (v2_pos - v_pos).length();
+            let t = if edge_len > 1e-8 {
+                (params.offset / edge_len).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            let meetco = v_pos.lerp(v2_pos, t);
             let (_, _, ang1) = offset_meet_edge(v_pos, v_normal, dir1, dir_mid, offset1_r, 0.0);
             let (_, _, ang2) = offset_meet_edge(v_pos, v_normal, dir_mid, dir2, 0.0, offset2_l);
             let sinratio = if ang1 == 0.0 {

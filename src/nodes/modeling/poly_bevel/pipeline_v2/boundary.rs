@@ -166,9 +166,12 @@ pub fn offset_meet(
     off1_r: f32,
     off2_l: f32,
 ) -> Vec3 {
-    let n = face_no.normalize_or_zero();
-    let in1 = n.cross(e1_dir.normalize_or_zero()).normalize_or_zero();
-    let in2 = n.cross(e2_dir.normalize_or_zero()).normalize_or_zero();
+    let d1 = e1_dir.normalize_or_zero();
+    let d2 = e2_dir.normalize_or_zero();
+    let n = stabilize_face_no(face_no, d1, d2);
+    let in1 = n.cross(d1).normalize_or_zero();
+    // For the second spoke, inward offset is the opposite cross order.
+    let in2 = d2.cross(n).normalize_or_zero();
     let p1 = v_pos + in1 * off1_r;
     let p2 = v_pos + in2 * off2_l;
     if let Some((m, _)) = isect_line_line_v3(p1, p1 + e1_dir, p2, p2 + e2_dir) {
@@ -176,6 +179,24 @@ pub fn offset_meet(
     } else {
         v_pos + (in1 * off1_r + in2 * off2_l).normalize_or_zero() * off1_r.max(off2_l)
     }
+}
+
+/// Normalize and orient face normal so offset direction is stable under winding flips.
+#[inline]
+fn stabilize_face_no(face_no: Vec3, d1: Vec3, d2: Vec3) -> Vec3 {
+    let mut n = face_no.normalize_or_zero();
+    let c = d1.cross(d2);
+    if n.length_squared() < 1e-12 {
+        return if c.length_squared() > 1e-12 {
+            c.normalize_or_zero()
+        } else {
+            Vec3::Y
+        };
+    }
+    if c.length_squared() > 1e-12 && n.dot(c) < 0.0 {
+        n = -n;
+    }
+    n
 }
 
 /// adjust_miter_inner_coords: spread inner miter verts along their edges (Blender 3109-3136).
@@ -325,7 +346,8 @@ pub fn build_boundary_lite(
         let off1_r = spoke_off_r.get(e_idx).copied().unwrap_or(params.offset);
         let off2_l = spoke_off_l.get(e2_idx).copied().unwrap_or(params.offset);
         let fn_idx = e_idx.min(face_normals.len().saturating_sub(1));
-        let face_no = face_normals.get(fn_idx).copied().unwrap_or(Vec3::Y);
+        let face_no_raw = face_normals.get(fn_idx).copied().unwrap_or(Vec3::Y);
+        let face_no = stabilize_face_no(face_no_raw, d1, d2);
 
         // [LOOP_SLIDE] Blender 3217-3239: slide along intermediate edge if loop_slide enabled
         let mut eon: Option<usize> = None;
@@ -419,8 +441,8 @@ pub fn build_boundary_lite(
         };
 
         // Assign left/right boundary verts to edges.
-        edges[e_idx].right_bv = Some(bv_idx);
-        edges[e2_idx].left_bv = Some(bv_idx);
+        edges[e_idx].left_bv = Some(bv_idx);
+        edges[e2_idx].right_bv = Some(bv_idx);
         // In-between edges also point to this bv.
         let mut e3_idx = (e_idx + 1) % n_spokes;
         while e3_idx != e2_idx {
@@ -476,7 +498,7 @@ pub fn build_boundary_lite(
                     elast: Some(e2_idx),
                     ..Default::default()
                 };
-                edges[e2_idx].left_bv = Some(bv_idx + 2);
+                edges[e2_idx].right_bv = Some(bv_idx + 2);
                 bnd_verts.push(v3);
             } else {
                 // Arc miter.
@@ -512,7 +534,7 @@ pub fn build_boundary_lite(
                     elast: Some(e2_idx),
                     ..Default::default()
                 };
-                edges[e2_idx].left_bv = Some(bv_idx + 1);
+                edges[e2_idx].right_bv = Some(bv_idx + 1);
                 bnd_verts.push(v3);
             }
         } else {
@@ -607,5 +629,21 @@ mod tests {
         let no = Vec3::Z;
         assert_eq!(edges_angle_kind(d1, d2, no), AngleKind::Smaller);
         assert_eq!(edges_angle_kind(d2, d1, no), AngleKind::Larger);
+    }
+
+    #[test]
+    fn test_offset_meet_for_smaller_angle_moves_toward_corner_interior() {
+        let meet = offset_meet(Vec3::ZERO, Vec3::X, Vec3::Y, Vec3::Z, 1.0, 1.0);
+        let bisector = (Vec3::X + Vec3::Y).normalize_or_zero();
+        assert!(meet.dot(bisector) > 0.0);
+        assert!(meet.x > 0.0);
+        assert!(meet.y > 0.0);
+    }
+
+    #[test]
+    fn test_offset_meet_stable_under_face_normal_flip() {
+        let a = offset_meet(Vec3::ZERO, Vec3::X, Vec3::Y, Vec3::Z, 1.0, 1.0);
+        let b = offset_meet(Vec3::ZERO, Vec3::X, Vec3::Y, -Vec3::Z, 1.0, 1.0);
+        assert!((a - b).length() < 1e-5);
     }
 }

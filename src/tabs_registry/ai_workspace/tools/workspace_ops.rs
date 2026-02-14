@@ -6,6 +6,7 @@ use super::diff::compute_file_diff;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::fs;
+use std::ops::Range;
 use std::path::Path;
 use walkdir::WalkDir;
 
@@ -397,6 +398,71 @@ struct PatchHunk { original: String, replacement: String }
 #[derive(Deserialize)]
 struct PatchAnyFileArgs { file_path: String, hunks: Vec<PatchHunk> }
 
+#[inline]
+fn detect_newline(s: &str) -> &'static str {
+    if s.contains("\r\n") { "\r\n" } else { "\n" }
+}
+
+#[inline]
+fn normalize_newlines(s: &str) -> String {
+    s.replace("\r\n", "\n")
+}
+
+fn find_unique_substring(haystack: &str, needle: &str) -> Result<Range<usize>, ToolError> {
+    let hits: Vec<_> = haystack.match_indices(needle).collect();
+    if hits.is_empty() { return Err(ToolError("original not found".into())); }
+    if hits.len() > 1 { return Err(ToolError(format!("original not unique ({})", hits.len()))); }
+    Ok(hits[0].0..(hits[0].0 + needle.len()))
+}
+
+fn line_start_offsets(s: &str) -> Vec<usize> {
+    let mut out = Vec::with_capacity(1024);
+    out.push(0);
+    for (i, b) in s.as_bytes().iter().enumerate() {
+        if *b == b'\n' {
+            out.push(i + 1);
+        }
+    }
+    out
+}
+
+fn find_unique_block_by_trimmed_lines(content: &str, original: &str) -> Result<Range<usize>, ToolError> {
+    let o_lines: Vec<&str> = original.split('\n').collect();
+    let o_trim: Vec<&str> = o_lines.iter().map(|l| l.trim_end()).collect();
+    let c_lines: Vec<&str> = content.split('\n').collect();
+    let c_trim: Vec<&str> = c_lines.iter().map(|l| l.trim_end()).collect();
+    if o_trim.is_empty() || o_trim.len() > c_trim.len() { return Err(ToolError("original not found".into())); }
+    let mut match_line: Option<usize> = None;
+    for i in 0..=c_trim.len().saturating_sub(o_trim.len()) {
+        if c_trim[i..i + o_trim.len()] == o_trim[..] {
+            if match_line.is_some() { return Err(ToolError("original not unique".into())); }
+            match_line = Some(i);
+        }
+    }
+    let Some(i) = match_line else { return Err(ToolError("original not found".into())); };
+    let starts = line_start_offsets(content);
+    let start = *starts.get(i).unwrap_or(&0);
+    let end = if i + o_trim.len() < starts.len() { starts[i + o_trim.len()] } else { content.len() };
+    Ok(start..end)
+}
+
+fn apply_hunk_norm(content: &mut String, original: &str, replacement: &str) -> Result<(), ToolError> {
+    let orig = normalize_newlines(original);
+    let repl = normalize_newlines(replacement);
+    match find_unique_substring(content, &orig) {
+        Ok(r) => {
+            content.replace_range(r, &repl);
+            Ok(())
+        }
+        Err(_) => {
+            // Fallback: match block ignoring trailing whitespace per-line.
+            let r = find_unique_block_by_trimmed_lines(content, &orig)?;
+            content.replace_range(r, &repl);
+            Ok(())
+        }
+    }
+}
+
 pub struct PatchFileTool;
 impl Tool for PatchFileTool {
     fn name(&self) -> &str { "patch_file" }
@@ -412,18 +478,18 @@ impl Tool for PatchFileTool {
         let path = resolve_edit_path(&a.file_path)?;
         if !path.exists() || !path.is_file() { return Err(ToolError(format!("File not found: {}", path.display()))); }
         let old = fs::read_to_string(&path).map_err(|e| ToolError(format!("Read error: {e}")))?;
-        let mut content = old.clone();
+        let nl = detect_newline(&old);
+        let mut content = normalize_newlines(&old);
         let mut logs = Vec::new();
         for (i, h) in a.hunks.iter().enumerate() {
-            let hits: Vec<_> = content.match_indices(&h.original).collect();
-            if hits.is_empty() { return Err(ToolError(format!("Hunk {i} failed: original not found"))); }
-            if hits.len() > 1 { return Err(ToolError(format!("Hunk {i} failed: original not unique ({})", hits.len()))); }
-            content = content.replace(&h.original, &h.replacement);
+            apply_hunk_norm(&mut content, &h.original, &h.replacement)
+                .map_err(|e| ToolError(format!("Hunk {i} failed: {e}")))?;
             logs.push(ToolLog { message: format!("Applied hunk {}", i + 1), level: ToolLogLevel::Success });
         }
-        fs::write(&path, &content).map_err(|e| ToolError(format!("Write error: {e}")))?;
+        let content_out = if nl == "\r\n" { content.replace('\n', "\r\n") } else { content };
+        fs::write(&path, &content_out).map_err(|e| ToolError(format!("Write error: {e}")))?;
         let mut out = ToolOutput::new(format!("Patched {} hunks in {}.", a.hunks.len(), path.display()), logs);
-        if let Some(d) = compute_file_diff(path.to_string_lossy().to_string(), &old, &content) { out.ui_diffs.push(d); }
+        if let Some(d) = compute_file_diff(path.to_string_lossy().to_string(), &old, &content_out) { out.ui_diffs.push(d); }
         Ok(out)
     }
 }

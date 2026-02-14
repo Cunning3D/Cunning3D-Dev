@@ -519,6 +519,18 @@ impl Node {
                 self.inputs.insert(port_key::in1(), ());
                 self.outputs.insert(port_key::out0(), ());
             }
+            NodeType::Generic(s)
+                if s == "CopyToPoints"
+                    || s == "Copy To Points"
+                    || s == "Copy to Points"
+                    || s == "cunning.modeling.copy_to_points" =>
+            {
+                self.inputs.insert(PortId::from("Geometry"), ());
+                self.inputs.insert(PortId::from("Points"), ());
+                self.outputs.insert(PortId::from("Output"), ());
+                self.input_style = InputStyle::Individual;
+                self.style = NodeStyle::Normal;
+            }
             NodeType::Generic(s) if s == "ForEach Begin" => {
                 self.inputs.insert(port_key::in0(), ());
                 self.outputs.insert(port_key::out0(), ());

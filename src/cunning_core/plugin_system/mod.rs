@@ -14,8 +14,10 @@ use crate::nodes::parameter::Parameter;
 use crate::nodes::parameter::{ParameterUIType, ParameterValue};
 use bevy::prelude::*;
 use bevy::prelude::{Vec2, Vec3, Vec4};
+use bevy::tasks::{IoTaskPool, Task};
 use handle_arena::GeoArena;
 use libloading::{Library, Symbol};
+use futures_lite::future;
 use std::ffi::CStr;
 use std::os::raw::c_void;
 use std::path::Path;
@@ -2185,6 +2187,17 @@ pub struct PluginSystem {
     node_state: Arc<RwLock<std::collections::HashMap<(crate::nodes::NodeId, String), Vec<u8>>>>,
 }
 
+impl Clone for PluginSystem {
+    fn clone(&self) -> Self {
+        Self {
+            loaded_libraries: self.loaded_libraries.clone(),
+            loaded_paths: self.loaded_paths.clone(),
+            interactions: self.interactions.clone(),
+            node_state: self.node_state.clone(),
+        }
+    }
+}
+
 impl PluginSystem {
     pub(crate) fn interaction_shared(
         &self,
@@ -2419,24 +2432,22 @@ impl PluginSystem {
         }
     }
 
-    pub fn scan_plugins_latest(&self, dir_path: &str, registry: &NodeRegistry) {
+    /// Scan and load latest plugins; returns list of newly loaded file paths.
+    pub fn scan_plugins_latest(&self, dir_path: &str, registry: &NodeRegistry) -> Vec<std::path::PathBuf> {
         let path = Path::new(dir_path);
         if !path.exists() {
             warn!("Plugin directory not found: {}", dir_path);
-            return;
+            return Vec::new();
         }
         let picks = Self::pick_latest_plugins(path);
-        info!(
-            "Scanning latest plugins in: {} ({} candidates)",
-            dir_path,
-            picks.len()
-        );
+        info!("Scanning latest plugins in: {} ({} candidates)", dir_path, picks.len());
+        let mut loaded = Vec::new();
         for p in picks {
-            if self.loaded_paths.read().unwrap().contains(&p) {
-                continue;
-            }
+            if self.loaded_paths.read().unwrap().contains(&p) { continue; }
             self.load_plugin(&p, registry);
+            loaded.push(p);
         }
+        loaded
     }
 
     fn load_plugin(&self, path: &Path, registry: &NodeRegistry) {
@@ -2760,6 +2771,78 @@ pub fn auto_reload_latest_plugins_system(
     }
     for id in dirty {
         g.mark_dirty(id);
+    }
+}
+
+/// Global hot-reload shortcut: Ctrl+Alt+R opens hot-reload window + forces plugin rescan.
+pub fn hot_reload_shortcut_system(
+    keys: Res<ButtonInput<KeyCode>>,
+    time: Res<Time>,
+    ps: Option<Res<PluginSystem>>,
+    reg: Option<Res<NodeRegistry>>,
+    console: Option<Res<crate::console::ConsoleLog>>,
+    hot_log: Option<Res<crate::tabs_system::pane::hot_reload::HotReloadLog>>,
+    mut open_hr: MessageWriter<crate::ui::OpenHotReloadWindowEvent>,
+    mut node_graph_res: Option<ResMut<crate::NodeGraphResource>>,
+    mut scan_task: Local<Option<Task<Vec<std::path::PathBuf>>>>,
+) {
+    // Poll async scan completion (keeps UI responsive; avoids "freeze on hot reload shortcut").
+    if let Some(tk) = scan_task.as_mut() {
+        if let Some(loaded) = future::block_on(future::poll_once(tk)) {
+            *scan_task = None;
+            let t = time.elapsed_secs();
+            if loaded.is_empty() {
+                if let Some(hl) = hot_log.as_deref() { hl.info("No hot reload file update.", t); }
+                if let Some(c) = console.as_deref() { c.info("Hot Reload: no new plugin files detected."); }
+            } else {
+                for p in &loaded {
+                    let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                    if let Some(hl) = hot_log.as_deref() { hl.info(format!("Loaded plugin: {name}"), t); }
+                    if let Some(c) = console.as_deref() { c.info(format!("Hot Reload: loaded {name}")); }
+                }
+                if let Some(hl) = hot_log.as_deref() { hl.info(format!("{} plugin(s) reloaded.", loaded.len()), t); }
+            }
+            // Repair nodes missing plugin params after scan.
+            if let (Some(reg), Some(g)) = (reg.as_deref(), node_graph_res.as_deref_mut()) {
+                let map = reg.nodes.read().unwrap();
+                let gg = &mut g.0;
+                let mut repaired = 0u32;
+                for n in gg.nodes.values_mut() {
+                    let crate::nodes::structs::NodeType::Generic(key) = &n.node_type else { continue };
+                    let Some(desc) = map.get(key) else { continue };
+                    let defaults = (desc.parameters_factory)();
+                    for p in defaults {
+                        if !n.parameters.iter().any(|x| x.name == p.name) {
+                            n.parameters.push(p);
+                            repaired += 1;
+                        }
+                    }
+                }
+                if repaired > 0 {
+                    if let Some(hl) = hot_log.as_deref() { hl.info(format!("Repaired {repaired} missing plugin params."), t); }
+                }
+            }
+            if let Some(hl) = hot_log.as_deref() { hl.info("Hot Reload complete.", t); }
+        }
+    }
+
+    if !(keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight)) { return; }
+    if !(keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight)) { return; }
+    if !keys.just_pressed(KeyCode::KeyR) { return; }
+    let t = time.elapsed_secs();
+    // Open the hot-reload popup window
+    open_hr.write_default();
+    if let Some(c) = console.as_deref() { c.info("Hot Reload (Ctrl+Alt+R): scanning plugins + assets..."); }
+    if let Some(hl) = hot_log.as_deref() { hl.info("Hot Reload triggered (Ctrl+Alt+R)", t); }
+    info!("Hot Reload triggered (Ctrl+Alt+R)");
+    if scan_task.is_some() {
+        if let Some(hl) = hot_log.as_deref() { hl.warn("Hot Reload scan already running...", t); }
+        return;
+    }
+    if let (Some(ps), Some(reg)) = (ps.as_deref(), reg.as_deref()) {
+        let ps = ps.clone();
+        let reg = reg.clone();
+        *scan_task = Some(IoTaskPool::get().spawn(async move { ps.scan_plugins_latest("plugins", &reg) }));
     }
 }
 

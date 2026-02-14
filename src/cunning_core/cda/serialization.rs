@@ -286,6 +286,27 @@ pub fn build_game_chunk(
                 default_on: u.default_on,
             })
             .collect(),
+        exports_mode: match a.exports_mode {
+            crate::cunning_core::cda::asset::CdaExportsMode::BlackBox => rt::ExportsMode::BlackBox,
+            crate::cunning_core::cda::asset::CdaExportsMode::Advanced => rt::ExportsMode::Advanced,
+        },
+        exports: a
+            .exports
+            .iter()
+            .map(|e| rt::ExportDef {
+                name: e.name.clone(),
+                label: e.label.clone(),
+                order: e.order,
+                kind: match &e.kind {
+                    crate::cunning_core::cda::asset::CdaExportKind::NodeOutput { node_id } => {
+                        rt::ExportKind::NodeOutput { node_id: *node_id }
+                    }
+                    crate::cunning_core::cda::asset::CdaExportKind::NodeParam { node_id, param, channel } => {
+                        rt::ExportKind::NodeParam { node_id: *node_id, param: param.clone(), channel: *channel }
+                    }
+                },
+            })
+            .collect(),
     };
     Ok(def)
 }

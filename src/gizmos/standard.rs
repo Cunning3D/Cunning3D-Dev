@@ -854,6 +854,106 @@ impl StandardGizmo {
         changed
     }
 
+    pub fn draw_linear_scalar_handle(
+        buffer: &mut GizmoDrawBuffer,
+        context: &GizmoContext,
+        gizmo_state: &mut GizmoState,
+        origin: Vec3,
+        axis_dir: Vec3,
+        value: &mut f32,
+        node_id: uuid::Uuid,
+        part: GizmoPart,
+        min_value: f32,
+    ) -> bool {
+        let axis = axis_dir.normalize_or_zero();
+        if axis == Vec3::ZERO {
+            return false;
+        }
+
+        let mut changed = false;
+        let scale = if context.is_orthographic {
+            context.scale_factor * 0.075
+        } else {
+            (context.cam_pos - origin).length() * 0.075
+        };
+        let min_draw_len = 0.5 * scale;
+        let hit_threshold = 0.12 * scale;
+        let hit_threshold_sq = hit_threshold * hit_threshold;
+        let handle_radius = 0.12 * scale;
+
+        *value = (*value).max(min_value);
+        let is_active_node = gizmo_state.active_node_id == Some(node_id);
+
+        if is_active_node
+            && gizmo_state.active_part == Some(part)
+            && context.mouse_left_pressed
+        {
+            let (_, p_axis) = closest_points_ray_line(
+                context.ray_origin,
+                context.ray_direction,
+                origin,
+                axis,
+            );
+            let next_value = (p_axis - origin).dot(axis).max(min_value);
+            if (next_value - *value).abs() > 1e-6 {
+                *value = next_value;
+                changed = true;
+            }
+            let guide_end = origin + axis * (*value).max(min_draw_len);
+            buffer.draw_line(origin, guide_end, Color::WHITE);
+        } else if is_active_node
+            && gizmo_state.active_part == Some(part)
+            && context.mouse_left_just_released
+        {
+            gizmo_state.active_node_id = None;
+            gizmo_state.active_part = None;
+        }
+
+        let mut hovered = false;
+        let mut hit_pos_for_drag = None;
+        if gizmo_state.active_node_id.is_none() {
+            let draw_len = (*value).max(min_draw_len);
+            let line_end = origin + axis * draw_len;
+            let (dist_sq_seg, t_seg) =
+                distance_sq_ray_segment(context.ray_origin, context.ray_direction, origin, line_end);
+            if dist_sq_seg <= hit_threshold_sq {
+                hovered = true;
+                hit_pos_for_drag = Some(origin + (line_end - origin) * t_seg);
+            }
+            let handle_pos = origin + axis * *value;
+            let (dist_sq_head, p_ray) =
+                distance_sq_ray_point(context.ray_origin, context.ray_direction, handle_pos);
+            if dist_sq_head <= hit_threshold_sq {
+                hovered = true;
+                hit_pos_for_drag = Some(p_ray);
+            }
+        }
+
+        if hovered && context.mouse_left_just_pressed {
+            gizmo_state.active_node_id = Some(node_id);
+            gizmo_state.active_part = Some(part);
+            gizmo_state.initial_transform_pos = Some(Vec3::new(*value, 0.0, 0.0));
+            gizmo_state.drag_start_pos = hit_pos_for_drag;
+        }
+
+        let draw_len = (*value).max(min_draw_len);
+        let handle_pos = origin + axis * *value;
+        let mut draw_color = Color::srgb(0.95, 0.8, 0.2);
+        if is_active_node && gizmo_state.active_part == Some(part) {
+            draw_color = Color::srgb(1.0, 1.0, 0.0);
+        } else if hovered {
+            draw_color = Color::WHITE;
+        }
+        buffer.draw_line(origin, origin + axis * draw_len, draw_color);
+        buffer.draw_mesh(
+            GizmoPrimitive::Sphere,
+            Transform::from_translation(handle_pos).with_scale(Vec3::splat(handle_radius)),
+            draw_color,
+        );
+
+        changed
+    }
+
     pub fn draw_status_hud(ui: &mut bevy_egui::egui::Ui, gizmo_state: &GizmoState) {
         if let Some(part) = gizmo_state.active_part {
             let text = match part {

@@ -112,6 +112,9 @@ pub struct NeedsEguiFontsInit;
 #[derive(Message, Default, Clone)]
 pub struct OpenAiWorkspaceWindowEvent;
 
+#[derive(Message, Default, Clone)]
+pub struct OpenHotReloadWindowEvent;
+
 #[derive(Message, Clone)]
 pub struct OpenNodeInfoWindowEvent {
     pub node_id: NodeId,
@@ -352,6 +355,9 @@ pub fn create_generic_node(
         "Boolean" => NodeType::Boolean,
         "PolyExtrude" | "Poly Extrude" => NodeType::PolyExtrude,
         "PolyBevel" | "Poly Bevel" => NodeType::PolyBevel,
+        "CopyToPoints" | "Copy To Points" | "Copy to Points" => {
+            NodeType::Generic("CopyToPoints".to_string())
+        }
         "Fuse" => NodeType::Fuse,
         "FBX Importer" => NodeType::FbxImporter,
         "VDB from Polygons" => NodeType::VdbFromPolygons,
@@ -429,6 +435,9 @@ pub fn prepare_generic_node(
         "Boolean" => NodeType::Boolean,
         "PolyExtrude" | "Poly Extrude" => NodeType::PolyExtrude,
         "PolyBevel" | "Poly Bevel" => NodeType::PolyBevel,
+        "CopyToPoints" | "Copy To Points" | "Copy to Points" => {
+            NodeType::Generic("CopyToPoints".to_string())
+        }
         "Fuse" => NodeType::Fuse,
         "FBX Importer" => NodeType::FbxImporter,
         "VDB from Polygons" => NodeType::VdbFromPolygons,

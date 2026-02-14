@@ -1,0 +1,38 @@
+name = "Point Jitter"
+category = "Modeling"
+description = "Randomly offsets point positions with deterministic seed, optional group filtering, and optional normal recomputation."
+
+[io]
+input_type = "Single"
+output_type = "Geometry"
+
+[[io.inputs]]
+index = 0
+name = "Input"
+description = "输入几何体；对其点位置 @P 做抖动偏移"
+
+[[io.outputs]]
+index = 0
+name = "Output"
+description = "抖动后的几何体（保留原拓扑与属性，更新 @P）"
+
+[parameters]
+group = "String. Point group name or Houdini-style pattern (e.g. 0-10, 1,5,8, *). Empty means all points."
+scale = "Float. Global jitter amplitude. Default: 0.1."
+axis_scales = "Vec3. Per-axis jitter multiplier (X/Y/Z). Default: (1,1,1)."
+seed = "Int. Random seed for deterministic jitter. Default: 0."
+update_normals = "Bool. Recompute vertex and point normals after jitter. Default: false."
+
+[usage]
+text = """
+Applies random displacement to selected points:
+offset = random(-1..1) * scale * axis_scales.
+
+Group logic:
+- empty Group: affect all points
+- existing point group name: use that mask
+- otherwise parse as point index pattern
+
+When Update Normals is enabled, normals are recalculated on the jittered geometry.
+"""
+

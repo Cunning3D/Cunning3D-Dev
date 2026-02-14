@@ -126,9 +126,13 @@ impl VoiceService {
                 list.retain(|tx| tx.try_send(ev.clone()).is_ok());
             }
         }
-        // Lazy-init STT to avoid blocking/crashing app startup before UI is ready.
-        let mut whisper: Option<WhisperEngine> = None;
-        let mut whisper_load_failed = false;
+        let whisper = match WhisperEngine::new(&stt_path) {
+            Ok(w) => Some(w),
+            Err(e) => {
+                emit(&event_subs, VoiceEvent::Error(format!("Whisper model load failed: {stt_path} ({e})")));
+                None
+            }
+        };
         let mut tts = VitsTtsEngine::new(&tts_path).ok();
         let mut capture = AudioCapture::new();
         let samples_rx = capture.take_receiver();
@@ -178,20 +182,6 @@ impl VoiceService {
                             mode = VoiceMode::Off;
                             capture.stop();
                             listen_flag.store(false, Ordering::SeqCst);
-                        }
-                        if whisper.is_none() && !whisper_load_failed {
-                            match WhisperEngine::new(&stt_path) {
-                                Ok(w) => whisper = Some(w),
-                                Err(e) => {
-                                    whisper_load_failed = true;
-                                    emit(
-                                        &event_subs,
-                                        VoiceEvent::Error(format!(
-                                            "Whisper model load failed: {stt_path} ({e})"
-                                        )),
-                                    );
-                                }
-                            }
                         }
                         if let Some(ref w) = whisper {
                             if !ptt_buf.is_empty() {
@@ -365,20 +355,6 @@ impl VoiceService {
                                 && !utt_buf.is_empty()
                             {
                                 speech_active = false;
-                                if whisper.is_none() && !whisper_load_failed {
-                                    match WhisperEngine::new(&stt_path) {
-                                        Ok(w) => whisper = Some(w),
-                                        Err(e) => {
-                                            whisper_load_failed = true;
-                                            emit(
-                                                &event_subs,
-                                                VoiceEvent::Error(format!(
-                                                    "Whisper model load failed: {stt_path} ({e})"
-                                                )),
-                                            );
-                                        }
-                                    }
-                                }
                                 if let Some(ref w) = whisper {
                                     let samples_16k = resample_to_16k(&utt_buf, utt_sr);
                                     match w.transcribe(&samples_16k) {

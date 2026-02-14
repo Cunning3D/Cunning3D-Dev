@@ -8,7 +8,7 @@ pub mod runtime_report;
 pub mod serialization;
 pub mod utils;
 
-pub use asset::{CDAAsset, CDAId, CDAPreset};
+pub use asset::{CDAAsset, CDAId, CDAPreset, CdaExport, CdaExportKind, CdaExportsMode};
 pub use interface::{CDAInterface, CDAInterfaceKind};
 pub use library::{CdaAssetRef, CdaLibrary};
 pub use promoted_param::{

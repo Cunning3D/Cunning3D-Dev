@@ -59,3 +59,4 @@ settings/ai/providers.json
 settings/ai/sessions.json
 **/.env
 **/.env.*
+*.c3d

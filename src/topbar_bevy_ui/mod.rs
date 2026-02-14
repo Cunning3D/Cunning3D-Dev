@@ -799,12 +799,9 @@ fn sync_topbar_popup(
                 panel,
             );
         }
-        MenuKind::Settings => add_item(
-            "Open Settings",
-            TopbarActionKind::OpenSettings,
-            &mut commands,
-            panel,
-        ),
+        MenuKind::Settings => {
+            add_item("Open Settings", TopbarActionKind::OpenSettings, &mut commands, panel);
+        }
         MenuKind::Ai => add_item(
             "Open AI Workspace",
             TopbarActionKind::OpenAi,
@@ -833,12 +830,17 @@ fn handle_topbar_actions(
     mut graph_changed: MessageWriter<GraphChanged>,
     mut open_settings: MessageWriter<OpenSettingsWindowEvent>,
     mut open_ai: MessageWriter<OpenAiWorkspaceWindowEvent>,
+    mut open_hr: MessageWriter<crate::ui::OpenHotReloadWindowEvent>,
     mut open_file_picker: MessageWriter<crate::ui::OpenFilePickerEvent>,
     mut redraw: MessageWriter<RequestRedraw>,
     mut ui_state_mut: ResMut<UiState>,
     mut node_graph_res: ResMut<NodeGraphResource>,
+    time: Res<Time>,
     cda_lib: Res<CdaLibrary>,
     console: Res<ConsoleLog>,
+    hot_log: Option<Res<crate::tabs_system::pane::hot_reload::HotReloadLog>>,
+    ps: Option<Res<crate::cunning_core::plugin_system::PluginSystem>>,
+    reg: Option<Res<crate::cunning_core::registries::node_registry::NodeRegistry>>,
     act_q: Query<(&TopbarAction, &cgui::Interaction), Changed<cgui::Interaction>>,
 ) {
     for (a, i) in &act_q {
@@ -851,13 +853,11 @@ fn handle_topbar_actions(
                 graph_changed.write_default();
             }
             TopbarActionKind::Open => {
-                // Open is handled via in-app file picker + background job (no hitch).
                 open_file_picker.write(crate::ui::OpenFilePickerEvent {
                     mode: crate::ui::FilePickerMode::OpenProject,
                 });
             }
             TopbarActionKind::Save | TopbarActionKind::SaveAs => {
-                // Save is handled via in-app file picker + background job (no hitch).
                 open_file_picker.write(crate::ui::OpenFilePickerEvent {
                     mode: if matches!(a.0, TopbarActionKind::SaveAs) {
                         crate::ui::FilePickerMode::SaveProjectAs
@@ -890,12 +890,8 @@ fn handle_topbar_actions(
             TopbarActionKind::LayoutDesktop => ui_state_mut.layout_mode = LayoutMode::Desktop,
             TopbarActionKind::LayoutTablet => ui_state_mut.layout_mode = LayoutMode::Tablet,
             TopbarActionKind::LayoutPhone => ui_state_mut.layout_mode = LayoutMode::Phone,
-            TopbarActionKind::OpenSettings => {
-                open_settings.write_default();
-            }
-            TopbarActionKind::OpenAi => {
-                open_ai.write_default();
-            }
+            TopbarActionKind::OpenSettings => { open_settings.write_default(); }
+            TopbarActionKind::OpenAi => { open_ai.write_default(); }
         }
         menu.open = None;
         redraw.write(RequestRedraw);

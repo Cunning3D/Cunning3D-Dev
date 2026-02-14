@@ -98,11 +98,17 @@ fn label_alpha_at(p: vec2<f32>, value: i32, color_sel: f32) -> vec4<f32> {
     // Pass -1 for minus sign
     if (sign == 1) { a = max(a, sample_digit(p - vec2<f32>(-2.5, 0.0), -1)); }
 
-    // Colors similar to Houdini screenshot
-    let rgb = select(vec3<f32>(0.86, 0.45, 0.45), vec3<f32>(0.47, 0.67, 0.95), color_sel > 0.5);
-    // Alpha boost for readability since texture might be soft
-    let alpha = smoothstep(0.1, 0.6, a) * 0.95; 
-    return vec4<f32>(rgb, alpha);
+    // Adaptive AA via screen-space SDF derivatives (Valve SDF technique)
+    let fw = max(fwidth(a), 0.005);
+    let fill    = smoothstep(0.5 - fw, 0.5 + fw, a);
+    let outline = smoothstep(0.5 - fw * 5.0, 0.5 - fw * 1.5, a) * (1.0 - fill);
+    let glow    = smoothstep(0.18, 0.36, a) * 0.10;
+    let total   = max(fill + outline, glow);
+
+    let fg  = select(vec3<f32>(0.95, 0.55, 0.50), vec3<f32>(0.55, 0.75, 1.0), color_sel > 0.5);
+    let bg  = vec3<f32>(0.02, 0.02, 0.04);
+    let rgb = mix(bg, fg, fill / max(fill + outline, 1e-3));
+    return vec4<f32>(rgb, clamp(total, 0.0, 1.0));
 }
 
 // Anti-aliased grid line mask in [0..1], 1 = line
@@ -177,51 +183,40 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
 
     // --- Axis labels "printed" on the grid plane (texture-like) ---
     if (u._pad0 > 0.5) {
-        // Label spacing: show a number every 5 minor cells (Houdini-like).
-        // Here: minor_step = base/5, so 5 minor cells == base.
-        // User request: 5 cells per number => every 5 * base.
+        // Label spacing: every major_step * 5 (Houdini-like).
         let step = base;
         let label_step = step * 5.0;
-        let band = step * 0.18; // how far from axis line
-        // Each label glyph cell size in world meters (relative to step)
-        // Slightly larger labels for readability (texture atlas is now higher-res)
-        let glyph_m = step * 0.24;
+        let glyph_m = step * 0.35;
         let inv = 1.0 / max(glyph_m, 1e-6);
+        let band = glyph_m * 1.2;
+        let dx_max = glyph_m * 7.0; // covers 4-digit + sign
 
-        // X-axis labels (along Z == center.z)
+        // X-axis labels (along Z == 0)
         if (abs(p.y) < band) {
             let k = i32(round(p.x / label_step));
             let n = k * 5;
             if (abs(f32(n)) <= 9999.0 && n != 0) {
-                // Only draw near the tick center (prevents repeated "11111" across the band)
                 let dx = p.x - f32(k) * label_step;
-                if (abs(dx) < glyph_m * 0.9) {
-                    let local = vec2<f32>(dx * inv, p.y * inv);
-                // local glyph space: center at 0, scale to [-0.5..0.5]
-                let gl = local * 0.5;
-                // Only draw near the label center
-                if (abs(gl.x) < 3.5 && abs(gl.y) < 0.8) {
-                    let lab = label_alpha_at(gl, n, 0.0);
-                    out = blend_over(out, lab);
-                }
+                if (abs(dx) < dx_max) {
+                    let gl = vec2<f32>(dx, p.y) * inv * 0.5;
+                    if (abs(gl.x) < 3.5 && abs(gl.y) < 0.8) {
+                        out = blend_over(out, label_alpha_at(gl, n, 0.0));
+                    }
                 }
             }
         }
 
-        // Z-axis labels (along X == center.x)
+        // Z-axis labels (along X == 0)
         if (abs(p.x) < band) {
             let k = i32(round(p.y / label_step));
             let n = k * 5;
             if (n != 0 && abs(f32(n)) <= 9999.0) {
                 let dy = p.y - f32(k) * label_step;
-                if (abs(dy) < glyph_m * 0.9) {
-                    // Swap coords so digits align with Z axis
-                    let local = vec2<f32>(dy * inv, p.x * inv);
-                let gl = local * 0.5;
-                if (abs(gl.x) < 3.5 && abs(gl.y) < 0.8) {
-                    let lab = label_alpha_at(gl, n, 1.0);
-                    out = blend_over(out, lab);
-                }
+                if (abs(dy) < dx_max) {
+                    let gl = vec2<f32>(dy, p.x) * inv * 0.5;
+                    if (abs(gl.x) < 3.5 && abs(gl.y) < 0.8) {
+                        out = blend_over(out, label_alpha_at(gl, n, 1.0));
+                    }
                 }
             }
         }

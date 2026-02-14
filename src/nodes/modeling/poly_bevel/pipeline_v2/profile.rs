@@ -13,6 +13,7 @@ pub fn build_profile_samples(
     end: Vec3,
     u_pos: Vec3,
     v_pos: Vec3,
+    vertex_only_mode: bool,
     selcount: usize,
     prev_dir: Option<Vec3>,
     next_dir: Option<Vec3>,
@@ -29,7 +30,18 @@ pub fn build_profile_samples(
         if p.proj_dir.length_squared() < 1e-12 {
             p.proj_dir = Vec3::Y;
         }
-        p.middle = project_to_edge(u_pos, v_pos, start, end);
+        // Edge bevel keeps projected middle; vertex-only can use corner middle when boundary lies on spoke.
+        p.middle = if vertex_only_mode {
+            let dist_to_edge =
+                (start - closest_to_line_segment(start, u_pos, v_pos)).length_squared();
+            if dist_to_edge < 1e-8 {
+                u_pos
+            } else {
+                project_to_edge(u_pos, v_pos, start, end)
+            }
+        } else {
+            project_to_edge(u_pos, v_pos, start, end)
+        };
         let mut d1 = (p.middle - start).normalize_or_zero();
         let mut d2 = (p.middle - end).normalize_or_zero();
         p.plane_no = d1.cross(d2).normalize_or_zero();

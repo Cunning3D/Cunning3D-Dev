@@ -1,26 +1,18 @@
 use bevy::prelude::*;
 use bevy::camera::RenderTarget;
-use bevy::window::{MonitorSelection, PrimaryWindow, RawHandleWrapper, WindowClosed, WindowPosition, WindowRef};
+use bevy::window::{MonitorSelection, WindowClosed, WindowPosition, WindowRef};
 use crossbeam_channel::Receiver;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
 use crate::{
-    app::window_frame::WINDOW_CORNER_RADIUS_LP,
     tabs_system,
     theme::ModernTheme,
     ui::{self, FloatTabToWindowEvent, FloatingTabRegistry, FloatingWindowEntry},
     viewport_options::OpenNaiveWindowEvent,
     MainCamera,
 };
-
-/// Windows rounded-corner clip state (region-based).
-#[derive(Resource, Default)]
-pub struct WinCornerClipState {
-    warmup_frames: u32,
-    last_applied: Option<(u32, u32, bool)>,
-}
 
 /// Bevy Resource to manage GPUI AI Workspace window lifecycle
 #[derive(Resource, Default)]
@@ -63,12 +55,45 @@ impl GpuiAiWorkspaceState {
         use crate::ai_workspace_gpui::app::launch_gpui_window;
         use crate::ai_workspace_gpui::protocol::{HostToUi, UiToHost};
         use crate::ai_workspace_gpui::AiWorkspaceHost;
-        use crate::tabs_registry::ai_workspace::tools::{build_tool_registry, ToolProfile};
+        use crate::tabs_registry::ai_workspace::tools::{
+            graph_ops, graph_script, rust_nodespec_ops, rust_plugin_ops, workspace_ops, ToolRegistry,
+        };
         use crossbeam_channel::unbounded;
 
         // Build tool registry with graph access
         let registry_arc = Arc::new(node_registry);
-        let tool_registry = Arc::new(build_tool_registry(ToolProfile::Full, registry_arc));
+        let mut registry = ToolRegistry::new();
+        registry.register(workspace_ops::ExploreWorkspaceTool);
+        registry.register(workspace_ops::SearchWorkspaceTool);
+        registry.register(workspace_ops::ReadFileTool);
+        registry.register(workspace_ops::PatchFileTool);
+        registry.register(workspace_ops::WriteFileTool);
+        registry.register(workspace_ops::WebSearchTool);
+        registry.register(workspace_ops::GetNodeSpecTemplateTool);
+        registry.register(workspace_ops::GetAbiReferenceTool);
+        registry.register(workspace_ops::GetInteractionGuideTool);
+        registry.register(workspace_ops::GetInteractionTemplateTool);
+        registry.register(workspace_ops::GenerateReplayTool);
+        registry.register(workspace_ops::ComparePluginsTool);
+        registry.register(workspace_ops::TerminalTool);
+        registry.register(workspace_ops::DiagnosticsTool);
+        registry.register(rust_nodespec_ops::ExtractUserCodeTool);
+        registry.register(rust_plugin_ops::CreateRustPluginTool);
+        registry.register(rust_plugin_ops::CompileRustPluginTool);
+        registry.register(rust_plugin_ops::LoadRustPluginsTool::new(registry_arc.clone()));
+        registry.register(rust_plugin_ops::RevertRustPluginBuildTool::new(registry_arc.clone()));
+        registry.register(rust_nodespec_ops::ApplyRustNodeSpecTool::new(registry_arc.clone()));
+        registry.register(graph_ops::CreateNodeTool::new(registry_arc.clone()));
+        registry.register(graph_ops::DeleteNodeTool::new());
+        registry.register(graph_ops::ConnectNodeTool::new());
+        registry.register(graph_ops::SetNodeFlagTool::new());
+        registry.register(graph_ops::SetParameterTool::new());
+        registry.register(graph_ops::GetGraphStateTool::new());
+        registry.register(graph_ops::EditNodeGraphTool::new(registry_arc.clone()));
+        registry.register(graph_ops::GetGeometryInsightTool::new());
+        registry.register(graph_script::RunGraphScriptTool::new(registry_arc.clone()));
+
+        let tool_registry = Arc::new(registry);
         self.tool_registry = Some(tool_registry.clone());
 
         // Create channels
@@ -376,6 +401,43 @@ pub fn handle_open_ai_workspace_window_system(
     }
 }
 
+/// Spawn the Hot Reload popup window (like UE's compile progress window).
+pub fn handle_open_hot_reload_window_system(
+    mut commands: Commands,
+    mut events: MessageReader<ui::OpenHotReloadWindowEvent>,
+    mut registry: ResMut<FloatingTabRegistry>,
+    mut floating_tabs: ResMut<tabs_system::FloatingEditorTabs>,
+    hot_log: Res<crate::tabs_system::pane::hot_reload::HotReloadLog>,
+    jobs_snap: Res<crate::tabs_system::pane::hot_reload::HotReloadJobsSnapshot>,
+    theme: Res<ModernTheme>,
+) {
+    if events.is_empty() { return; }
+    for _ in events.read() {
+        // Prevent duplicate windows
+        if registry.floating_windows.values().any(|e| e.title == "Hot Reload") { continue; }
+        let id = crate::ui::FloatingTabId(uuid::Uuid::from_u128(0xC3D_407_0E10AD_0000_0000_0001u128));
+        floating_tabs.tabs.entry(id.clone()).or_insert_with(|| {
+            Box::new(crate::tabs_system::pane::hot_reload::HotReloadTab::new(hot_log.clone(), jobs_snap.clone()))
+        });
+        let window_entity = commands.spawn((
+            Window {
+                title: "Hot Reload".into(),
+                resolution: bevy::window::WindowResolution::new(720, 480),
+                position: WindowPosition::Centered(MonitorSelection::Primary),
+                ..default()
+            },
+            bevy_egui::EguiContext::default(),
+            bevy_egui::EguiRenderOutput::default(),
+            bevy_egui::EguiInput::default(),
+            bevy_egui::EguiOutput::default(),
+            bevy_egui::WindowSize::default(),
+            crate::ui::NeedsEguiFontsInit,
+        )).id();
+        let _ = &theme;
+        registry.floating_windows.insert(window_entity, FloatingWindowEntry { title: "Hot Reload".into(), id });
+    }
+}
+
 pub fn handle_open_node_info_window_system(
     mut events: MessageReader<ui::OpenNodeInfoWindowEvent>,
     mut float_writer: MessageWriter<FloatTabToWindowEvent>,
@@ -406,86 +468,3 @@ pub fn cleanup_floating_windows_on_close_system(
     }
 }
 
-/// Apply *real* transparent rounded corners on Windows via `SetWindowRgn`.
-/// This is an **exclusive system** to guarantee main-thread execution:
-/// `bevy_winit::WINIT_WINDOWS` is thread-local, and winit window APIs can hang off-main-thread.
-pub fn apply_win_round_corners_system(
-    world: &mut World,
-    sys: &mut bevy::ecs::system::SystemState<(
-        ResMut<WinCornerClipState>,
-        Query<(Entity, &Window), With<PrimaryWindow>>,
-    )>,
-) {
-    let (mut st, q) = sys.get_mut(world);
-    // Delay until winit/Bevy have fully initialized the HWND and size.
-    if st.warmup_frames < 60 {
-        st.warmup_frames += 1;
-        return;
-    }
-    let Some((primary_entity, window)) = q.iter().next() else { return; };
-    let w = window.physical_width();
-    let h_px = window.physical_height();
-    if w == 0 || h_px == 0 {
-        return;
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-        use windows::Win32::Foundation::HWND;
-        use windows::Win32::Graphics::Gdi::{CreateRoundRectRgn, DeleteObject, SetWindowRgn};
-        use windows::Win32::UI::WindowsAndMessaging::{IsWindow, IsZoomed};
-
-        let mut raw: Option<RawWindowHandle> = None;
-        bevy::winit::WINIT_WINDOWS.with_borrow(|ww| {
-            let Some(window_id) = ww.entity_to_winit.get(&primary_entity) else { return; };
-            let Some(winit_window) = ww.windows.get(window_id) else { return; };
-            if let Ok(h) = winit_window.window_handle() {
-                raw = Some(h.as_raw());
-            }
-        });
-        let Some(raw) = raw else { return; };
-        let RawWindowHandle::Win32(win32) = raw else { return; };
-        let hwnd = HWND(win32.hwnd.get() as *mut std::ffi::c_void);
-        if hwnd.0.is_null() || unsafe { !IsWindow(Some(hwnd)).as_bool() } {
-            return;
-        }
-
-        let is_maximized = unsafe { IsZoomed(hwnd).as_bool() };
-        let now = (w, h_px, is_maximized);
-        if st.last_applied == Some(now) {
-            return;
-        }
-
-        unsafe {
-            // IMPORTANT: When maximized, keep the region cleared, otherwise borderless maximize
-            // can end up with a "missing strip" at the right/bottom due to region/client mismatch.
-            if is_maximized {
-                let _ = SetWindowRgn(hwnd, None, true);
-                st.last_applied = Some(now);
-                return;
-            }
-
-            let mut radius_px = (WINDOW_CORNER_RADIUS_LP * window.scale_factor()).round() as i32;
-            if radius_px < 10 {
-                radius_px = 10;
-            }
-            let region = CreateRoundRectRgn(
-                0,
-                0,
-                w as i32 + 1,
-                h_px as i32 + 1,
-                radius_px * 2,
-                radius_px * 2,
-            );
-            // On success, OS takes ownership of region; on failure we must free it.
-            if SetWindowRgn(hwnd, Some(region), true) == 0 {
-                let _ = DeleteObject(region.into());
-                return;
-            }
-        }
-
-        st.last_applied = Some(now);
-        return;
-    }
-}

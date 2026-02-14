@@ -113,6 +113,9 @@ pub struct EditorTabContext<'a> {
     pub voxel_selection: &'a crate::voxel_editor::VoxelSelection,
     pub voxel_ai_prompt_stamp_queue: &'a mut crate::voxel_editor::VoxelAiPromptStampQueue,
     pub coverlay_wants_input: &'a mut crate::coverlay_bevy_ui::CoverlayUiWantsInput,
+    pub runtime_module_state: &'a crate::runtime_module::RuntimeModuleState,
+    pub runtime_module_log: &'a crate::runtime_module::RuntimeModuleLog,
+    pub rust_code_changes: &'a crate::rust_code_watch::RustCodeChanges,
     /// The Bevy window entity this tab is currently rendering into.
     pub window_entity: Entity,
 }
@@ -389,6 +392,9 @@ pub struct EditorUiSystemParam<'w> {
     pub voxel_selection: Res<'w, crate::voxel_editor::VoxelSelection>,
     pub voxel_ai_prompt_stamp_queue: ResMut<'w, crate::voxel_editor::VoxelAiPromptStampQueue>,
     pub coverlay_wants_input: ResMut<'w, crate::coverlay_bevy_ui::CoverlayUiWantsInput>,
+    pub runtime_module_state: Res<'w, crate::runtime_module::RuntimeModuleState>,
+    pub runtime_module_log: Res<'w, crate::runtime_module::RuntimeModuleLog>,
+    pub rust_code_changes: Res<'w, crate::rust_code_watch::RustCodeChanges>,
 }
 
 pub fn show_editor_ui(world: &mut World) {
@@ -509,6 +515,9 @@ pub fn show_editor_ui(world: &mut World) {
         voxel_selection,
         mut voxel_ai_prompt_stamp_queue,
         mut coverlay_wants_input,
+        runtime_module_state,
+        runtime_module_log,
+        rust_code_changes,
         ..
     } = params;
 
@@ -561,6 +570,9 @@ pub fn show_editor_ui(world: &mut World) {
             voxel_selection: &*voxel_selection,
             voxel_ai_prompt_stamp_queue: &mut *voxel_ai_prompt_stamp_queue,
             coverlay_wants_input: &mut *coverlay_wants_input,
+            runtime_module_state: &*runtime_module_state,
+            runtime_module_log: &*runtime_module_log,
+            rust_code_changes: &*rust_code_changes,
             window_entity,
         };
 
@@ -1039,6 +1051,9 @@ pub fn show_floating_tabs_ui(world: &mut World) {
             voxel_selection,
             mut voxel_ai_prompt_stamp_queue,
             mut coverlay_wants_input,
+            runtime_module_state,
+            runtime_module_log,
+            rust_code_changes,
             ..
         } = params;
 
@@ -1094,6 +1109,9 @@ pub fn show_floating_tabs_ui(world: &mut World) {
                     voxel_selection: &*voxel_selection,
                     voxel_ai_prompt_stamp_queue: &mut *voxel_ai_prompt_stamp_queue,
                     coverlay_wants_input: &mut *coverlay_wants_input,
+                    runtime_module_state: &*runtime_module_state,
+                    runtime_module_log: &*runtime_module_log,
+                    rust_code_changes: &*rust_code_changes,
                     window_entity: entity,
                 };
 

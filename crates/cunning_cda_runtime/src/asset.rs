@@ -10,6 +10,29 @@ pub type ConnId = Uuid;
 pub type PortId = u32;
 pub type IfaceId = Uuid;
 
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum ExportsMode {
+    #[default]
+    BlackBox,
+    Advanced,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub enum ExportKind {
+    NodeOutput { node_id: NodeId },
+    NodeParam { node_id: NodeId, param: String, #[serde(default)] channel: Option<u32> },
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ExportDef {
+    pub name: String,
+    #[serde(default)]
+    pub label: String,
+    #[serde(default)]
+    pub order: i32,
+    pub kind: ExportKind,
+}
+
 /// Runtime-facing HUD exposure unit (single-select).
 /// Mirrors `CDAAsset.hud_units` in editor-side `src/cunning_core/cda/asset.rs`.
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -99,5 +122,10 @@ pub struct RuntimeDefinition {
     pub hud_units: Vec<HudUnit>,
     #[serde(default)]
     pub coverlay_units: Vec<CoverlayUnit>,
+    /// Host-side selectable exports (advanced mode).
+    #[serde(default)]
+    pub exports_mode: ExportsMode,
+    #[serde(default)]
+    pub exports: Vec<ExportDef>,
 }
 

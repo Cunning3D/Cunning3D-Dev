@@ -102,6 +102,8 @@ fn register_node_assistant_tools(registry: &mut ToolRegistry, node_registry: Arc
     registry.register(graph_ops::GetGraphStateTool::new());
     registry.register(graph_ops::GetNodeInfoTool::new(node_registry.clone()));
     registry.register(graph_ops::GetNodeLibraryTool::new(node_registry));
+    registry.register(graph_ops::CreateStickyNoteTool::new());
+    registry.register(graph_ops::CreateNetworkBoxTool::new());
     registry.register(knowledge_ops::SearchKnowledgeTool);
     registry.register(knowledge_ops::ReadKnowledgeTool);
 }
@@ -142,6 +144,8 @@ fn register_full_tools(registry: &mut ToolRegistry, node_registry: Arc<NodeRegis
     registry.register(graph_ops::GetNodeLibraryTool::new(node_registry.clone()));
     registry.register(graph_ops::ExportNodeSpecTool::new(node_registry.clone()));
     registry.register(graph_ops::CompareGeometryTool::new());
+    registry.register(graph_ops::CreateStickyNoteTool::new());
+    registry.register(graph_ops::CreateNetworkBoxTool::new());
 
     registry.register(graph_script::RunGraphScriptTool::new(node_registry));
 

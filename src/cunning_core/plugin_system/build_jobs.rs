@@ -114,37 +114,34 @@ fn enqueue_compile_plugin_jobs_system(
 
 fn apply_completed_compile_plugin_jobs_system(
     mut jobs: ResMut<crate::app_jobs::AppJobs>,
+    time: Res<Time>,
     ps: Option<Res<PluginSystem>>,
     reg: Option<Res<NodeRegistry>>,
     console: Option<Res<ConsoleLog>>,
+    hot_log: Option<Res<crate::tabs_system::pane::hot_reload::HotReloadLog>>,
 ) {
     let mut done: Vec<crate::app_jobs::JobId> = Vec::new();
-    while let Some(id) = jobs.completed_queue().pop_front() {
-        done.push(id);
-    }
+    while let Some(id) = jobs.completed_queue().pop_front() { done.push(id); }
     for id in done {
         let Some(out) = jobs.take_output(id) else { continue };
         let Ok(o) = out.downcast::<CompileRustPluginOutput>() else { continue };
-
-        if let Some(c) = console.as_deref() {
-            if o.success {
-                c.info(format!(
-                    "插件编译完成: {} {}",
-                    o.plugin_name,
-                    o.copied_dll
-                        .as_ref()
-                        .map(|p| p.display().to_string())
-                        .unwrap_or_default()
-                ));
-            } else {
-                c.error(format!("插件编译失败: {}", o.plugin_name));
+        let t = time.elapsed_secs();
+        if o.success {
+            let dll = o.copied_dll.as_ref().map(|p| p.display().to_string()).unwrap_or_default();
+            if let Some(c) = console.as_deref() { c.info(format!("Plugin compiled: {} {}", o.plugin_name, dll)); }
+            if let Some(hl) = hot_log.as_deref() { hl.info(format!("Build OK: {} → {}", o.plugin_name, dll), t); }
+        } else {
+            if let Some(c) = console.as_deref() { c.error(format!("Plugin compile failed: {}", o.plugin_name)); }
+            if let Some(hl) = hot_log.as_deref() { hl.error(format!("Build FAILED: {}", o.plugin_name), t); }
+            for err in &o.errors {
+                if let Some(hl) = hot_log.as_deref() { hl.error(format!("  {}:{}: {}", err.file, err.line, err.message), t); }
             }
         }
-
-        // Hot reload (main thread, best-effort). If PluginSystem not present yet, skip.
+        // Hot reload (main thread, best-effort)
         if o.success && o.hot_reloaded {
             if let (Some(ps), Some(reg)) = (ps.as_deref(), reg.as_deref()) {
                 ps.scan_plugins_latest("plugins", &*reg);
+                if let Some(hl) = hot_log.as_deref() { hl.info(format!("Hot-loaded plugin: {}", o.plugin_name), t); }
             }
         }
     }

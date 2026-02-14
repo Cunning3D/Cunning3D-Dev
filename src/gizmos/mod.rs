@@ -118,6 +118,10 @@ pub enum GizmoBinding {
         node_id: NodeId,
         param_name: String,
     },
+    ParamFloat {
+        node_id: NodeId,
+        param_name: String,
+    },
     PluginPick {
         node_id: NodeId,
         pick_id: u32,
@@ -302,6 +306,21 @@ fn handle_gizmo_moved_events(
                     {
                         if let ParameterValue::Vec3(ref mut val) = &mut param.value {
                             *val = event.new_position;
+                            graph_modified = true;
+                            dirty_nodes.insert(*node_id);
+                        }
+                    }
+                }
+            }
+            GizmoBinding::ParamFloat {
+                node_id,
+                param_name,
+            } => {
+                if let Some(node) = node_graph.nodes.get_mut(&node_id) {
+                    if let Some(param) = node.parameters.iter_mut().find(|p| p.name == *param_name)
+                    {
+                        if let ParameterValue::Float(ref mut val) = &mut param.value {
+                            *val = event.new_position.x;
                             graph_modified = true;
                             dirty_nodes.insert(*node_id);
                         }

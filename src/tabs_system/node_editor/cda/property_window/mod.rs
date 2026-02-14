@@ -1,6 +1,7 @@
 //! CDA property window
 pub mod basic_tab;
 pub mod binding_card;
+pub mod exports_tab;
 pub mod help_tab;
 pub mod icon_tab;
 pub mod overlay_tab;
@@ -96,6 +97,7 @@ pub fn draw_property_window(
                     for (tab, label) in [
                         (CDAPropertyTab::Basic, "Basic"),
                         (CDAPropertyTab::Params, "Params"),
+                        (CDAPropertyTab::Exports, "Exports"),
                         (CDAPropertyTab::Overlay, "Overlay"),
                         (CDAPropertyTab::Help, "Help"),
                         (CDAPropertyTab::Icon, "Icon"),
@@ -117,6 +119,7 @@ pub fn draw_property_window(
                 match cda_state.property_tab {
                     CDAPropertyTab::Basic => basic_tab::draw(ui, def.asset_mut()),
                     CDAPropertyTab::Params => params_tab::draw(ui, def.asset_mut(), cda_state),
+                    CDAPropertyTab::Exports => exports_tab::draw(ui, def.asset_mut()),
                     CDAPropertyTab::Overlay => {
                         overlay_tab::draw(ui, def.asset_mut(), node_registry, settings)
                     }

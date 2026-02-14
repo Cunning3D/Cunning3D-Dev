@@ -324,10 +324,14 @@ pub enum CopilotBackend {
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum GeminiCloudModel { Fast, Pro }
+pub enum GeminiCloudModel {
+    Fast,
+    Pro,
+}
 
 impl GeminiCloudModel {
-    pub fn model_name(&self) -> &'static str {
+    #[inline]
+    pub fn model_name(self) -> &'static str {
         match self {
             Self::Fast => "gemini-3-flash-preview",
             Self::Pro => "gemini-3-pro-preview",
@@ -372,7 +376,7 @@ impl Default for NodeEditorTab {
             copilot_relay_selected: None,
             copilot_relay_actions: Vec::new(),
             copilot_backend: CopilotBackend::LocalTiny,
-            gemini_cloud_model: GeminiCloudModel::Fast,
+            gemini_cloud_model: GeminiCloudModel::Pro,
             copilot_inflight_backend: None,
             copilot_retry_count: 0,
             copilot_request_start: None,

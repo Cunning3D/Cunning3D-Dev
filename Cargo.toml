@@ -18,7 +18,7 @@ codex = ["codex_bundled", "dep:axum", "dep:rmcp"]
 virtual_geometry_meshlet = ["bevy/meshlet", "bevy/meshlet_processor", "cunning_viewport/virtual_geometry_meshlet"]
 
 [dependencies]
-bevy = { path = "src/cunning_core/libs/3rd/bevy", default-features = false, features = ["3d"] }
+bevy = { path = "src/cunning_core/libs/3rd/bevy", default-features = false, features = ["3d", "file_watcher"] }
 bevy_ecs = { path = "src/cunning_core/libs/3rd/bevy/crates/bevy_ecs", default-features = false }
 bevy_image = { path = "src/cunning_core/libs/3rd/bevy/crates/bevy_image", default-features = false }
 bevy_egui = { path = "src/cunning_ui/crates/cunning_egui/crates/cunning_egui_bevy", default-features = false, features = ["default_fonts", "render", "manage_clipboard", "holes", "holes_cgui"] }
@@ -78,6 +78,7 @@ cosmic-text = "0.14.0"
 unicode-segmentation = "1.12"
 ordered-float = "5.1.0"
 walkdir = "2.5"
+notify = "8.2.0"
 ustr = { version = "1.1.0", features = ["serde"] }
 robust = "1.2.0"
 xatlas-rs = "0.1.3"
@@ -95,6 +96,7 @@ bevy_feathers = { path = "src/cunning_core/libs/3rd/bevy/crates/bevy_feathers" }
 bevy_input_focus = { path = "src/cunning_core/libs/3rd/bevy/crates/bevy_input_focus" }
 bevy_picking = { path = "src/cunning_core/libs/3rd/bevy/crates/bevy_picking" }
 kiddo = "5.2.4"
+rustc-hash = "2.1"
 candle-core = { git = "https://github.com/huggingface/candle.git", default-features = false }
 candle-nn = { git = "https://github.com/huggingface/candle.git", default-features = false }
 candle-transformers = { git = "https://github.com/huggingface/candle.git", default-features = false }
@@ -117,14 +119,13 @@ cunning_cda_runtime = { path = "crates/cunning_cda_runtime" }
 cunning_ui = { path = "crates/cunning_ui" }
 cunning_viewport = { path = "crates/cunning_viewport" }
 cunning_grid_plane = { path = "crates/cunning_grid_plane" }
+cunning_runtime_api = { path = "crates/cunning_runtime_api" }
 cunning_voxel_faces = { path = "crates/cunning_voxel_faces" }
 cunning_overlay_widgets = { path = "crates/cunning_overlay_widgets" }
 cunning_plugin_sdk = { path = "crates/cunning_plugin_sdk" }
-redb = "3.1.0"
-raw-window-handle = "0.6"
 cunning_syntax = { path = "crates/cunning_syntax" }
 cunning_syntax_egui = { path = "crates/cunning_syntax_egui" }
-windows = { version = "0.62.2", features = ["Win32_UI_Controls", "Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging"] }
+redb = "3.1.0"
 
 [build-dependencies]
 chacha20poly1305 = "0.10.1"

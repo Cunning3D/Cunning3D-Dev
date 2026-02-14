@@ -71,12 +71,18 @@ pub fn run_manifold_boolean(
         BooleanOperation::Union => m_target.union(&m_cutter),
         BooleanOperation::Intersection => m_target.intersection(&m_cutter),
         BooleanOperation::Difference => m_target.difference(&m_cutter),
-        _ => return Err(format!("Unsupported boolean operation: {:?}", op)),
+        BooleanOperation::Xor => {
+            // XOR = (A-B) U (B-A)
+            let a_minus_b = m_target.difference(&m_cutter);
+            let b_minus_a = m_cutter.difference(&m_target);
+            a_minus_b.union(&b_minus_a)
+        }
     };
 
     if result_manifold.is_empty() {
-        println!("DEBUG: Boolean Result is Empty! Treating as error to trigger legacy fallback.");
-        return Err("Manifold boolean produced empty result".to_string());
+        println!("DEBUG: Boolean Result is Empty! Returning empty geometry.");
+        // Return empty geometry instead of error
+        return Ok(Geometry::new());
     }
 
     // 4. Convert Manifold -> Geometry (triangulated)
@@ -387,6 +393,9 @@ fn classify_result_triangles_by_planes(
         let mut id = target_idx.query(n, d, false);
         if id == 0 {
             let invert = matches!(op, BooleanOperation::Difference);
+            // For XOR, normal is preserved for both A and B parts (A-B and B-A)
+            // B-A parts come from cutter. Cutter normals are preserved in B-A.
+            // So invert is false for XOR.
             id = cutter_idx.query(n, d, invert);
         }
         tri_ids.push(id);
@@ -670,6 +679,7 @@ where T: Copy + Send + Sync + 'static + Default + std::fmt::Debug + std::ops::Ne
                     if invert_on_diff && matches!(op, BooleanOperation::Difference) && source_id < 0 {
                         val = -val;
                     }
+                    // XOR does not invert normals for cutter (B-A keeps B normals)
                     val = norm_fn(val);
                     final_values[v_dense] = val;
                 }
