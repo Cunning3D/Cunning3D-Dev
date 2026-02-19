@@ -172,7 +172,7 @@ pub fn process_input_system(
             window_context.ctx.mouse_position = mouse_position;
             let blocked = occlusion
                 .0
-                .get(&event.window.index().index())
+                .get(&event.window)
                 .map_or(false, |rs| rs.iter().any(|r| r.contains(mouse_position)));
             window_context.egui_input.events.push(if blocked { egui::Event::PointerGone } else { egui::Event::PointerMoved(mouse_position) });
             // Reactive mode: hover/highlight needs a redraw on pointer movement (when not occluded by a hole).
@@ -201,7 +201,7 @@ pub fn process_input_system(
             }
             let blocked = occlusion
                 .0
-                .get(&event.window.index().index())
+                .get(&event.window)
                 .map_or(false, |rs| rs.iter().any(|r| r.contains(window_context.ctx.mouse_position)));
             if blocked { return; }
             if let Some(button) = button {
@@ -229,7 +229,7 @@ pub fn process_input_system(
         let _ = context_params.with_window_context(event.window, |mut window_context| {
             let blocked = occlusion
                 .0
-                .get(&event.window.index().index())
+                .get(&event.window)
                 .map_or(false, |rs| rs.iter().any(|r| r.contains(window_context.ctx.mouse_position)));
             if blocked { return; }
             window_context.egui_input.events.push(egui::Event::MouseWheel {

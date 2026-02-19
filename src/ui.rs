@@ -139,6 +139,20 @@ pub struct FloatingWindowEntry {
     pub id: FloatingTabId,
 }
 
+/// Marker component for custom chrome on floating native windows.
+#[derive(Component, Clone, Debug)]
+pub struct FloatingWindowChrome {
+    pub title: String,
+    pub id: FloatingTabId,
+}
+
+/// Runtime state for custom-chrome floating windows.
+#[derive(Component, Clone, Debug, Default)]
+pub struct FloatingWindowChromeState {
+    pub pinned: bool,
+    pub maximized: bool,
+}
+
 #[derive(Resource, Default)]
 pub struct FloatingTabRegistry {
     /// Maps a Bevy Window Entity to the floating tab instance it displays.
@@ -204,6 +218,8 @@ pub struct UiState {
     pub settings_edits: Vec<SettingsEdit>,
     // Flag to open AI Workspace GPUI window (set by pane command, consumed by system)
     pub pending_open_ai_workspace: bool,
+    // Floating custom-chrome z-order (tail = frontmost).
+    pub floating_window_chrome_order: Vec<FloatingTabId>,
 }
 
 impl Default for UiState {
@@ -228,6 +244,7 @@ impl Default for UiState {
             pane_command_queue: Default::default(),
             settings_edits: Default::default(),
             pending_open_ai_workspace: false,
+            floating_window_chrome_order: Default::default(),
         }
     }
 }

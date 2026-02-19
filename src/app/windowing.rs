@@ -303,16 +303,23 @@ pub fn handle_float_tab_window_system(
     mut commands: Commands,
     mut events: MessageReader<FloatTabToWindowEvent>,
     mut registry: ResMut<FloatingTabRegistry>,
+    mut ui_state: ResMut<crate::ui::UiState>,
     theme: Res<ModernTheme>,
 ) {
     for event in events.read() {
         let size = event.initial_rect.size();
+        let chrome = crate::ui::FloatingWindowChrome {
+            title: event.title.clone(),
+            id: event.id.clone(),
+        };
         let window_entity = commands
             .spawn((
                 Window {
                     title: event.title.clone(),
                     resolution: bevy::window::WindowResolution::new(size.x.max(1000.0) as u32, size.y.max(1000.0) as u32),
                     position: WindowPosition::At(bevy::math::IVec2::new(event.initial_rect.min.x as i32, event.initial_rect.min.y as i32)),
+                    decorations: false,
+                    transparent: true,
                     ..default()
                 },
                 bevy_egui::EguiContext::default(),
@@ -321,8 +328,11 @@ pub fn handle_float_tab_window_system(
                 bevy_egui::EguiOutput::default(),
                 bevy_egui::WindowSize::default(),
                 crate::ui::NeedsEguiFontsInit,
+                chrome,
+                crate::ui::FloatingWindowChromeState::default(),
             ))
             .id();
+        ui_state.floating_window_chrome_order.push(event.id.clone());
         let _ = &theme;
         registry.floating_windows.insert(
             window_entity,
@@ -339,6 +349,7 @@ pub fn handle_open_settings_window_system(
     mut events: MessageReader<ui::OpenSettingsWindowEvent>,
     mut registry: ResMut<FloatingTabRegistry>,
     mut floating_tabs: ResMut<tabs_system::FloatingEditorTabs>,
+    mut ui_state: ResMut<crate::ui::UiState>,
     theme: Res<ModernTheme>,
 ) {
     if events.is_empty() {
@@ -349,6 +360,10 @@ pub fn handle_open_settings_window_system(
             continue;
         }
         let id = crate::ui::FloatingTabId(uuid::Uuid::from_u128(0x5E7714A0D6A5457B9E6C4D8C6D8B5E77));
+        let chrome = crate::ui::FloatingWindowChrome {
+            title: "Settings".into(),
+            id: id.clone(),
+        };
         floating_tabs
             .tabs
             .entry(id.clone())
@@ -359,6 +374,8 @@ pub fn handle_open_settings_window_system(
                     title: "Settings".into(),
                     resolution: bevy::window::WindowResolution::new(980, 720),
                     position: WindowPosition::Centered(MonitorSelection::Primary),
+                    decorations: false,
+                    transparent: true,
                     ..default()
                 },
                 bevy_egui::EguiContext::default(),
@@ -367,8 +384,11 @@ pub fn handle_open_settings_window_system(
                 bevy_egui::EguiOutput::default(),
                 bevy_egui::WindowSize::default(),
                 crate::ui::NeedsEguiFontsInit,
+                chrome,
+                crate::ui::FloatingWindowChromeState::default(),
             ))
             .id();
+        ui_state.floating_window_chrome_order.push(id.clone());
         let _ = &theme;
         registry.floating_windows.insert(
             window_entity,
@@ -407,6 +427,7 @@ pub fn handle_open_hot_reload_window_system(
     mut events: MessageReader<ui::OpenHotReloadWindowEvent>,
     mut registry: ResMut<FloatingTabRegistry>,
     mut floating_tabs: ResMut<tabs_system::FloatingEditorTabs>,
+    mut ui_state: ResMut<crate::ui::UiState>,
     hot_log: Res<crate::tabs_system::pane::hot_reload::HotReloadLog>,
     jobs_snap: Res<crate::tabs_system::pane::hot_reload::HotReloadJobsSnapshot>,
     theme: Res<ModernTheme>,
@@ -416,6 +437,10 @@ pub fn handle_open_hot_reload_window_system(
         // Prevent duplicate windows
         if registry.floating_windows.values().any(|e| e.title == "Hot Reload") { continue; }
         let id = crate::ui::FloatingTabId(uuid::Uuid::from_u128(0xC3D_407_0E10AD_0000_0000_0001u128));
+        let chrome = crate::ui::FloatingWindowChrome {
+            title: "Hot Reload".into(),
+            id: id.clone(),
+        };
         floating_tabs.tabs.entry(id.clone()).or_insert_with(|| {
             Box::new(crate::tabs_system::pane::hot_reload::HotReloadTab::new(hot_log.clone(), jobs_snap.clone()))
         });
@@ -424,6 +449,8 @@ pub fn handle_open_hot_reload_window_system(
                 title: "Hot Reload".into(),
                 resolution: bevy::window::WindowResolution::new(720, 480),
                 position: WindowPosition::Centered(MonitorSelection::Primary),
+                decorations: false,
+                transparent: true,
                 ..default()
             },
             bevy_egui::EguiContext::default(),
@@ -432,7 +459,10 @@ pub fn handle_open_hot_reload_window_system(
             bevy_egui::EguiOutput::default(),
             bevy_egui::WindowSize::default(),
             crate::ui::NeedsEguiFontsInit,
+            chrome,
+            crate::ui::FloatingWindowChromeState::default(),
         )).id();
+        ui_state.floating_window_chrome_order.push(id.clone());
         let _ = &theme;
         registry.floating_windows.insert(window_entity, FloatingWindowEntry { title: "Hot Reload".into(), id });
     }
@@ -458,13 +488,14 @@ pub fn handle_open_node_info_window_system(
 
 pub fn cleanup_floating_windows_on_close_system(
     mut registry: ResMut<FloatingTabRegistry>,
+    mut ui_state: ResMut<crate::ui::UiState>,
     mut closed_events: MessageReader<WindowClosed>,
     mut floating_tabs: ResMut<tabs_system::FloatingEditorTabs>,
 ) {
     for evt in closed_events.read() {
         if let Some(entry) = registry.floating_windows.remove(&evt.window) {
+            ui_state.floating_window_chrome_order.retain(|id| id != &entry.id);
             floating_tabs.tabs.remove(&entry.id);
         }
     }
 }
-

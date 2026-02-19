@@ -243,12 +243,11 @@ impl EguiNode {
         self.vertex_data.clear();
         self.index_data.clear();
 
-        let win_key = self.window_entity.index().index();
         let occ_res = world.get_resource::<crate::EguiOcclusionRects>();
         let (occ, occ_keys_sample) = occ_res
             .map(|o| {
                 let keys = o.0.keys().take(4).copied().collect::<Vec<_>>();
-                (o.0.get(&win_key).cloned().unwrap_or_default(), keys)
+                (o.0.get(&self.window_entity).cloned().unwrap_or_default(), keys)
             })
             .unwrap_or_default();
 
@@ -318,7 +317,7 @@ impl EguiNode {
                 bevy::log::warn!(
                     "EGUI_NODE_HOLES win={:?} win_key={} map_keys={:?} paint_jobs={} holes={} max_hole={:.1}% sf={:.3} first={:?}",
                     self.window_entity,
-                    win_key,
+                    self.window_entity.index(),
                     occ_keys_sample,
                     paint_jobs.len(),
                     holes_px.len(),

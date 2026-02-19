@@ -1,6 +1,6 @@
 use bevy::ecs::system::{SystemParam, SystemState};
 use bevy::prelude::*;
-use bevy::window::PrimaryWindow;
+use bevy::window::{PrimaryWindow, WindowLevel};
 use bevy_egui::{
     egui::{self, Ui},
     EguiContext, EguiInput, EguiOutput, EguiRenderOutput, WindowSize,
@@ -1142,6 +1142,9 @@ pub fn show_floating_tabs_ui(world: &mut World) {
     // Fetch shared editor resources (same context as main editor UI) + per-window EguiContext.
     let mut system_state: SystemState<(
         Query<&'static mut EguiContext, Without<PrimaryWindow>>,
+        Query<&'static mut Window, Without<PrimaryWindow>>,
+        Query<&'static mut crate::ui::FloatingWindowChromeState, Without<PrimaryWindow>>,
+        Commands,
         ResMut<UiState>,
         ResMut<NodeGraphResource>,
         ResMut<ViewportInteractionState>,
@@ -1152,13 +1155,16 @@ pub fn show_floating_tabs_ui(world: &mut World) {
         MessageWriter<OpenNaiveWindowEvent>,
         MessageWriter<crate::ui::OpenNodeInfoWindowEvent>,
         MessageWriter<FloatTabToWindowEvent>,
-        Res<crate::ui::FloatingTabRegistry>,
+        ResMut<crate::ui::FloatingTabRegistry>,
         EditorUiSystemParam,
     )> = SystemState::new(world);
 
     for entity in window_entities {
         let (
             mut window_query,
+            mut window_mut_q,
+            mut chrome_state_q,
+            mut commands,
             mut ui_state,
             mut node_graph_res,
             mut viewport_interaction_state,
@@ -1169,7 +1175,7 @@ pub fn show_floating_tabs_ui(world: &mut World) {
             mut open_naive_window_writer,
             mut open_node_info_window_writer,
             mut _float_tab_writer,
-            floating_registry,
+            mut floating_registry,
             params,
         ) = system_state.get_mut(world);
 
@@ -1227,7 +1233,7 @@ pub fn show_floating_tabs_ui(world: &mut World) {
             .map(|i| i.0.as_slice())
             .unwrap_or(&[]);
 
-        if let Some(window_entry) = floating_registry.floating_windows.get(&entity) {
+        if let Some(window_entry) = floating_registry.floating_windows.get(&entity).cloned() {
             if let Some(tab) = floating_tabs.tabs.get_mut(&window_entry.id) {
                 let ctx = egui_ctx.get_mut();
 
@@ -1292,7 +1298,180 @@ pub fn show_floating_tabs_ui(world: &mut World) {
                 } else {
                     egui::CentralPanel::default()
                 };
-                panel.show(ctx, |ui| tab.ui(ui, &mut cx));
+                let (is_pinned, is_maximized) = chrome_state_q
+                    .get_mut(entity)
+                    .map(|state| (state.pinned, state.maximized))
+                    .unwrap_or((false, false));
+                let mut close_clicked = false;
+                let mut drag_started = false;
+                let mut bring_to_front = false;
+                let mut pin_clicked = false;
+                let mut min_clicked = false;
+                let mut max_clicked = false;
+                let mut title_double_clicked = false;
+                panel.show(ctx, |ui| {
+                    let id = window_entry.id.clone();
+                    let title = window_entry.title.clone();
+                    if cx
+                        .ui_state
+                        .floating_window_chrome_order
+                        .iter()
+                        .all(|x| *x != id)
+                    {
+                        cx.ui_state.floating_window_chrome_order.push(id.clone());
+                    }
+                    let is_front = cx
+                        .ui_state
+                        .floating_window_chrome_order
+                        .last()
+                        .map_or(false, |x| *x == id);
+                    let frame = egui::Frame::window(ui.style())
+                        .fill(egui::Color32::from_rgba_unmultiplied(20, 20, 24, 245))
+                        .corner_radius(egui::CornerRadius::same(10))
+                        .inner_margin(egui::Margin::same(8));
+                    frame.show(ui, |ui| {
+                        let drag = ui
+                            .horizontal(|ui| {
+                                let bar_h = 24.0;
+                                let controls_w = 36.0 + (24.0 * 3.0) + 14.0;
+                                let title_resp = ui.allocate_response(
+                                    egui::vec2((ui.available_width() - controls_w).max(48.0), bar_h),
+                                    egui::Sense::click_and_drag(),
+                                );
+                                let title_col = if is_front {
+                                    egui::Color32::from_rgb(220, 220, 220)
+                                } else {
+                                    egui::Color32::from_rgb(170, 170, 170)
+                                };
+                                ui.painter().text(
+                                    title_resp.rect.left_center() + egui::vec2(4.0, 0.0),
+                                    egui::Align2::LEFT_CENTER,
+                                    title,
+                                    egui::TextStyle::Button.resolve(ui.style()),
+                                    title_col,
+                                );
+                                let mut top_btn = egui::Button::new("TOP");
+                                if is_pinned {
+                                    top_btn =
+                                        top_btn.fill(egui::Color32::from_rgb(64, 100, 156));
+                                }
+                                let top_resp = ui
+                                    .add_sized([36.0, 20.0], top_btn)
+                                    .on_hover_text("Always on top");
+                                if top_resp.clicked() {
+                                    pin_clicked = true;
+                                    bring_to_front = true;
+                                }
+
+                                let min_resp = ui
+                                    .add_sized([24.0, 20.0], egui::Button::new("_"))
+                                    .on_hover_text("Minimize");
+                                if min_resp.clicked() {
+                                    min_clicked = true;
+                                    bring_to_front = true;
+                                }
+
+                                let max_label = if is_maximized { "R" } else { "[]" };
+                                let max_resp = ui
+                                    .add_sized([24.0, 20.0], egui::Button::new(max_label))
+                                    .on_hover_text("Maximize / Restore");
+                                if max_resp.clicked() {
+                                    max_clicked = true;
+                                    bring_to_front = true;
+                                }
+
+                                if ui
+                                    .add_sized(
+                                        [24.0, 20.0],
+                                        egui::Button::new("X")
+                                            .fill(egui::Color32::from_rgb(120, 36, 36)),
+                                    )
+                                    .on_hover_text("Close")
+                                    .clicked()
+                                {
+                                    close_clicked = true;
+                                    bring_to_front = true;
+                                }
+                                title_resp
+                            })
+                            .inner;
+                        if drag.double_clicked() {
+                            title_double_clicked = true;
+                            bring_to_front = true;
+                        } else if drag.clicked() {
+                            bring_to_front = true;
+                        }
+                        if drag.drag_started() {
+                            drag_started = true;
+                            bring_to_front = true;
+                        }
+                        ui.separator();
+                        tab.ui(ui, &mut cx);
+                    });
+                });
+                if bring_to_front {
+                    if let Some(pos) = cx
+                        .ui_state
+                        .floating_window_chrome_order
+                        .iter()
+                        .position(|x| *x == window_entry.id)
+                    {
+                        let v = cx.ui_state.floating_window_chrome_order.remove(pos);
+                        cx.ui_state.floating_window_chrome_order.push(v);
+                    }
+                }
+                if pin_clicked || max_clicked || title_double_clicked {
+                    let mut pinned_now = is_pinned;
+                    let mut maximized_now = is_maximized;
+                    if let Ok(mut state) = chrome_state_q.get_mut(entity) {
+                        if pin_clicked {
+                            state.pinned = !state.pinned;
+                        }
+                        if max_clicked || title_double_clicked {
+                            state.maximized = !state.maximized;
+                        }
+                        pinned_now = state.pinned;
+                        maximized_now = state.maximized;
+                    } else {
+                        if pin_clicked {
+                            pinned_now = !pinned_now;
+                        }
+                        if max_clicked || title_double_clicked {
+                            maximized_now = !maximized_now;
+                        }
+                    }
+                    if let Ok(mut w) = window_mut_q.get_mut(entity) {
+                        if pin_clicked {
+                            w.window_level = if pinned_now {
+                                WindowLevel::AlwaysOnTop
+                            } else {
+                                WindowLevel::Normal
+                            };
+                        }
+                        if max_clicked || title_double_clicked {
+                            w.set_maximized(maximized_now);
+                        }
+                    }
+                }
+                if min_clicked || drag_started {
+                    if let Ok(mut w) = window_mut_q.get_mut(entity) {
+                        if min_clicked {
+                            w.set_minimized(true);
+                        }
+                        if drag_started {
+                            w.start_drag_move();
+                        }
+                    }
+                }
+                if close_clicked {
+                    floating_tabs.tabs.remove(&window_entry.id);
+                    floating_registry.floating_windows.remove(&entity);
+                    cx.ui_state
+                        .floating_window_chrome_order
+                        .retain(|x| *x != window_entry.id);
+                    commands.entity(entity).despawn();
+                    continue;
+                }
 
                 // NOTE: Do not force repaint every frame; winit reactive mode + egui repaint requests
                 // should drive updates only when needed (input/animations/data changes).

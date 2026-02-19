@@ -47,7 +47,7 @@ impl Default for EguiHolesSettings {
 
 #[derive(Resource, Default)]
 struct EguiHolesCache {
-    hash: HashMap<u32, u64>,
+    hash: HashMap<Entity, u64>,
 }
 
 /// Plugin that keeps `EguiOcclusionRects` in sync with bevy_ui/bevy_cgui layout.
@@ -160,7 +160,7 @@ fn sync_egui_occlusion(
             camera_to_window.insert(cam, win);
         }
     }
-    let mut per_window: HashMap<u32, Vec<egui::Rect>> = HashMap::new();
+    let mut per_window: HashMap<Entity, Vec<egui::Rect>> = HashMap::new();
     let div = egui_settings.scale_factor;
 
     // bevy_ui: keep AutoAll conservative to avoid nuking egui (manual holes only).
@@ -182,7 +182,7 @@ fn sync_egui_occlusion(
             }
         }
         let Some(rect) = rect_from_node(cn.size * inv, t * inv, div) else { continue; };
-        per_window.entry(window.index().index()).or_default().push(rect);
+        per_window.entry(window).or_default().push(rect);
     }
 
     // bevy_cgui: AutoAll = all nodes (with guards); ManualOnly = marked nodes.
@@ -212,7 +212,7 @@ fn sync_egui_occlusion(
             }
         }
         let Some(rect) = rect_from_node(cn.size * inv, t * inv, div) else { continue; };
-        per_window.entry(window.index().index()).or_default().push(rect);
+        per_window.entry(window).or_default().push(rect);
     }
     update_occlusion(&mut occ, &mut cache, per_window);
 }
@@ -247,7 +247,7 @@ fn sync_egui_occlusion(
             camera_to_window.insert(cam, win);
         }
     }
-    let mut per_window: HashMap<u32, Vec<egui::Rect>> = HashMap::new();
+    let mut per_window: HashMap<Entity, Vec<egui::Rect>> = HashMap::new();
     let div = egui_settings.scale_factor;
     for (cn, gt, cam, target_info, hole, disable) in q_ui.iter() {
         if disable.is_some() { continue; }
@@ -267,7 +267,7 @@ fn sync_egui_occlusion(
             }
         }
         let Some(rect) = rect_from_node(cn.size * inv, t * inv, div) else { continue; };
-        per_window.entry(window.index().index()).or_default().push(rect);
+        per_window.entry(window).or_default().push(rect);
     }
     update_occlusion(&mut occ, &mut cache, per_window);
 }
@@ -275,7 +275,7 @@ fn sync_egui_occlusion(
 fn update_occlusion(
     occ: &mut EguiOcclusionRects,
     cache: &mut EguiHolesCache,
-    mut per_window: HashMap<u32, Vec<egui::Rect>>,
+    mut per_window: HashMap<Entity, Vec<egui::Rect>>,
 ) {
     let mut new_hash = HashMap::new();
     for (win, rects) in per_window.iter_mut() {

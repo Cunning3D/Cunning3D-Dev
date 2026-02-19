@@ -127,6 +127,7 @@ struct HotRestartRuntime {
     waiting: Option<HandoffWait>,
     build_spawn: Option<crossbeam_channel::Receiver<Result<(), String>>>,
     build_log: Option<crossbeam_channel::Receiver<BuildLogLine>>,
+    build_log_accum: String,
 }
 
 #[derive(Clone, Debug)]
@@ -438,9 +439,14 @@ fn poll_hot_restart_build_spawn_system(
     hot_log: Option<Res<crate::tabs_system::pane::hot_reload::HotReloadLog>>,
     time: Res<Time>,
 ) {
-    if let Some(rx) = rt.as_mut().build_log.as_ref() {
-        let t = time.elapsed_secs();
-        for l in rx.try_iter() {
+    let t = time.elapsed_secs();
+    let mut flush_build_lines = |rt: &mut HotRestartRuntime| {
+        let lines: Vec<BuildLogLine> = rt
+            .build_log
+            .as_ref()
+            .map(|rx| rx.try_iter().collect())
+            .unwrap_or_default();
+        for l in lines {
             if l.line.trim().is_empty() {
                 continue;
             }
@@ -460,28 +466,52 @@ fn poll_hot_restart_build_spawn_system(
                     hl.info(msg, t);
                 }
             }
+            rt.build_log_accum.push_str(&l.line);
+            rt.build_log_accum.push('\n');
         }
-    }
+    };
+    flush_build_lines(rt.as_mut());
     let Some(rx) = rt.as_mut().build_spawn.as_mut() else { return; };
     match rx.try_recv() {
         Ok(Ok(())) => {
+            // Drain any late lines that arrived right before completion.
+            flush_build_lines(rt.as_mut());
             rt.as_mut().build_spawn = None;
             rt.as_mut().build_log = None;
-            let t = time.elapsed_secs();
+            rt.as_mut().build_log_accum.clear();
             if let Some(c) = console.as_deref() { c.info("Hot Restart: spawned new process, waiting for ready signal..."); }
             if let Some(hl) = hot_log.as_deref() { hl.info("Hot Restart: waiting for ready signal...", t); }
         }
         Ok(Err(e)) => {
+            // Drain any late lines that arrived right before failure.
+            flush_build_lines(rt.as_mut());
+            let detail_block = if !rt.as_mut().build_log_accum.trim().is_empty() {
+                Some(rt.as_mut().build_log_accum.clone())
+            } else {
+                None
+            };
             rt.as_mut().build_spawn = None;
             rt.as_mut().build_log = None;
             rt.as_mut().waiting = None;
-            let t = time.elapsed_secs();
             if let Some(c) = console.as_deref() { c.error(format!("Hot Restart failed: {e}")); }
             if let Some(hl) = hot_log.as_deref() { hl.error(format!("Hot Restart failed: {e}"), t); }
+            if let Some(details) = detail_block {
+                if let Some(c) = console.as_deref() {
+                    c.error("Hot Restart build log (full):");
+                    c.error(details.clone());
+                }
+                if let Some(hl) = hot_log.as_deref() {
+                    hl.error("Hot Restart build log (full):", t);
+                    hl.error(details, t);
+                }
+            }
+            rt.as_mut().build_log_accum.clear();
         }
         Err(crossbeam_channel::TryRecvError::Empty) => {}
         Err(crossbeam_channel::TryRecvError::Disconnected) => {
             rt.as_mut().build_spawn = None;
+            rt.as_mut().build_log = None;
+            rt.as_mut().build_log_accum.clear();
         }
     }
 }
@@ -536,6 +566,7 @@ fn handle_hot_restart_requests_system(
     // Build + spawn in background thread to avoid freezing the main thread.
     let (tx, rx2) = crossbeam_channel::unbounded::<Result<(), String>>();
     let (tx_log, rx_log) = crossbeam_channel::unbounded::<BuildLogLine>();
+    rt.as_mut().build_log_accum.clear();
     rt.as_mut().build_spawn = Some(rx2);
     rt.as_mut().build_log = Some(rx_log);
     let snap_path2 = snap_path.clone();
@@ -563,12 +594,22 @@ fn build_new_exe_streaming(
 ) -> Result<PathBuf, String> {
     let cargo = crate::cunning_core::plugin_system::rust_build::find_cargo()
         .unwrap_or_else(|| PathBuf::from("cargo"));
-    let _ = tx.send(BuildLogLine { is_stderr: false, line: format!("cmd: cargo build --bin cunning3d  (target_dir={})", target_dir.display()) });
+    let _ = tx.send(BuildLogLine {
+        is_stderr: false,
+        line: format!(
+            "cmd: cargo build --bin cunning3d --color never --message-format short (target_dir={})",
+            target_dir.display()
+        ),
+    });
     let mut cmd = Command::new(cargo);
     cmd.current_dir(PathBuf::from(env!("CARGO_MANIFEST_DIR")))
         .arg("build")
         .arg("--bin")
         .arg("cunning3d")
+        .arg("--color")
+        .arg("never")
+        .arg("--message-format")
+        .arg("short")
         .env("CARGO_TARGET_DIR", target_dir)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -581,16 +622,17 @@ fn build_new_exe_streaming(
     let t_out = std::thread::spawn(move || {
         let Some(s) = stdout else { return; };
         let mut r = BufReader::new(s);
-        let mut line = String::new();
+        let mut line = Vec::<u8>::new();
         loop {
             line.clear();
-            match r.read_line(&mut line) {
+            match r.read_until(b'\n', &mut line) {
                 Ok(0) => break,
                 Ok(_) => {
-                    let l = line.trim_end_matches(&['\r', '\n'][..]).to_string();
+                    let decoded = String::from_utf8_lossy(&line).to_string();
+                    let l = decoded.trim_end_matches(&['\r', '\n'][..]).to_string();
                     let _ = tx2.send(BuildLogLine { is_stderr: false, line: l });
                     if let Ok(mut raw) = raw2.lock() {
-                        raw.push_str(line.as_str());
+                        raw.push_str(decoded.as_str());
                     }
                 }
                 Err(_) => break,
@@ -602,16 +644,17 @@ fn build_new_exe_streaming(
     let t_err = std::thread::spawn(move || {
         let Some(s) = stderr else { return; };
         let mut r = BufReader::new(s);
-        let mut line = String::new();
+        let mut line = Vec::<u8>::new();
         loop {
             line.clear();
-            match r.read_line(&mut line) {
+            match r.read_until(b'\n', &mut line) {
                 Ok(0) => break,
                 Ok(_) => {
-                    let l = line.trim_end_matches(&['\r', '\n'][..]).to_string();
+                    let decoded = String::from_utf8_lossy(&line).to_string();
+                    let l = decoded.trim_end_matches(&['\r', '\n'][..]).to_string();
                     let _ = tx3.send(BuildLogLine { is_stderr: true, line: l });
                     if let Ok(mut raw) = raw3.lock() {
-                        raw.push_str(line.as_str());
+                        raw.push_str(decoded.as_str());
                     }
                 }
                 Err(_) => break,
@@ -622,9 +665,15 @@ fn build_new_exe_streaming(
     let _ = t_out.join();
     let _ = t_err.join();
     if !status.success() {
-        let raw = raw_log.lock().ok().map(|s| s.clone()).unwrap_or_default();
+        let mut raw = raw_log.lock().ok().map(|s| s.clone()).unwrap_or_default();
         if raw.trim().is_empty() {
-            return Err(format!("cargo build failed (code={:?})", status.code()));
+            raw = capture_build_output_fallback(target_dir);
+        }
+        if raw.trim().is_empty() {
+            return Err(format!(
+                "cargo build failed (code={:?}) (no stdout/stderr captured)",
+                status.code()
+            ));
         }
         return Err(format!(
             "cargo build failed (code={:?})\n{}",
@@ -637,6 +686,33 @@ fn build_new_exe_streaming(
         return Err(format!("build succeeded but exe missing: {}", exe.display()));
     }
     Ok(exe)
+}
+
+fn capture_build_output_fallback(target_dir: &Path) -> String {
+    let cargo = crate::cunning_core::plugin_system::rust_build::find_cargo()
+        .unwrap_or_else(|| PathBuf::from("cargo"));
+    let out = Command::new(cargo)
+        .current_dir(PathBuf::from(env!("CARGO_MANIFEST_DIR")))
+        .arg("build")
+        .arg("--bin")
+        .arg("cunning3d")
+        .arg("--color")
+        .arg("never")
+        .arg("--message-format")
+        .arg("short")
+        .env("CARGO_TARGET_DIR", target_dir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output();
+    let Ok(out) = out else {
+        return String::new();
+    };
+    let mut raw = String::from_utf8_lossy(&out.stdout).to_string();
+    if !raw.is_empty() && !raw.ends_with('\n') {
+        raw.push('\n');
+    }
+    raw.push_str(String::from_utf8_lossy(&out.stderr).as_ref());
+    raw
 }
 
 #[derive(Message, Clone)]

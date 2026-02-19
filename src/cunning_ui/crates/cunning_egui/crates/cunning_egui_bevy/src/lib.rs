@@ -188,7 +188,7 @@ pub struct EguiInput(pub egui::RawInput);
 /// Regions in egui "points" that should be transparent and not receive pointer input (per window).
 #[derive(Clone, Debug, Default, Resource)]
 #[cfg_attr(feature = "render", derive(ExtractResource))]
-pub struct EguiOcclusionRects(pub std::collections::HashMap<u32, Vec<egui::Rect>>);
+pub struct EguiOcclusionRects(pub std::collections::HashMap<Entity, Vec<egui::Rect>>);
 
 /// A resource for accessing clipboard.
 ///
