@@ -117,7 +117,7 @@ struct VoxelEditUiState {
     voxel_size: f32,
     cmds: vox::DiscreteVoxelCmdList,
     bake_state: vox::discrete::DiscreteBakeState,
-    grid: vox::DiscreteVoxelGrid,
+    grid: vox::DiscreteSdfGrid,
     drawing: bool,
     last_cell: Option<IVec3>,
     line_start: Option<IVec3>,
@@ -133,7 +133,7 @@ impl Default for VoxelEditUiState {
             voxel_size: 0.1,
             cmds: vox::DiscreteVoxelCmdList::default(),
             bake_state: vox::discrete::DiscreteBakeState::default(),
-            grid: vox::DiscreteVoxelGrid::new(0.1),
+            grid: vox::DiscreteSdfGrid::new(0.1),
             drawing: false,
             last_cell: None,
             line_start: None,
@@ -147,7 +147,7 @@ impl Default for VoxelEditUiState {
 impl VoxelEditUiState {
     fn reset_bake(&mut self) {
         self.bake_state = vox::discrete::DiscreteBakeState::default();
-        self.grid = vox::DiscreteVoxelGrid::new(self.voxel_size.max(0.001));
+        self.grid = vox::DiscreteSdfGrid::new(self.voxel_size.max(0.001));
         vox::discrete::bake_cmds_incremental(&mut self.grid, &self.cmds, &mut self.bake_state);
     }
 }
@@ -259,7 +259,7 @@ fn draw_player_voxel_gizmos_system(
 ) {
     let Some(def_arc) = s.def.clone() else { return; };
     let def = def_arc.as_ref();
-    let Some(_target) = resolve_voxel_target(def, &s.coverlay_enabled_units) else { return; };
+    let Some(_target) = resolve_voxel_target(def, s.active_hud_unit, &s.coverlay_enabled_units) else { return; };
 
     // Always show a hover cursor box while voxel coverlay is enabled.
     if s.voxel_hud.has_hit {
@@ -442,7 +442,7 @@ fn sync_player_voxel_faces_root_system(
 ) {
     let Some(def_arc) = s.def.clone() else { root.node_id = None; root.voxel_size = 0.0; return; };
     let def = def_arc.as_ref();
-    let Some(target) = resolve_voxel_target(def, &s.coverlay_enabled_units) else { root.node_id = None; root.voxel_size = 0.0; return; };
+    let Some(target) = resolve_voxel_target(def, s.active_hud_unit, &s.coverlay_enabled_units) else { root.node_id = None; root.voxel_size = 0.0; return; };
     if s.voxel.target != Some(target) { init_voxel_state_from_def(&mut s.voxel, def, target); }
 
     // Keep the GPU voxel cache in sync incrementally; avoid per-frame work if cmds didn't change.
@@ -587,8 +587,20 @@ fn is_voxel_edit_node(def: &cunning_cda_runtime::asset::RuntimeDefinition, node_
         .is_some_and(|n| n.type_id == "cunning.voxel.edit")
 }
 
-fn resolve_voxel_target(def: &cunning_cda_runtime::asset::RuntimeDefinition, enabled: &HashSet<NodeId>) -> Option<NodeId> {
-    // Pick the first enabled VoxelEdit coverlay unit by authoring order.
+fn resolve_voxel_target(
+    def: &cunning_cda_runtime::asset::RuntimeDefinition,
+    active_hud: Option<NodeId>,
+    enabled: &HashSet<NodeId>,
+) -> Option<NodeId> {
+    // Keep HUD/coverlay targeting coherent:
+    // 1) If active HUD unit is voxel, it is the active interaction target.
+    // 2) Otherwise pick the first enabled VoxelEdit coverlay unit by authoring order.
+    if let Some(hud_id) = active_hud {
+        if is_voxel_edit_node(def, hud_id) {
+            return Some(hud_id);
+        }
+    }
+
     let mut units = def.coverlay_units.clone();
     units.sort_by(|a, b| a.order.cmp(&b.order).then(a.label.cmp(&b.label)));
     for u in units {
@@ -714,7 +726,7 @@ fn voxel_input_system(
 ) {
     let Some(def_arc) = s.def.clone() else { return; };
     let def = def_arc.as_ref();
-    let Some(target) = resolve_voxel_target(def, &s.coverlay_enabled_units) else { return; };
+    let Some(target) = resolve_voxel_target(def, s.active_hud_unit, &s.coverlay_enabled_units) else { return; };
 
     if s.voxel.target != Some(target) {
         init_voxel_state_from_def(&mut s.voxel, def, target);
@@ -1088,7 +1100,7 @@ fn ui(
         },
     ];
     if let Some(def) = s.def.as_deref() {
-        if let Some(target) = resolve_voxel_target(def, &s.coverlay_enabled_units) {
+        if let Some(target) = resolve_voxel_target(def, s.active_hud_unit, &s.coverlay_enabled_units) {
             panels.push(CoverlayDockPanel {
                 key: CoverlayPanelKey::CdaVoxel { inst_id: def.meta.uuid, internal_id: target, kind: CoverlayPanelKind::VoxelTools },
                 title: "Voxel Tools".to_string(),
@@ -1262,7 +1274,21 @@ fn ui(
             for u in &cov {
                 let mut on = next_coverlay.contains(&u.node_id);
                 let label = u.icon.as_ref().map(|ic| format!("{}  {}", ic, u.label)).unwrap_or_else(|| u.label.clone());
-                if ui.checkbox(&mut on, label).changed() { if on { next_coverlay.insert(u.node_id); } else { next_coverlay.remove(&u.node_id); } }
+                if ui.checkbox(&mut on, label).changed() {
+                    if on {
+                        next_coverlay.insert(u.node_id);
+                        if hud.iter().any(|h| h.node_id == u.node_id) {
+                            next_active_hud = Some(u.node_id);
+                        }
+                    } else {
+                        next_coverlay.remove(&u.node_id);
+                    }
+                }
+            }
+        }
+        if let Some(hud_id) = next_active_hud {
+            if cov.iter().any(|u| u.node_id == hud_id) {
+                next_coverlay.insert(hud_id);
             }
         }
         s.active_hud_unit = next_active_hud;
@@ -1275,7 +1301,7 @@ fn ui(
         let target = match key {
             CoverlayPanelKey::CdaVoxel { internal_id, .. } | CoverlayPanelKey::CdaUnit { unit_id: internal_id, .. } => Some(internal_id),
             CoverlayPanelKey::DirectVoxel { node_id, .. } => Some(node_id),
-            _ => resolve_voxel_target(def, &s.coverlay_enabled_units),
+            _ => resolve_voxel_target(def, s.active_hud_unit, &s.coverlay_enabled_units),
         };
         let Some(target) = target else { ui.weak("Enable a VoxelEdit coverlay unit to edit."); return; };
         if s.voxel.target != Some(target) { init_voxel_state_from_def(&mut s.voxel, def, target); }
@@ -1589,7 +1615,7 @@ fn build_primitive_normals_mesh(g: &Geometry) -> Mesh {
 
 #[inline]
 fn raycast_discrete_dda(
-    grid: &vox::DiscreteVoxelGrid,
+    grid: &vox::DiscreteSdfGrid,
     origin: Vec3,
     dir: Vec3,
     voxel_size: f32,

@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use cunning_kernel::mesh::Geometry;
+use cunning_kernel::libs::geometry::attrs;
+use cunning_kernel::mesh::{Attribute, BezierCurvePrim, GeoPrimitive, Geometry};
 use cunning_kernel::traits::parameter::ParameterValue;
 use smallvec::SmallVec;
 
@@ -17,6 +18,7 @@ pub const OP_POLY_BEVEL: OpCode = 12;
 pub const OP_GROUP_CREATE: OpCode = 13;
 pub const OP_MERGE: OpCode = 20;
 pub const OP_VOXEL_EDIT: OpCode = 30;
+pub const OP_SPLINE: OpCode = 31;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MultiWirePolicy { Error, FirstByOrder, LastByOrder, All }
@@ -50,6 +52,7 @@ impl RuntimeRegistry {
         r.register(OP_GROUP_CREATE, &["cunning.group.create"], Arc::new(GroupCreateOp));
         r.register(OP_MERGE, &["cunning.utility.merge"], Arc::new(MergeOp));
         r.register(OP_VOXEL_EDIT, &["cunning.voxel.edit"], Arc::new(VoxelEditOp));
+        r.register(OP_SPLINE, &["cunning.spline.unity"], Arc::new(SplineOp));
 
         // Port tables (stable PortId per op). PortId ordering defines VM input ordering.
         // OP_INPUT: no geometry input ports; "index" is a parameter selecting external input.
@@ -76,6 +79,9 @@ impl RuntimeRegistry {
 
         r.ports_in(OP_VOXEL_EDIT, &[("in:0", 0, "Input", MultiWirePolicy::Error)]);
         r.ports_out(OP_VOXEL_EDIT, &[("out:0", 0, "Output", MultiWirePolicy::Error)]);
+
+        r.ports_in(OP_SPLINE, &[("in:0", 0, "Input", MultiWirePolicy::Error)]);
+        r.ports_out(OP_SPLINE, &[("out:0", 0, "Output", MultiWirePolicy::Error)]);
 
         r
     }
@@ -208,6 +214,81 @@ impl RuntimeOp for VoxelEditOp {
             cunning_kernel::nodes::voxel::voxel_edit::compute_voxel_edit(None, &in0, params),
         ))
     }
+}
+
+struct SplineOp;
+impl RuntimeOp for SplineOp {
+    fn compute(
+        &self,
+        _node_id: NodeId,
+        params: &HashMap<String, ParameterValue>,
+        inputs: &[PortInputs],
+        _external_inputs: &[Arc<Geometry>],
+    ) -> Result<Arc<Geometry>, CdaCookError> {
+        if let Some(ParameterValue::UnitySpline(container)) = params.get("spline") {
+            return Ok(Arc::new(spline_container_to_geometry(container)));
+        }
+        Ok(inputs
+            .get(0)
+            .and_then(|p| p.values.get(0))
+            .cloned()
+            .unwrap_or_else(|| Arc::new(Geometry::new())))
+    }
+}
+
+fn spline_container_to_geometry(
+    container: &cunning_kernel::algorithms::algorithms_runtime::unity_spline::SplineContainer,
+) -> Geometry {
+    let mut g = Geometry::new();
+    if container.splines.is_empty() {
+        return g;
+    }
+
+    let mut all_p = Vec::new();
+    let mut all_tin = Vec::new();
+    let mut all_tout = Vec::new();
+    let mut all_rot = Vec::new();
+    let mut all_mode = Vec::new();
+    let mut all_tension = Vec::new();
+
+    for spline in &container.splines {
+        if spline.knots.len() < 2 {
+            continue;
+        }
+        let mut verts = Vec::with_capacity(spline.knots.len());
+        for (ki, knot0) in spline.knots.iter().enumerate() {
+            let knot = knot0.transform(container.local_to_world);
+            let pid = g.add_point();
+            verts.push(g.add_vertex(pid));
+            all_p.push(knot.position);
+            all_tin.push(knot.tangent_in);
+            all_tout.push(knot.tangent_out);
+            all_rot.push(knot.rotation);
+            let meta = spline.meta.get(ki).cloned().unwrap_or_else(|| {
+                cunning_kernel::algorithms::algorithms_runtime::unity_spline::MetaData::new(
+                    cunning_kernel::algorithms::algorithms_runtime::unity_spline::TangentMode::Broken,
+                    cunning_kernel::algorithms::algorithms_runtime::unity_spline::CATMULL_ROM_TENSION,
+                )
+            });
+            all_mode.push(meta.mode as i32);
+            all_tension.push(meta.tension);
+        }
+        let _ = g.add_primitive(GeoPrimitive::BezierCurve(BezierCurvePrim {
+            vertices: verts,
+            closed: spline.closed,
+        }));
+    }
+
+    if all_p.is_empty() {
+        return g;
+    }
+    g.insert_point_attribute(attrs::P, Attribute::new_auto(all_p));
+    g.insert_point_attribute(attrs::KNOT_TIN, Attribute::new_auto(all_tin));
+    g.insert_point_attribute(attrs::KNOT_TOUT, Attribute::new_auto(all_tout));
+    g.insert_point_attribute(attrs::KNOT_ROT, Attribute::new_auto(all_rot));
+    g.insert_point_attribute(attrs::KNOT_MODE, Attribute::new_auto(all_mode));
+    g.insert_point_attribute(attrs::KNOT_TENSION, Attribute::new_auto(all_tension));
+    g
 }
 
 pub fn op_failed(asset_uuid: uuid::Uuid, asset_name: &str, node_id: NodeId, op: OpCode, message: String) -> CdaCookError {
