@@ -18,7 +18,7 @@ use crate::nodes::voxel::voxel_edit::{
     ATTR_VOXEL_SIZE_DETAIL,
 };
 use crate::register_node;
-use crate::volume::CHUNK_SIZE;
+use crate::sdf::CHUNK_SIZE;
 
 const PARAM_HEIGHTMAP_PATH: &str = "heightmap_path";
 const PARAM_VOXEL_SIZE: &str = "voxel_size";
@@ -624,7 +624,7 @@ impl NodeOp for VoxelFromHeightmapNode {
             )
             .as_bytes(),
         );
-        let palette = cunning_kernel::algorithms::algorithms_editor::voxel::DiscreteVoxelGrid::new(voxel_size).palette;
+        let palette = cunning_kernel::algorithms::algorithms_editor::voxel::DiscreteSdfGrid::new(voxel_size).palette;
         cunning_kernel::nodes::voxel::voxel_edit::voxel_render_register_chunks(nid, voxel_size, palette, chunks, solid);
         let mut out = Geometry::new();
         out.set_detail_attribute(ATTR_VOXEL_SIZE_DETAIL, vec![voxel_size]);

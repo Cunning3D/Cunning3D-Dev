@@ -2,12 +2,12 @@
   "enabled": true,
   "use_gemini_live": true,
   "voice_model": "gemini_live",
-  "wake_phrases": "hallo gemini|hello gemini|hi gemini|你好",
-  "cmd_input_phrases": "start dictation|input|输入",
-  "cmd_send_phrases": "send|发送",
-  "cmd_cancel_phrases": "cancel|stop|取消|停止",
+  "wake_phrases": "hallo gemini|hello gemini|hi gemini",
+  "cmd_input_phrases": "start dictation|dictate|input",
+  "cmd_send_phrases": "send|submit",
+  "cmd_cancel_phrases": "cancel|stop|abort",
   "greet_text": "I'm here, what can I do for you?",
-  "sleep_text": "I'll go to rest then.",
+  "sleep_text": "Going idle.",
   "idle_timeout_secs": 10,
   "auto_send_pause_secs": 3
 }

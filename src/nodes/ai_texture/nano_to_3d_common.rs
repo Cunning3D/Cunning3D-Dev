@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::volume::{Chunk, VoxelGrid, CHUNK_SIZE};
+use crate::sdf::{SdfChunk, SdfGrid, CHUNK_SIZE};
 
 pub(crate) const ATTR_REF_IMAGE_PATH: &str = "__ai_reference_image_path";
 
@@ -313,11 +313,11 @@ pub(crate) fn raster_points_to_voxel_chunks(points: &[Vec3], voxel_size: f32, pi
     (chunks, solid)
 }
 
-pub(crate) fn splat_points_to_vdb(points: &[Vec3], voxel_size: f32, radius_vox: i32) -> VoxelGrid {
+pub(crate) fn splat_points_to_sdf(points: &[Vec3], voxel_size: f32, radius_vox: i32) -> SdfGrid {
     let vs = voxel_size.max(0.001);
     let r = radius_vox.max(1);
     let bg = 1.0f32;
-    let mut grid = VoxelGrid::new(vs, bg);
+    let mut grid = SdfGrid::new(vs, bg);
     for p in points {
         let cx = (p.x / vs).floor() as i32;
         let cy = (p.y / vs).floor() as i32;
@@ -346,19 +346,19 @@ pub(crate) fn splat_points_to_vdb(points: &[Vec3], voxel_size: f32, radius_vox: 
         let y = (p0.y / vs).floor() as i32;
         let z = (p0.z / vs).floor() as i32;
         let ck = IVec3::new(x.div_euclid(CHUNK_SIZE), y.div_euclid(CHUNK_SIZE), z.div_euclid(CHUNK_SIZE));
-        grid.chunks.insert(ck, Chunk::new(bg));
+        grid.chunks.insert(ck, SdfChunk::new(bg));
     }
     grid
 }
 
 #[inline]
-fn get_voxel_f(grid: &VoxelGrid, p: Vec3) -> f32 {
+fn get_voxel_f(grid: &SdfGrid, p: Vec3) -> f32 {
     let v = p / grid.voxel_size;
     grid.get_voxel(v.x.floor() as i32, v.y.floor() as i32, v.z.floor() as i32)
 }
 
-pub(crate) fn render_vdb_to_atlas(
-    grid: &VoxelGrid,
+pub(crate) fn render_sdf_to_atlas(
+    grid: &SdfGrid,
     tile_res: u32,
     world_size: f32,
     use_24_views: bool,
@@ -464,4 +464,3 @@ pub(crate) fn render_vdb_to_atlas(
     ).map_err(|e| e.to_string())?;
     Ok(bytes)
 }
-

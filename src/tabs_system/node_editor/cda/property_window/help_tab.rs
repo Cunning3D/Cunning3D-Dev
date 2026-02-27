@@ -1,4 +1,4 @@
-//! Help标签页：文档地址 + 内嵌说明
+//! Help tab: docs URL + embedded description
 use crate::cunning_core::cda::CDAAsset;
 use bevy_egui::egui::{self, TextEdit, Ui};
 use cunning_syntax::LanguageId;
@@ -8,9 +8,9 @@ pub fn draw(ui: &mut Ui, asset: &mut CDAAsset) {
         let w = ui.available_width();
         ui.add_space(8.0);
 
-        // 外部文档地址
+        // External docs URL
         ui.horizontal(|ui| {
-            ui.label("文档地址:");
+            ui.label("Documentation URL:");
             let mut url = asset.help_url.clone().unwrap_or_default();
             if ui
                 .add(
@@ -23,7 +23,7 @@ pub fn draw(ui: &mut Ui, asset: &mut CDAAsset) {
                 asset.help_url = if url.is_empty() { None } else { Some(url) };
             }
             if asset.help_url.is_some() {
-                let _ = ui.small_button("🔗 复制");
+                let _ = ui.small_button("🔗 Copy");
             }
         });
 
@@ -31,8 +31,8 @@ pub fn draw(ui: &mut Ui, asset: &mut CDAAsset) {
         ui.separator();
         ui.add_space(8.0);
 
-        // 内嵌Markdown说明
-        ui.label("内嵌说明 (Markdown):");
+        // Embedded Markdown description
+        ui.label("Embedded Help (Markdown):");
         ui.add_space(4.0);
 
         let mut content = asset.help_content.clone().unwrap_or_default();
@@ -43,7 +43,7 @@ pub fn draw(ui: &mut Ui, asset: &mut CDAAsset) {
                 .desired_rows(20)
                 .font(egui::TextStyle::Monospace)
                 .layouter(&mut layouter)
-                .hint_text("# 标题\n\n描述这个CDA的用法..."),
+                .hint_text("# Title\n\nDescribe how to use this CDA..."),
         );
         if response.changed() {
             asset.help_content = if content.is_empty() {
@@ -54,6 +54,6 @@ pub fn draw(ui: &mut Ui, asset: &mut CDAAsset) {
         }
 
         ui.add_space(8.0);
-        ui.label("提示: 支持Markdown格式，会在Inspector中渲染显示");
+        ui.label("Tip: Markdown is supported and will be rendered in the Inspector.");
     });
 }

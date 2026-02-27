@@ -27,8 +27,7 @@ use crate::nodes::spline::tool_state::{HoveredCurve, SplineTransformTool};
 use crate::nodes::spline::tool_state::{
     SplineAxisConstraint, SplineToolState,
 };
-use crate::tabs_system::{FloatingEditorTabs, TabViewer, Viewport3DTab};
-use crate::ui::FloatingTabRegistry;
+use crate::tabs_system::viewport_3d::ViewportLayout;
 use crate::ui::UiState;
 use crate::GraphChanged;
 use crate::{
@@ -68,9 +67,7 @@ pub struct CurveGizmoInputParams<'w, 's> {
     primary_window: Query<'w, 's, &'static Window, With<PrimaryWindow>>,
     windows: Query<'w, 's, (Entity, &'static Window)>,
     camera_q: Query<'w, 's, (&'static Camera, &'static GlobalTransform), With<crate::MainCamera>>,
-    tab_viewer: Res<'w, TabViewer>,
-    floating_tabs: Res<'w, FloatingEditorTabs>,
-    floating_registry: Res<'w, FloatingTabRegistry>,
+    viewport_layout: Res<'w, ViewportLayout>,
     node_graph_res: ResMut<'w, NodeGraphResource>,
     ui_state: ResMut<'w, UiState>,
     spline_tool_state: ResMut<'w, SplineToolState>,
@@ -92,9 +89,7 @@ pub fn handle_gizmo_interaction(p: CurveGizmoInputParams) {
     let primary_window = p.primary_window;
     let windows = p.windows;
     let camera_q = p.camera_q;
-    let tab_viewer = p.tab_viewer;
-    let floating_tabs = p.floating_tabs;
-    let floating_registry = p.floating_registry;
+    let viewport_layout = p.viewport_layout;
     let mut node_graph_res = p.node_graph_res;
     let mut ui_state = p.ui_state;
     let mut spline_tool_state = p.spline_tool_state;
@@ -107,43 +102,9 @@ pub fn handle_gizmo_interaction(p: CurveGizmoInputParams) {
     let mut voxel_tool_state = p.voxel_tool_state;
     let log_spline_pick = std::env::var_os("DCC_LOG_SPLINE_PICK").is_some();
     let log_curve_plugin = std::env::var_os("DCC_LOG_CURVE_PLUGIN").is_some();
-    // 1. Locate the active viewport (dock or floating) and its host window.
-    enum ViewportHost {
-        Primary,
-        Floating(Entity),
-    }
-
-    let (host, viewport_rect) = {
-        if let Some(rect) = tab_viewer
-            .dock_state
-            .iter_all_tabs()
-            .find_map(|((_s, _n), tab)| tab.as_any().downcast_ref::<Viewport3DTab>())
-            .and_then(|t| t.viewport_rect)
-        {
-            (ViewportHost::Primary, rect)
-        } else {
-            let mut found: Option<(ViewportHost, egui::Rect)> = None;
-
-            for (id, tab) in floating_tabs.tabs.iter() {
-                if let Some(vp) = tab.as_any().downcast_ref::<Viewport3DTab>() {
-                    if let Some(rect) = vp.viewport_rect {
-                        if let Some((window_entity, _entry)) = floating_registry
-                            .floating_windows
-                            .iter()
-                            .find(|(_, entry)| &entry.id == id)
-                        {
-                            found = Some((ViewportHost::Floating(*window_entity), rect));
-                            break;
-                        }
-                    }
-                }
-            }
-
-            match found {
-                Some(info) => info,
-                None => return,
-            }
-        }
+    // 1. Locate the active viewport and its host window.
+    let Some(viewport_rect) = viewport_layout.logical_rect else {
+        return;
     };
 
     let Ok((camera, camera_transform)) = camera_q.single() else {
@@ -151,12 +112,12 @@ pub fn handle_gizmo_interaction(p: CurveGizmoInputParams) {
     };
 
     // Pick the correct window for cursor queries.
-    let window: &Window = match host {
-        ViewportHost::Primary => match primary_window.single() {
+    let window: &Window = match viewport_layout.window_entity {
+        None => match primary_window.single() {
             Ok(w) => w,
             Err(_) => return,
         },
-        ViewportHost::Floating(window_entity) => match windows.get(window_entity) {
+        Some(window_entity) => match windows.get(window_entity) {
             Ok((_e, w)) => w,
             Err(_) => return,
         },
@@ -327,7 +288,7 @@ pub fn handle_gizmo_interaction(p: CurveGizmoInputParams) {
             .insert("spline".to_string(), ParameterValue::UnitySpline(c));
     }
 
-    // 体素编辑目标与参数读写放在 coverlay_bevy_ui 里统一实现，避免 UI / 交互两套逻辑漂移。
+    // Keep voxel edit targets and parameter I/O centralized in coverlay_bevy_ui to avoid drift between UI and interaction logic.
 
     // Selected node kind.
     // If the node panel selection is empty, fall back to display node so viewport interaction still works.

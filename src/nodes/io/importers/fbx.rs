@@ -1,4 +1,4 @@
-//! FBX 导入器
+//! FBX importer
 use super::{FileImporter, FileMetadata};
 use crate::libs::geometry::attrs;
 use crate::libs::geometry::ids::VertexId;

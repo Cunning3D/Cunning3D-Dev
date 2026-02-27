@@ -1,4 +1,4 @@
-//! 主题和样式的定义。
+//! Theme and style definitions.
 
 use crate::ui_settings::UiSettings;
 use bevy::prelude::*;
@@ -24,38 +24,38 @@ pub struct ModernTheme {
 
 #[derive(Clone, Copy)]
 pub struct ThemeColors {
-    // 背景颜色
+    // Background colors
     pub primary_background: Color32,
     pub secondary_background: Color32,
     pub panel_background: Color32,
 
-    // 文本颜色
+    // Text colors
     pub primary_text: Color32,
     pub secondary_text: Color32,
     pub accent_text: Color32,
 
-    // 交互颜色
+    // Interaction colors
     pub hover_color: Color32,
     pub pressed_color: Color32,
     pub selected_color: Color32,
 
-    // 边框和分割线
+    // Borders and separators
     pub border_color: Color32,
     pub divider_color: Color32,
 
-    // 强调色
+    // Accent colors
     pub accent_blue: Color32,
     pub accent_green: Color32,
     pub accent_orange: Color32,
     pub accent_red: Color32,
 
-    // 节点编辑器特定颜色
+    // Node editor specific colors
     pub node_background: Color32,
     pub node_border: Color32,
     pub node_selected: Color32,
     pub connection_line: Color32,
 
-    // 节点状态颜色
+    // Node state colors
     pub node_display: Color32,
     pub node_bypassed: Color32,
     pub node_template: Color32,
@@ -131,7 +131,7 @@ impl ModernTheme {
     pub fn apply_to_egui_style(&self) -> EguiStyle {
         let mut style = EguiStyle::default();
 
-        // 设置视觉样式
+        // Apply visual style
         style.visuals = if matches!(self.mode, ThemeMode::Dark) {
             Visuals::dark()
         } else {
@@ -144,7 +144,7 @@ impl ModernTheme {
         // Enforce solid, 1px borders for windows
         style.visuals.window_stroke = Stroke::new(1.0, self.colors.border_color);
 
-        // 自定义颜色
+        // Custom colors
         style.visuals.window_fill = self.colors.primary_background;
         style.visuals.panel_fill = self.colors.panel_background;
         style.visuals.extreme_bg_color = self.colors.secondary_background;
@@ -172,7 +172,7 @@ impl ModernTheme {
         // Set the global override text color for any text not in a widget.
         style.visuals.override_text_color = Some(self.colors.primary_text);
 
-        // 设置圆角 (Force Zero Rounding)
+        // Set rounding (force zero rounding)
         style.visuals.widgets.noninteractive.corner_radius = CornerRadius::ZERO;
         style.visuals.widgets.inactive.corner_radius = CornerRadius::ZERO;
         style.visuals.widgets.hovered.corner_radius = CornerRadius::ZERO;

@@ -74,7 +74,7 @@ pub enum ParameterValue {
     Bool(bool),
     Curve(CurveData),
     UnitySpline(UnitySplineContainer),
-    Volume(crate::volume::VolumeHandle),
+    Volume(crate::sdf::SdfHandle),
 }
 
 /// Defines how a parameter should be displayed in the UI.

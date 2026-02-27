@@ -32,14 +32,14 @@ const TOOL_LOG_FONT_PX: f32 = 10.0;
 
 const QUICK_ACTIONS: [(&str, &str); 6] = [
     (
-        "创建基础布尔组",
-        "创建一个 cube，再创建一个 sphere，再创建一个 boolean，把 cube 接到输入1，sphere 接到输入2。",
+        "Create basic boolean setup",
+        "Create a cube, create a sphere, then create a boolean. Connect the cube to input 1 and the sphere to input 2.",
     ),
-    ("创建一个 Cube", "帮我创建一个 cube 节点。"),
-    ("创建一个 Sphere", "帮我创建一个 sphere 节点。"),
-    ("查看图状态", "帮我读取当前 node graph 状态，并用简洁中文总结。"),
-    ("讲解 Boolean 节点", "请讲解 boolean 节点的作用、输入输出和常见用法。"),
-    ("列出可用节点", "读取节点库并按类别简要列出可用节点。"),
+    ("Create a Cube", "Create a cube node."),
+    ("Create a Sphere", "Create a sphere node."),
+    ("View graph state", "Read the current node graph state and summarize concisely."),
+    ("Explain Boolean node", "Explain what the boolean node does, its inputs/outputs, and common usage."),
+    ("List available nodes", "Read the node library and list available nodes by category (briefly)."),
 ];
 
 #[derive(Clone, Copy, Debug)]
@@ -139,7 +139,7 @@ impl Default for AiAssistantPane {
             provider_source_label: "unknown".to_string(),
             messages: vec![
                 ChatMessage::assistant(
-                    "你好，我是 AI Assistant。你可以让我创建/连接节点，也可以让我读取知识库讲解节点。",
+                    "Hi, I'm the AI Assistant. I can create/connect nodes, or read the knowledge base to explain nodes.",
                 ),
                 ChatMessage::system("Tip: Use the Send button to submit."),
             ],
@@ -286,8 +286,8 @@ impl AiAssistantPane {
             Err(TryRecvError::Disconnected) => {
                 self.pending_response_rx = None;
                 self.is_busy = false;
-                self.last_error = Some("后台线程已断开".to_string());
-                self.push_message(ChatMessage::system("❌ 后台请求线程已断开。"));
+                self.last_error = Some("Background thread disconnected".to_string());
+                self.push_message(ChatMessage::system("❌ Background request thread disconnected."));
             }
         }
     }
@@ -313,7 +313,7 @@ impl AiAssistantPane {
                             .size(16.0),
                     );
 
-                    let status_text = if self.is_busy { "运行中" } else { "空闲" };
+                    let status_text = if self.is_busy { "Running" } else { "Idle" };
                     let status_color = if self.is_busy {
                         Color32::from_rgb(255, 204, 128)
                     } else {
@@ -345,7 +345,7 @@ impl AiAssistantPane {
                     );
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if ui
-                            .add_enabled(!self.is_busy, egui::Button::new("刷新配置"))
+                            .add_enabled(!self.is_busy, egui::Button::new("Refresh"))
                             .clicked()
                         {
                             let settings = load_gemini_settings();
@@ -366,7 +366,7 @@ impl AiAssistantPane {
             .inner_margin(Margin::symmetric(8, 8))
             .show(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
-                    ui.label(RichText::new("快捷动作").strong());
+                    ui.label(RichText::new("Quick Actions").strong());
                     for (label, prompt) in QUICK_ACTIONS {
                         let clicked = ui
                             .add_enabled(!self.is_busy, egui::Button::new(label))
@@ -384,14 +384,14 @@ impl AiAssistantPane {
             .inner_margin(Margin::symmetric(8, 8))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("对话").strong());
+                    ui.label(RichText::new("Chat").strong());
                     ui.separator();
-                    ui.checkbox(&mut self.auto_scroll, "自动滚动");
+                    ui.checkbox(&mut self.auto_scroll, "Auto-scroll");
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        if ui.button("清空会话").clicked() && !self.is_busy {
+                        if ui.button("Clear session").clicked() && !self.is_busy {
                             self.reset_chat();
                         }
-                        if ui.button("复制最后回复").clicked() {
+                        if ui.button("Copy last reply").clicked() {
                             if let Some(last_reply) = self.last_assistant_reply() {
                                 ui.output_mut(|output| {
                                     output
@@ -410,7 +410,7 @@ impl AiAssistantPane {
                     .stick_to_bottom(self.auto_scroll)
                     .show(ui, |ui| {
                         if self.messages.is_empty() {
-                            ui.label(RichText::new("暂无消息").italics().weak());
+                            ui.label(RichText::new("No messages yet.").italics().weak());
                             return;
                         }
 
@@ -476,12 +476,12 @@ impl AiAssistantPane {
                     Color32::from_rgb(120, 72, 72),
                 ),
                 (MessageRole::User, _) => (
-                    "你",
+                    "You",
                     Color32::from_rgb(43, 74, 111),
                     Color32::from_rgb(84, 130, 178),
                 ),
                 (MessageRole::Assistant, _) => (
-                    "助手",
+                    "Assistant",
                     Color32::from_rgb(37, 67, 52),
                     Color32::from_rgb(76, 124, 96),
                 ),
@@ -513,18 +513,18 @@ impl AiAssistantPane {
         Frame::group(ui.style())
             .inner_margin(Margin::symmetric(8, 8))
             .show(ui, |ui| {
-                ui.label(RichText::new("能力范围").strong());
+                ui.label(RichText::new("Capabilities").strong());
                 ui.add_space(4.0);
-                ui.label("• 创建节点 / 连接节点 / 设参数");
-                ui.label("• 查询图状态与节点信息");
-                ui.label("• 搜索并阅读知识库");
-                ui.label("• 不做代码编辑、文件写入、插件生成");
+                ui.label("• Create nodes / connect nodes / set parameters");
+                ui.label("• Query graph state and node info");
+                ui.label("• Search and read the knowledge base");
+                ui.label("• No code editing, file writing, or plugin generation");
 
                 if let Some(error) = &self.last_error {
                     ui.add_space(6.0);
                     ui.separator();
                     ui.label(
-                        RichText::new(format!("最近错误: {}", truncate_chars(error, 180)))
+                        RichText::new(format!("Recent error: {}", truncate_chars(error, 180)))
                             .color(Color32::LIGHT_RED)
                             .small(),
                     );
@@ -536,7 +536,7 @@ impl AiAssistantPane {
         Frame::group(ui.style())
             .inner_margin(Margin::symmetric(8, 8))
             .show(ui, |ui| {
-                ui.label(RichText::new("最近工具日志").strong());
+                ui.label(RichText::new("Recent Tool Logs").strong());
                 ui.add_space(4.0);
 
                 let logs: Vec<(usize, &str)> = self
@@ -550,7 +550,7 @@ impl AiAssistantPane {
                     .collect();
 
                 if logs.is_empty() {
-                    ui.label(RichText::new("暂无工具调用").weak().italics());
+                    ui.label(RichText::new("No tool calls yet.").weak().italics());
                     return;
                 }
 
@@ -583,9 +583,9 @@ impl AiAssistantPane {
             .inner_margin(Margin::symmetric(8, 8))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("可用工具").strong());
+                    ui.label(RichText::new("Available Tools").strong());
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        let toggle_label = if self.show_tool_catalog { "收起" } else { "展开" };
+                        let toggle_label = if self.show_tool_catalog { "Collapse" } else { "Expand" };
                         if ui.button(toggle_label).clicked() {
                             self.show_tool_catalog = !self.show_tool_catalog;
                         }
@@ -598,7 +598,7 @@ impl AiAssistantPane {
 
                 ui.add_space(4.0);
                 if self.tool_names.is_empty() {
-                    ui.label(RichText::new("工具尚未初始化").weak());
+                    ui.label(RichText::new("Tools are not initialized yet.").weak());
                     return;
                 }
 
@@ -612,7 +612,7 @@ impl AiAssistantPane {
         Frame::group(ui.style())
             .inner_margin(Margin::symmetric(8, 8))
             .show(ui, |ui| {
-                ui.label(RichText::new("输入区").strong());
+                ui.label(RichText::new("Composer").strong());
                 ui.add_space(4.0);
 
                 let mut should_send = false;
@@ -621,7 +621,7 @@ impl AiAssistantPane {
                     let text_edit = TextEdit::multiline(&mut self.input)
                         .desired_rows(3)
                         .hint_text(
-                            "例：创建一个 cube，再创建 sphere，再放一个 boolean 并把两个输入接好",
+                            "Example: create a cube, create a sphere, add a boolean, and connect both inputs",
                         );
                     let response = if ready {
                         ui.add_sized([ui.available_width(), 78.0], text_edit)
@@ -632,13 +632,13 @@ impl AiAssistantPane {
 
                     ui.add_space(6.0);
                     ui.horizontal(|ui| {
-                        if ui.add_enabled(ready, egui::Button::new("发送")).clicked() {
+                        if ui.add_enabled(ready, egui::Button::new("Send")).clicked() {
                             should_send = true;
                         }
-                        if ui.button("填入 /graph").clicked() {
-                            self.input = "帮我读取当前 graph 状态".to_string();
+                        if ui.button("Insert /graph").clicked() {
+                            self.input = "Read the current graph state.".to_string();
                         }
-                        if ui.button("清空输入").clicked() {
+                        if ui.button("Clear input").clicked() {
                             self.input.clear();
                         }
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -655,11 +655,11 @@ impl AiAssistantPane {
                     ui.add_space(6.0);
                     ui.horizontal(|ui| {
                         ui.spinner();
-                        ui.label("正在思考并调用节点工具…");
+                        ui.label("Thinking and calling node tools...");
                     });
                 } else if self.tool_registry.is_none() {
                     ui.add_space(6.0);
-                    ui.label(RichText::new("正在加载工具…").weak());
+                    ui.label(RichText::new("Loading tools...").weak());
                 }
 
                 if should_send && !self.input.trim().is_empty() {
@@ -675,7 +675,7 @@ impl AiAssistantPane {
         }
 
         let Some(tool_registry) = self.tool_registry.clone() else {
-            self.push_message(ChatMessage::system("❌ 工具注册尚未完成。"));
+            self.push_message(ChatMessage::system("❌ Tool registry is not ready yet."));
             return;
         };
 
@@ -732,9 +732,9 @@ impl AiAssistantPane {
     fn reset_chat(&mut self) {
         self.messages.clear();
         self.push_message(ChatMessage::assistant(
-            "会话已清空。告诉我你要做什么节点操作，我会直接调用工具执行。",
+            "Session cleared. Tell me what node operation you want, and I will call tools directly.",
         ));
-        self.push_message(ChatMessage::system("提示：可先用上方快捷动作验证流程。"));
+        self.push_message(ChatMessage::system("Tip: use the quick actions above to validate the flow."));
         self.input.clear();
         self.last_error = None;
     }
@@ -758,7 +758,7 @@ fn run_prompt_driven_turn(
     if settings.api_key.trim().is_empty() {
         let settings_path = crate::runtime_paths::ai_providers_path();
         return Err(format!(
-            "缺少 Gemini API Key。请在环境变量或 {} 中配置。",
+            "Missing Gemini API key. Configure it via environment variables or {}.",
             settings_path.display()
         ));
     }
@@ -767,7 +767,7 @@ fn run_prompt_driven_turn(
         .connect_timeout(Duration::from_secs(10))
         .timeout(Duration::from_secs(45))
         .build()
-        .map_err(|error| format!("创建 Gemini 客户端失败: {error}"))?;
+        .map_err(|error| format!("Failed to create Gemini client: {error}"))?;
 
     let tool_definitions = tool_registry.list_definitions();
     let mut assistant_chunks: Vec<String> = Vec::new();
@@ -776,7 +776,7 @@ fn run_prompt_driven_turn(
     for _ in 0..MAX_AGENT_TURNS {
         let response = request_gemini_generate(&client, &settings, &contents, &tool_definitions)?;
         let parts = extract_candidate_parts(&response)
-            .ok_or_else(|| "Gemini 没有返回可解析内容。".to_string())?;
+            .ok_or_else(|| "Gemini returned no parseable content.".to_string())?;
 
         if parts.is_empty() {
             break;
@@ -806,12 +806,12 @@ fn run_prompt_driven_turn(
                 .map(|text| truncate_chars(&text, MAX_LOG_TEXT_CHARS))
                 .unwrap_or_else(|| "{}".to_string());
 
-            tool_logs.push(format!("调用 `{tool_name}` 参数: {args_preview}"));
+            tool_logs.push(format!("Called `{tool_name}` args: {args_preview}"));
 
             match tool_registry.execute_sync(&tool_name, tool_args) {
                 Ok(output) => {
                     tool_logs.push(format!(
-                        "`{tool_name}` 完成: {}",
+                        "`{tool_name}` completed: {}",
                         summarize_tool_output(&output)
                     ));
                     function_responses.push(json!({
@@ -827,7 +827,7 @@ fn run_prompt_driven_turn(
                 }
                 Err(error) => {
                     let error_text = error.0;
-                    tool_logs.push(format!("`{tool_name}` 失败: {error_text}"));
+                    tool_logs.push(format!("`{tool_name}` failed: {error_text}"));
                     function_responses.push(json!({
                         "functionResponse": {
                             "name": tool_name,
@@ -850,9 +850,9 @@ fn run_prompt_driven_turn(
     let assistant_text = assistant_chunks.join("\n").trim().to_string();
     let assistant_text = if assistant_text.is_empty() {
         if tool_logs.is_empty() {
-            "这次没有拿到有效回复，你可以再试一次。".to_string()
+            "No valid reply this time. Please try again.".to_string()
         } else {
-            "工具已执行完成，你可以继续给我下一步指令。".to_string()
+            "All tools finished. Send the next instruction.".to_string()
         }
     } else {
         assistant_text
@@ -987,7 +987,7 @@ fn request_gemini_generate(
         .post(url)
         .json(&body)
         .send()
-        .map_err(|error| format!("请求 Gemini 失败: {error}"))?;
+        .map_err(|error| format!("Gemini request failed: {error}"))?;
 
     if !response.status().is_success() {
         let status = response.status();
@@ -1001,7 +1001,7 @@ fn request_gemini_generate(
 
     response
         .json::<Value>()
-        .map_err(|error| format!("解析 Gemini 响应失败: {error}"))
+        .map_err(|error| format!("Failed to parse Gemini response: {error}"))
 }
 
 fn extract_candidate_parts(response: &Value) -> Option<Vec<Value>> {
@@ -1076,7 +1076,7 @@ fn tool_log_preview_line(log: &str) -> String {
     if let Some(rest) = s0.strip_prefix("🔧 ") {
         return tool_log_preview_line(rest);
     }
-    if let Some(rest) = s0.strip_prefix("调用 `") {
+    if let Some(rest) = s0.strip_prefix("Called `") {
         if let Some((name, _)) = rest.split_once('`') {
             return format!("↪ {name}  (click to expand)");
         }
@@ -1084,10 +1084,10 @@ fn tool_log_preview_line(log: &str) -> String {
     if let Some(rest) = s0.strip_prefix('`') {
         if let Some((name, tail)) = rest.split_once('`') {
             let tail = tail.trim_start();
-            if tail.starts_with("完成") {
+            if tail.starts_with("completed") {
                 return format!("✓ {name}  (done)");
             }
-            if tail.starts_with("失败") {
+            if tail.starts_with("failed") {
                 return format!("✗ {name}  (failed)");
             }
         }

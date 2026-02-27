@@ -1,4 +1,4 @@
-//! Icon标签页：图标、颜色、标签
+//! Icon tab: icon, color, tags
 use crate::cunning_core::cda::CDAAsset;
 use bevy_egui::egui::{self, Color32, TextEdit, Ui, Vec2};
 
@@ -8,12 +8,12 @@ pub fn draw(ui: &mut Ui, asset: &mut CDAAsset) {
         .show(ui, |ui| {
             ui.add_space(8.0);
 
-            // 图标
-            egui::CollapsingHeader::new("节点图标")
+            // Icon
+            egui::CollapsingHeader::new("Node Icon")
                 .default_open(true)
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        // 预览
+                        // Preview
                         egui::Frame::NONE
                             .fill(Color32::from_rgb(40, 40, 45))
                             .corner_radius(4.0)
@@ -26,15 +26,15 @@ pub fn draw(ui: &mut Ui, asset: &mut CDAAsset) {
                             });
 
                         ui.vertical(|ui| {
-                            // 图标路径
+                            // Icon path
                             let mut icon = asset.icon.clone().unwrap_or_default();
                             ui.horizontal(|ui| {
-                                ui.label("图标:");
+                                ui.label("Icon:");
                                 if ui
                                     .add(
                                         TextEdit::singleline(&mut icon)
                                             .desired_width(200.0)
-                                            .hint_text("emoji 或路径"),
+                                            .hint_text("emoji or path"),
                                     )
                                     .changed()
                                 {
@@ -43,13 +43,13 @@ pub fn draw(ui: &mut Ui, asset: &mut CDAAsset) {
                             });
 
                             ui.horizontal(|ui| {
-                                if ui.small_button("📁 选择图片...").clicked() {
-                                    // TODO: 文件选择器
+                                if ui.small_button("📁 Choose image...").clicked() {
+                                    // TODO: file picker
                                 }
-                                if ui.small_button("🎨 使用Emoji").clicked() {
+                                if ui.small_button("🎨 Use emoji").clicked() {
                                     asset.icon = Some("🛤️".to_string());
                                 }
-                                if ui.small_button("✖ 清除").clicked() {
+                                if ui.small_button("✖ Clear").clicked() {
                                     asset.icon = None;
                                 }
                             });
@@ -59,8 +59,8 @@ pub fn draw(ui: &mut Ui, asset: &mut CDAAsset) {
 
             ui.add_space(16.0);
 
-            // 节点颜色
-            egui::CollapsingHeader::new("节点颜色")
+            // Node color
+            egui::CollapsingHeader::new("Node Color")
                 .default_open(true)
                 .show(ui, |ui| {
                     let mut color = asset.color.unwrap_or([0.2, 0.4, 0.8]);
@@ -99,7 +99,7 @@ pub fn draw(ui: &mut Ui, asset: &mut CDAAsset) {
                                 .speed(0.01),
                         );
 
-                        if ui.small_button("✖ 清除").clicked() {
+                        if ui.small_button("✖ Clear").clicked() {
                             asset.color = None;
                         } else {
                             asset.color = Some(color);
@@ -109,8 +109,8 @@ pub fn draw(ui: &mut Ui, asset: &mut CDAAsset) {
 
             ui.add_space(16.0);
 
-            // 标签
-            egui::CollapsingHeader::new("标签")
+            // Tags
+            egui::CollapsingHeader::new("Tags")
                 .default_open(true)
                 .show(ui, |ui| {
                     ui.horizontal_wrapped(|ui| {
@@ -133,16 +133,16 @@ pub fn draw(ui: &mut Ui, asset: &mut CDAAsset) {
                             asset.tags.remove(i);
                         }
 
-                        // 添加标签
-                        if ui.small_button("+ 添加").clicked() {
-                            asset.tags.push("新标签".to_string());
+                        // Add tag
+                        if ui.small_button("+ Add").clicked() {
+                            asset.tags.push("New tag".to_string());
                         }
                     });
 
-                    // 编辑最后一个标签
+                    // Edit the last tag
                     if let Some(last) = asset.tags.last_mut() {
                         ui.horizontal(|ui| {
-                            ui.label("编辑:");
+                            ui.label("Edit:");
                             ui.text_edit_singleline(last);
                         });
                     }

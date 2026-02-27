@@ -11,7 +11,7 @@ use crate::libs::geometry::attrs;
 use crate::nodes::parameter::{Parameter, ParameterUIType, ParameterValue};
 use crate::cunning_core::traits::node_interface::{NodeOp, NodeParameters};
 use cunning_kernel::algorithms::algorithms_editor::voxel as vox;
-use crate::volume::{VolumeHandle, CHUNK_SIZE};
+use crate::sdf::{SdfHandle, CHUNK_SIZE};
 use crate::register_node;
 
 const PARAM_VOXEL_SIZE: &str = "voxel_size";
@@ -79,7 +79,7 @@ register_node!(
 fn has_meaningful_input(g: &Geometry) -> bool {
     if g.get_detail_attribute(ATTR_VOXEL_CELLS_I32).is_some() { return true; } // discrete payload
     if g.get_detail_attribute("__voxel_node").is_some() { return true; } // cache-linked voxel edit output
-    !g.volumes.is_empty()
+    !g.sdfs.is_empty()
         || !g.primitives().is_empty()
         || g.get_point_attribute("@P")
             .and_then(|a| a.as_slice::<Vec3>())
@@ -106,7 +106,7 @@ fn read_voxel_node_id(g: &Geometry) -> Option<uuid::Uuid> {
 }
 
 #[inline]
-fn read_base_grid_from_input(input: &Geometry, voxel_size: f32) -> Option<vox::DiscreteVoxelGrid> {
+fn read_base_grid_from_input(input: &Geometry, voxel_size: f32) -> Option<vox::DiscreteSdfGrid> {
     read_discrete_payload(input, voxel_size).or_else(|| read_voxel_node_id(input).and_then(|id| cunning_kernel::nodes::voxel::voxel_edit::voxel_render_get_grid(id)))
 }
 
@@ -156,7 +156,7 @@ pub fn compute_voxel_edit(prev_cached: Option<&Geometry>, input: &Geometry, para
     } else if let Some(prev) = prev_cached.and_then(|g| read_discrete_payload(g, voxel_size)) {
         (prev, vox::DiscreteBakeState { baked_cursor: prev_cached.map(read_baked_cursor).unwrap_or(0) })
     } else {
-        (vox::DiscreteVoxelGrid::new(voxel_size), vox::DiscreteBakeState { baked_cursor: 0 })
+        (vox::DiscreteSdfGrid::new(voxel_size), vox::DiscreteBakeState { baked_cursor: 0 })
     };
     {
         puffin::profile_scope!("VoxelEdit::parse_palette");
@@ -194,11 +194,11 @@ struct VoxelEditCookCache {
     voxel_size: f32,
     want_input: bool,
     base_sig: u64,
-    base_grid: vox::DiscreteVoxelGrid,
+    base_grid: vox::DiscreteSdfGrid,
     palette_hash: u64,
     palette_dirty: bool,
     applied_cursor: usize,
-    grid: vox::DiscreteVoxelGrid,
+    grid: vox::DiscreteSdfGrid,
     chunk_solid: HashMap<IVec3, u32>,
     chunks: HashMap<IVec3, Vec<u8>>,
     dirty_chunks: HashSet<IVec3>,
@@ -212,18 +212,18 @@ impl VoxelEditCookCache {
             voxel_size: vs,
             want_input,
             base_sig: 0,
-            base_grid: vox::DiscreteVoxelGrid::new(vs),
+            base_grid: vox::DiscreteSdfGrid::new(vs),
             palette_hash: 0,
             palette_dirty: true,
             applied_cursor: 0,
-            grid: vox::DiscreteVoxelGrid::new(vs),
+            grid: vox::DiscreteSdfGrid::new(vs),
             chunk_solid: HashMap::new(),
             chunks: HashMap::new(),
             dirty_chunks: HashSet::new(),
             chunks_gen: 1,
         }
     }
-    fn reset_from_grid(&mut self, voxel_size: f32, want_input: bool, grid: vox::DiscreteVoxelGrid) {
+    fn reset_from_grid(&mut self, voxel_size: f32, want_input: bool, grid: vox::DiscreteSdfGrid) {
         let vs = voxel_size.max(0.001);
         self.voxel_size = vs;
         self.want_input = want_input;
@@ -391,7 +391,7 @@ pub fn voxel_render_take_dirty(node_id: uuid::Uuid) -> Option<VoxelRenderDirty> 
 pub fn voxel_render_register_grid(
     node_id: uuid::Uuid,
     voxel_size: f32,
-    grid: vox::DiscreteVoxelGrid,
+    grid: vox::DiscreteSdfGrid,
 ) {
     let cache_map = VOXEL_EDIT_COOK_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
     let mut cache_map = cache_map.lock().unwrap();
@@ -402,7 +402,7 @@ pub fn voxel_render_register_grid(
 }
 
 /// Register prebuilt voxel chunks directly for GPU voxel preview (dense/procedural generators).
-/// This avoids building a `HashMap<VoxelCoord, ...>` for huge volumes.
+/// This avoids building a `HashMap<VoxelCoord, ...>` for huge sdfs.
 pub fn voxel_render_register_chunks(
     node_id: uuid::Uuid,
     voxel_size: f32,
@@ -420,7 +420,7 @@ pub fn voxel_render_register_chunks(
     cache.palette_hash = 0;
     cache.palette_dirty = true;
     cache.applied_cursor = 0;
-    cache.grid = vox::DiscreteVoxelGrid::new(cache.voxel_size);
+    cache.grid = vox::DiscreteSdfGrid::new(cache.voxel_size);
     if !palette.is_empty() {
         for (i, e) in palette.into_iter().enumerate() {
             if i < cache.grid.palette.len() {
@@ -483,7 +483,7 @@ pub fn voxel_render_sync_cmds(
         .or_insert_with(|| VoxelEditCookCache::new(vs, false));
 
     if (cache.voxel_size - vs).abs() > 0.0 || cache.want_input {
-        cache.reset_from_grid(vs, false, vox::DiscreteVoxelGrid::new(vs));
+        cache.reset_from_grid(vs, false, vox::DiscreteSdfGrid::new(vs));
     }
 
     let cur_cursor = cmds.cursor.min(cmds.ops.len());
@@ -733,7 +733,7 @@ pub fn compute_voxel_edit_cached(
 }
 
 /// Read the authoritative discrete voxel grid from the voxel render cache (GPU preview path).
-pub fn voxel_render_get_grid(node_id: uuid::Uuid) -> Option<vox::DiscreteVoxelGrid> {
+pub fn voxel_render_get_grid(node_id: uuid::Uuid) -> Option<vox::DiscreteSdfGrid> {
     let cache_map = VOXEL_EDIT_COOK_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
     let cache_map = cache_map.lock().ok()?;
     cache_map.get(&node_id).map(|c| c.grid.clone())
@@ -762,7 +762,7 @@ pub fn voxel_render_set_palette_from_json(node_id: uuid::Uuid, palette_json: &st
 }
 
 /// Read the authoritative discrete voxel grid from the VoxelEdit cook cache (interactive path).
-pub(crate) fn voxel_edit_cache_get_grid(node_id: uuid::Uuid) -> Option<vox::DiscreteVoxelGrid> {
+pub(crate) fn voxel_edit_cache_get_grid(node_id: uuid::Uuid) -> Option<vox::DiscreteSdfGrid> {
     let cache_map = VOXEL_EDIT_COOK_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
     let cache_map = cache_map.lock().ok()?;
     cache_map.get(&node_id).map(|c| c.grid.clone())
@@ -1019,13 +1019,13 @@ fn apply_op_cached(cache: &mut VoxelEditCookCache, op: &vox::DiscreteVoxelOp) {
 }
 
 #[inline]
-pub fn read_discrete_payload(input: &Geometry, voxel_size: f32) -> Option<vox::DiscreteVoxelGrid> {
+pub fn read_discrete_payload(input: &Geometry, voxel_size: f32) -> Option<vox::DiscreteSdfGrid> {
     let cells = input.get_detail_attribute(ATTR_VOXEL_CELLS_I32).and_then(|a| a.as_slice::<i32>())?;
     if cells.len() % 3 != 0 { return None; }
     let n = cells.len() / 3;
     let pis = input.get_detail_attribute(ATTR_VOXEL_PI_U8).and_then(|a| a.as_storage::<crate::mesh::Bytes>()).map(|b| b.0.as_slice())?;
     if pis.len() != n { return None; }
-    let mut g = vox::DiscreteVoxelGrid::new(voxel_size);
+    let mut g = vox::DiscreteSdfGrid::new(voxel_size);
     if let Some(pal_s) = input.get_detail_attribute(ATTR_VOXEL_PALETTE_JSON).and_then(|a| a.as_slice::<String>()).and_then(|v| v.first()).map(|s| s.as_str()) {
         if let Ok(p) = serde_json::from_str::<Vec<vox::discrete::PaletteEntry>>(pal_s) {
             if !p.is_empty() { for (i, e) in p.into_iter().enumerate() { if i < g.palette.len() { g.palette[i] = e; } } }
@@ -1042,7 +1042,7 @@ pub fn read_discrete_payload(input: &Geometry, voxel_size: f32) -> Option<vox::D
 }
 
 #[inline]
-pub fn write_discrete_payload(out: &mut Geometry, g: &vox::DiscreteVoxelGrid) {
+pub fn write_discrete_payload(out: &mut Geometry, g: &vox::DiscreteSdfGrid) {
     let mut cells: Vec<i32> = Vec::with_capacity(g.voxels.len() * 3);
     let mut pis: Vec<u8> = Vec::with_capacity(g.voxels.len());
     for (vox::discrete::VoxelCoord(c), v) in g.voxels.iter() {
@@ -1228,7 +1228,7 @@ fn chunks_to_surface_mesh(
     out
 }
 
-pub(crate) fn discrete_to_surface_mesh_with_filter(g: &vox::DiscreteVoxelGrid, filter_chunks: Option<&HashSet<IVec3>>) -> Geometry {
+pub(crate) fn discrete_to_surface_mesh_with_filter(g: &vox::DiscreteSdfGrid, filter_chunks: Option<&HashSet<IVec3>>) -> Geometry {
     if g.voxels.is_empty() { return Geometry::new(); }
     let cs = CHUNK_SIZE.max(4);
     let cs3 = (cs as usize) * (cs as usize) * (cs as usize);
@@ -1245,22 +1245,22 @@ pub(crate) fn discrete_to_surface_mesh_with_filter(g: &vox::DiscreteVoxelGrid, f
 }
 
 /// Back-compat helper used by other nodes/importers.
-pub(crate) fn discrete_to_surface_mesh(g: &vox::DiscreteVoxelGrid) -> Geometry {
+pub(crate) fn discrete_to_surface_mesh(g: &vox::DiscreteSdfGrid) -> Geometry {
     discrete_to_surface_mesh_with_filter(g, None)
 }
 
 /// Public helper for runtime/player voxel previews.
-pub fn voxel_discrete_to_surface_mesh(g: &vox::DiscreteVoxelGrid) -> Geometry { discrete_to_surface_mesh_with_filter(g, None) }
+pub fn voxel_discrete_to_surface_mesh(g: &vox::DiscreteSdfGrid) -> Geometry { discrete_to_surface_mesh_with_filter(g, None) }
 
-fn implicit_discrete_from_input(input: &Geometry, voxel_size: f32) -> vox::DiscreteVoxelGrid {
-    if let Some(v) = input.volumes.first() { return discrete_from_volume(v); }
+fn implicit_discrete_from_input(input: &Geometry, voxel_size: f32) -> vox::DiscreteSdfGrid {
+    if let Some(v) = input.sdfs.first() { return discrete_from_volume(v); }
     let h = vox::implicit_edit_volume(Some(input), voxel_size);
     discrete_from_volume(&h)
 }
 
-fn discrete_from_volume(h: &VolumeHandle) -> vox::DiscreteVoxelGrid {
+fn discrete_from_volume(h: &SdfHandle) -> vox::DiscreteSdfGrid {
     let g = h.grid.read().unwrap();
-    let mut out = vox::DiscreteVoxelGrid::new(g.voxel_size.max(0.001));
+    let mut out = vox::DiscreteSdfGrid::new(g.voxel_size.max(0.001));
     for (ck, c) in g.chunks.iter() {
         for z in 0..CHUNK_SIZE {
             for y in 0..CHUNK_SIZE {

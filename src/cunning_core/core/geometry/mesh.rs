@@ -443,7 +443,7 @@ pub struct Geometry {
     pub edge_groups: Option<HashMap<AttributeId, ElementGroupMask>>,
     
     #[serde(skip)]
-    pub volumes: Vec<crate::volume::VolumeHandle>,
+    pub sdfs: Vec<crate::sdf::SdfHandle>,
     
     #[serde(skip)]
     pub(crate) attribute_locks: Arc<Mutex<HashMap<(AttributeDomain, AttributeId), i32>>>,

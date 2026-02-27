@@ -66,7 +66,9 @@ pub struct UpdateSceneFromGraphParam<'w, 's> {
     pub query_primitive_normals: Query<'w, 's, &'static Mesh3d, With<PrimitiveNormalTag>>,
     pub query_volume_viz: Query<'w, 's, Entity, With<VolumeVizTag>>,
     pub query_template_mesh: Query<'w, 's, Entity, With<TemplateMeshTag>>,
+    pub sdf_dummy_mesh: Res<'w, crate::render::sdf_surface::SdfSurfaceDummyMesh>,
     pub display_options: ResMut<'w, DisplayOptions>,
+    pub viewport_perf: ResMut<'w, crate::viewport_perf::ViewportPerfTrace>,
 }
 
 /// Component that stores the original material handle before it was replaced

@@ -27,7 +27,12 @@ pub fn sync_main_camera_viewport(
         With<crate::MainCamera>,
     >,
     mut display_options: ResMut<crate::viewport_options::DisplayOptions>,
+    mut viewport_perf: ResMut<crate::viewport_perf::ViewportPerfTrace>,
 ) {
+    let _perf = crate::viewport_perf::PerfScope::new(
+        &mut viewport_perf,
+        crate::viewport_perf::ViewportPerfSection::CameraSync,
+    );
     let Ok((mut camera, mut projection, transform, mut target)) = camera_query.single_mut() else {
         return;
     };
@@ -73,7 +78,9 @@ pub fn sync_main_camera_viewport(
 
     // Sync rotation for Gizmo UI
     if display_options.camera_rotation != transform.rotation {
-        display_options.camera_rotation = transform.rotation;
+        // Camera rotation is derived state; updating it every frame during navigation should not
+        // invalidate the whole DisplayOptions resource (which many systems treat as user options).
+        display_options.bypass_change_detection().camera_rotation = transform.rotation;
     }
 
     let scale_factor = window.scale_factor() as f32;

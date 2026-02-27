@@ -2,19 +2,19 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use super::chunk::VoxelChunk;
+use super::chunk::SdfChunk;
 use super::dirty::{chunk_coord, DirtyChunks};
 use super::ops::VoxelOp;
 use super::types::{PaletteEntry, VoxelPalette, VoxelPi, CHUNK_SIZE};
 
-pub type VoxelChunkKey = IVec3;
+pub type SdfChunkKey = IVec3;
 
 /// Discrete voxel volume (palette indices), chunked for editing + meshing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VoxelVolume {
     pub voxel_size: f32,
     pub palette: VoxelPalette,
-    pub chunks: HashMap<VoxelChunkKey, VoxelChunk>,
+    pub chunks: HashMap<SdfChunkKey, SdfChunk>,
 }
 
 impl Default for VoxelVolume {
@@ -52,7 +52,7 @@ impl VoxelVolume {
                 }
             }
         } else {
-            let ch = self.chunks.entry(ck).or_insert_with(VoxelChunk::new);
+            let ch = self.chunks.entry(ck).or_insert_with(SdfChunk::new);
             ch.set(lp, pi.max(1));
         }
     }

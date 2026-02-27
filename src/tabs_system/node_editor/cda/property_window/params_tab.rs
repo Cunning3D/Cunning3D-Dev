@@ -1,4 +1,4 @@
-//! Params标签页：三栏布局 + 拖拽绑定
+//! Params tab: 3-column layout + drag-and-drop binding
 use super::super::drag_payload::{ParamDragPayload, ParamTypeHint, PromotedParamDragPayload};
 use super::super::editor_state::CDAEditorState;
 use super::binding_card;
@@ -20,7 +20,7 @@ pub fn draw(ui: &mut Ui, asset: &mut CDAAsset, cda_state: &mut CDAEditorState) {
     draw_internal_params(ui, asset, cda_state);
 }
 
-/// 左栏：创建类型
+/// Left column: create types
 fn draw_type_column(ui: &mut Ui, asset: &mut CDAAsset) {
     egui::Frame::NONE
         .fill(Color32::from_rgb(30, 30, 35))
@@ -28,7 +28,7 @@ fn draw_type_column(ui: &mut Ui, asset: &mut CDAAsset) {
         .inner_margin(egui::Margin::same(8))
         .show(ui, |ui| {
             ui.vertical(|ui| {
-                ui.label(RichText::new("创建类型").strong());
+                ui.label(RichText::new("Create Type").strong());
                 ui.add_space(8.0);
                 for (label, ptype) in [
                     (
@@ -84,13 +84,14 @@ fn create_promoted_param_from_payload(payload: &ParamDragPayload) -> PromotedPar
     let mut param = create_default_param(&payload.param_name, ptype);
 
     // Auto-bind
-    // 如果拖拽源没有指定通道（channel_index == None），且目标也是多通道（如Vec3），应该一一对应绑定。
-    // 这里为了简单，如果源没有指定通道，我们把源的通道0绑定到目标的通道0，以此类推。
-    // 但是 ParamDragPayload 如果没有 channel_index，通常意味着整个参数。
-    // 我们的 ParamBinding 需要 target_channel (SOURCE channel index)。
+    // If the drag source doesn't specify a channel (channel_index == None) and the target is multi-channel (e.g. Vec3),
+    // bindings should ideally be matched channel-by-channel.
+    // For simplicity, when the source has no explicit channel we bind source channel 0 to target channel 0, and so on.
+    // However, ParamDragPayload without channel_index usually means the whole parameter.
+    // Our ParamBinding needs target_channel (SOURCE channel index).
 
     if let Some(ch_idx) = payload.channel_index {
-        // 单个通道绑定到单个通道（默认第一个）
+        // Bind one channel to one channel (default: first)
         if let Some(ch) = param.channels.get_mut(0) {
             ch.bindings.push(ParamBinding {
                 target_node: payload.source_node,
@@ -99,14 +100,14 @@ fn create_promoted_param_from_payload(payload: &ParamDragPayload) -> PromotedPar
             });
         }
     } else {
-        // 整个参数绑定
-        // 尝试推断：如果目标有多个通道，尝试把源的对应通道绑上去
-        // ParamBinding 的 target_channel 是源的通道索引。
+        // Bind the whole parameter.
+        // Try to infer: if the target has multiple channels, try binding corresponding source channels.
+        // ParamBinding.target_channel is the source channel index.
         for (i, ch) in param.channels.iter_mut().enumerate() {
             ch.bindings.push(ParamBinding {
                 target_node: payload.source_node,
                 target_param: payload.param_name.clone(),
-                target_channel: Some(i), // 假设源也有对应通道 i
+                target_channel: Some(i), // Assume the source also has channel i
             });
         }
     }
@@ -200,14 +201,14 @@ fn clone_param_for_paste(asset: &CDAAsset, p: &PromotedParam) -> PromotedParam {
     c
 }
 
-/// 中栏：暴露的参数列表
+/// Middle column: promoted parameter list
 fn draw_params_column(ui: &mut Ui, asset: &mut CDAAsset, cda_state: &mut CDAEditorState) {
     egui::Frame::NONE
         .fill(Color32::from_rgb(35, 35, 40))
         .corner_radius(4.0)
         .inner_margin(egui::Margin::same(8))
         .show(ui, |ui| {
-            ui.label(RichText::new("暴露的参数").strong());
+            ui.label(RichText::new("Exposed Parameters").strong());
             ui.add_space(8.0);
 
             ensure_folder_path_valid(asset, &mut cda_state.params_folder_path);
@@ -258,7 +259,7 @@ fn draw_params_column(ui: &mut Ui, asset: &mut CDAAsset, cda_state: &mut CDAEdit
                 ui.add_sized(
                     [ui.available_width(), 0.0],
                     egui::Label::new(
-                        RichText::new(format!("拖拽: {}", p.display_label))
+                        RichText::new(format!("Drag: {}", p.display_label))
                             .small()
                             .color(Color32::from_rgb(180, 200, 255)),
                     )
@@ -267,7 +268,7 @@ fn draw_params_column(ui: &mut Ui, asset: &mut CDAAsset, cda_state: &mut CDAEdit
                 ui.add_space(4.0);
             }
             let row_h = ui.spacing().interact_size.y.max(28.0);
-            let drop_frame = egui::Frame::NONE; // 整列是创建区：松手=自动创建+绑定
+            let drop_frame = egui::Frame::NONE; // The whole column is a create zone: release = auto-create + bind
 
             let (inner, payload) = ui.dnd_drop_zone::<ParamDragPayload, _>(drop_frame, |ui| {
                 let mut to_remove = None;
@@ -368,7 +369,7 @@ fn draw_params_column(ui: &mut Ui, asset: &mut CDAAsset, cda_state: &mut CDAEdit
                         }
                         if asset.promoted_params.is_empty() {
                             ui.add_space(6.0);
-                            ui.label(RichText::new("拖拽到这里：松开=创建新参数").weak());
+                            ui.label(RichText::new("Drag here: release to create a new parameter").weak());
                         }
                     });
                 if let Some((drag_id, target_i)) = to_reorder {
@@ -430,7 +431,7 @@ fn draw_params_column(ui: &mut Ui, asset: &mut CDAAsset, cda_state: &mut CDAEdit
         });
 }
 
-/// 右栏：选中参数详情
+/// Right column: selected parameter details
 fn draw_binding_column(ui: &mut Ui, asset: &mut CDAAsset, cda_state: &mut CDAEditorState) {
     egui::Frame::NONE
         .fill(Color32::from_rgb(35, 35, 40))
@@ -441,20 +442,20 @@ fn draw_binding_column(ui: &mut Ui, asset: &mut CDAAsset, cda_state: &mut CDAEdi
                 if let Some(param) = asset.promoted_params.iter_mut().find(|p| p.id == param_id) {
                     binding_card::draw(ui, param, cda_state);
                 } else {
-                    ui.label("参数不存在");
+                    ui.label("Parameter not found");
                     cda_state.selected_param_id = None;
                 }
             } else {
                 ui.centered_and_justified(|ui| {
-                    ui.label(RichText::new("选择一个参数查看详情").weak());
+                    ui.label(RichText::new("Select a parameter to view details").weak());
                 });
             }
         });
 }
 
-/// 绘制内部节点参数列表（拖拽源）
+/// Render internal node parameter list (drag source)
 fn draw_internal_params(ui: &mut Ui, asset: &CDAAsset, _cda_state: &mut CDAEditorState) {
-    ui.label(RichText::new("内部节点参数（拖拽到上方绑定）").strong());
+    ui.label(RichText::new("Internal Node Parameters (drag upward to bind)").strong());
     ui.add_space(4.0);
 
     egui::ScrollArea::vertical()

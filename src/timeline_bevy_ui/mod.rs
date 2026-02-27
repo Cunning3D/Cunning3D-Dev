@@ -1,4 +1,4 @@
-//! Bevy UI Timeline - 保留模式 Timeline 实现
+//! Bevy UI Timeline - retained-mode timeline implementation
 use crate::launcher::plugin::AppState;
 use crate::ui::TimelineState;
 use crate::app::window_frame::{
@@ -19,17 +19,17 @@ pub mod numeric_input;
 use icons::{spawn_icon, IconKind};
 use numeric_input::{NumericInput, NumericInputPlugin, NumericInputValue};
 
-/// Timeline UI 根节点标记
+/// Marker for the Timeline UI root entity
 #[derive(Component)]
 pub struct TimelineUiRoot;
 
-/// Timeline UI 专用相机（避免 UI 被 3D viewport 的 Camera.viewport 裁剪）
+/// Dedicated camera for Timeline UI (prevents UI from being clipped by the 3D viewport's Camera.viewport)
 #[derive(Component)]
 pub struct TimelineUiCamera;
 
 const TIMELINE_UI_LAYER: usize = 31;
 
-/// 播放按钮类型
+/// Playback button type
 #[derive(Component, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum TimelineButton {
     First,
@@ -39,7 +39,7 @@ pub enum TimelineButton {
     Last,
 }
 
-/// 轨道组件
+/// Track component
 #[derive(Component)]
 pub struct TimelineTrack;
 
@@ -49,7 +49,7 @@ struct TimelineTicksRoot;
 #[derive(Component)]
 struct TimelinePlayhead;
 
-/// 数值输入类型
+/// Numeric input type
 #[derive(Component, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum TimelineField {
     Current,
@@ -58,11 +58,11 @@ pub enum TimelineField {
     Fps,
 }
 
-/// PlayPause 按钮的图标容器标记
+/// Marker for the PlayPause button icon container
 #[derive(Component)]
-struct PlayPauseIconContainer(bool); // true = 当前显示 Play 图标
+struct PlayPauseIconContainer(bool); // true = currently showing the Play icon
 
-/// Timeline UI 是否吃输入（供 input gating 使用）
+/// Whether the Timeline UI consumes input (for input gating)
 #[derive(Resource, Default)]
 pub struct TimelineUiWantsInput(pub bool);
 
@@ -140,8 +140,8 @@ fn spawn_timeline_ui_when_window_stable(
         g.last = Some(size);
         g.same = 0;
     }
-    // 关键：避免 splash(420x260) -> editor(1280x800) 的过渡帧；但窗口最大化/多显示器 DPI 可能导致 size 抖动
-    // 放宽策略：尺寸明显大于 splash 时，只需要稳定 1 帧；或者最多等 ~1s 强制 spawn
+    // Key: avoid a transition frame from splash (420x260) -> editor (1280x800); window maximize / multi-monitor DPI can still cause size jitter.
+    // Relaxed strategy: if the size is clearly larger than the splash, require only 1 stable frame; otherwise wait up to ~1s then force spawn.
     let big_enough = size.x >= 600 && size.y >= 400;
     let stable_enough = g.same >= 1;
     let timeout = g.frames >= 60;
@@ -157,8 +157,8 @@ fn spawn_timeline_ui_when_window_stable(
 }
 
 fn spawn_timeline_ui(commands: &mut Commands, cam_q: &Query<Entity, With<TimelineUiCamera>>) {
-    // 注意：这里必须避开额外的 Camera3d（会触发 PBR/Prepass pipeline 编译，当前项目会 wgpu fatal）
-    // CorePipelinePlugin 已包含 Core2dPlugin，所以 Camera2d 可用，并且足够承载 bevy_ui_render 的 UI pass。
+    // Note: avoid spawning an extra Camera3d here (it would trigger PBR/Prepass pipeline compilation; this project can hit a wgpu fatal).
+    // CorePipelinePlugin already includes Core2dPlugin, so Camera2d is available and sufficient for the bevy_ui_render UI pass.
     let cam = cam_q.iter().next().unwrap_or_else(|| {
         commands
             .spawn((
@@ -168,14 +168,14 @@ fn spawn_timeline_ui(commands: &mut Commands, cam_q: &Query<Entity, With<Timelin
                 Camera {
                     order: 100,
                     viewport: None,
-                    // 关键：用透明清屏，保证“未绘制区域 alpha=0”，否则会把整屏写黑
+                    // Key: clear with transparent color so \"undrawn regions have alpha=0\"; otherwise the whole screen gets written black.
                     clear_color: ClearColorConfig::Custom(Color::srgba(0.0, 0.0, 0.0, 0.0)),
-                    // 关键：用 alpha blending 写回主窗口（叠加到之前相机的输出上）
+                    // Key: use alpha blending when writing back to the main window (composited over the previous camera output).
                     output_mode: CameraOutputMode::Write {
                         blend_state: Some(BlendState::ALPHA_BLENDING),
                         clear_color: ClearColorConfig::None,
                     },
-                    // 关键：多相机 + MSAA 时保持上一相机输出
+                    // Key: preserve the previous camera output with multi-camera + MSAA.
                     msaa_writeback: MsaaWriteback::Auto,
                     ..default()
                 },
@@ -223,7 +223,7 @@ fn spawn_timeline_ui(commands: &mut Commands, cam_q: &Query<Entity, With<Timelin
         .insert(FocusPolicy::Pass)
         .id();
 
-    // 左侧：播放控制按钮容器
+    // Left: playback control button container
     let btn_container = commands
         .spawn_empty()
         .insert(RenderLayers::layer(TIMELINE_UI_LAYER))
@@ -235,7 +235,7 @@ fn spawn_timeline_ui(commands: &mut Commands, cam_q: &Query<Entity, With<Timelin
         .id();
     commands.entity(root).add_child(btn_container);
 
-    // 按钮（用图标）
+    // Buttons (icon-based)
     for btn in [
         TimelineButton::First,
         TimelineButton::Prev,
@@ -273,11 +273,11 @@ fn spawn_timeline_ui(commands: &mut Commands, cam_q: &Query<Entity, With<Timelin
         commands.entity(btn_container).add_child(btn_id);
     }
 
-    // 当前帧数值输入
+    // Current frame numeric input
     let current_field = spawn_field_entity(commands, TimelineField::Current, 1.0, 1.0, 9999.0);
     commands.entity(root).add_child(current_field);
 
-    // 轨道
+    // Tracks
     let track = commands
         .spawn_empty()
         .insert(TimelineTrack)
@@ -327,7 +327,7 @@ fn spawn_timeline_ui(commands: &mut Commands, cam_q: &Query<Entity, With<Timelin
     commands.entity(ticks_root).add_child(playhead);
     commands.entity(track).add_child(ticks_root);
 
-    // 右侧 Start/End/FPS
+    // Right: Start/End/FPS
     let right_container = commands
         .spawn_empty()
         .insert(RenderLayers::layer(TIMELINE_UI_LAYER))
@@ -404,7 +404,7 @@ fn spawn_field_entity(
     fld
 }
 
-/// 同步 TimelineState → UI
+/// Sync TimelineState → UI
 fn sync_timeline_state_to_ui(
     state: Res<TimelineState>,
     mut commands: Commands,
@@ -436,7 +436,7 @@ fn sync_timeline_state_to_ui(
             }
         }
     }
-    // 切换 Play/Pause 图标
+    // Swap Play/Pause icon
     for (icon_e, mut marker, children) in icon_q.iter_mut() {
         let want_play = !state.is_playing;
         if marker.0 == want_play {
@@ -452,12 +452,12 @@ fn sync_timeline_state_to_ui(
             IconKind::Pause
         };
         let new_icon = spawn_icon(&mut commands, kind, 20.0);
-        // 重新取出子节点挂到 icon_e
+        // Re-take the child nodes and reattach to icon_e
         commands.entity(icon_e).add_child(new_icon);
     }
 }
 
-/// 处理按钮点击（用 Interaction 而非 Activate）
+/// Handle button clicks (use Interaction instead of Activate)
 fn handle_button_clicks(
     btn_q: Query<(&TimelineButton, &Interaction), Changed<Interaction>>,
     mut state: ResMut<TimelineState>,
@@ -491,7 +491,7 @@ fn handle_button_clicks(
     }
 }
 
-/// 处理轨道拖拽 (Observer)
+/// Handle track dragging (Observer)
 fn handle_track_value_change(
     event: On<ValueChange<f32>>,
     track_q: Query<Entity, With<TimelineTrack>>,
@@ -503,7 +503,7 @@ fn handle_track_value_change(
     }
 }
 
-/// 处理数值字段变化 (Observer)
+/// Handle numeric field changes (Observer)
 fn handle_field_value_change(
     event: On<ValueChange<f32>>,
     field_q: Query<&TimelineField>,
@@ -532,7 +532,7 @@ fn handle_field_value_change(
     }
 }
 
-/// 更新 TimelineUiWantsInput
+/// Update TimelineUiWantsInput
 fn update_timeline_wants_input(
     interaction_q: Query<&Interaction, With<TimelineUiRoot>>,
     focus: Res<InputFocus>,

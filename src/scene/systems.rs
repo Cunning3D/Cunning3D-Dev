@@ -47,7 +47,7 @@ use bevy::camera::ScalingMode;
 /// - Material assignment and updates from material library
 /// - Wireframe topology generation
 /// - Point cloud, vertex normals, and primitive normals visualization
-/// - Volume (VDB) rendering with multiple modes
+/// - Volume (SDF) rendering with multiple modes
 /// - Group highlighting for active group visualization
 ///
 /// NOTE: This is a complex system (~1000 lines) that was originally in main.rs.
@@ -76,8 +76,14 @@ pub fn update_3d_scene_from_node_graph(mut p: UpdateSceneFromGraphParam) {
         query_primitive_normals,
         query_volume_viz,
         query_template_mesh,
+        sdf_dummy_mesh,
         mut display_options,
+        mut viewport_perf,
     } = p;
+    let _perf = crate::viewport_perf::PerfScope::new(
+        &mut viewport_perf,
+        crate::viewport_perf::ViewportPerfSection::SceneUpdate,
+    );
 
     // Check both legacy GraphChanged and new GeometryChanged events.
     // During migration, both can trigger scene updates. Eventually only GeometryChanged will be used.
@@ -163,11 +169,19 @@ pub fn update_3d_scene_from_node_graph(mut p: UpdateSceneFromGraphParam) {
         return;
     }
     let final_geo = &*node_graph.final_geometry;
+    // Fast-path: update existing FinalMesh in-place.
+    //
+    // NOTE: When switching from mesh -> volume (SDF), we must not `return` after despawning
+    // the old mesh entity, otherwise no further GraphChanged events may fire and the volume
+    // visualization would never spawn.
+    let mut cleanup_existing_mesh_artifacts = false;
     if let Ok((entity, mesh_handle, mut info)) = query_final_mesh.single_mut() {
         if query_has_viz.get(entity).is_err() {
             commands.entity(entity).insert(GroupVisualization::default());
         }
-        if info.dirty_id == final_geo.dirty_id { return; }
+        if info.dirty_id == final_geo.dirty_id && node_graph.final_geometry.sdfs.is_empty() {
+            return;
+        }
         if let Some(mesh) = meshes.get_mut(mesh_handle.id()) {
             final_geo.update_bevy_mesh(mesh);
             info.dirty_id = final_geo.dirty_id;
@@ -306,12 +320,17 @@ pub fn update_3d_scene_from_node_graph(mut p: UpdateSceneFromGraphParam) {
                 }
             }
         }
-        if !node_graph.final_geometry.volumes.is_empty() {
+        if !node_graph.final_geometry.sdfs.is_empty() {
             let _ = meshes.remove(mesh_handle.id());
             commands.entity(entity).despawn();
+            cleanup_existing_mesh_artifacts = true;
+        } else {
+            return;
         }
-        return;
     } else {
+        cleanup_existing_mesh_artifacts = true;
+    }
+    if cleanup_existing_mesh_artifacts {
         let mut meshes_to_remove: Vec<bevy::asset::AssetId<Mesh>> = Vec::new();
         let mut topologies_to_remove: Vec<Handle<WireframeTopology>> = Vec::new();
         for m in query_final_wireframe_markers.iter() { topologies_to_remove.push(m.topology.clone()); }
@@ -325,7 +344,7 @@ pub fn update_3d_scene_from_node_graph(mut p: UpdateSceneFromGraphParam) {
         for h in topologies_to_remove.drain(..) { let _ = wireframe_topologies.remove(h.id()); }
         for id in meshes_to_remove.drain(..) { let _ = meshes.remove(id); }
     }
-    if final_geo.get_point_count() == 0 && final_geo.volumes.is_empty() {
+    if final_geo.get_point_count() == 0 && final_geo.sdfs.is_empty() {
         for (entity, _, _) in query_final_mesh.iter() { commands.entity(entity).despawn(); }
         for entity in query_final_wireframe_entities.iter() { commands.entity(entity).despawn(); }
     } else if final_geo.get_point_count() > 0 {
@@ -571,8 +590,9 @@ pub fn update_3d_scene_from_node_graph(mut p: UpdateSceneFromGraphParam) {
             ));
         }
     }
-    for volume_handle in &node_graph.final_geometry.volumes {
+    for volume_handle in &node_graph.final_geometry.sdfs {
         if let Ok(grid) = volume_handle.grid.read() {
+            let dbg_sdf = std::env::var_os("C3D_SDF_DEBUG").is_some();
             let show_points = node_graph
                 .final_geometry
                 .get_detail_attribute("display_points")
@@ -580,38 +600,64 @@ pub fn update_3d_scene_from_node_graph(mut p: UpdateSceneFromGraphParam) {
                 .unwrap_or(false);
             if show_points {
                 let local_points = grid.get_active_voxels();
-                let points: Vec<Vec3> = local_points.iter().map(|p| volume_handle.transform.transform_point3(*p)).collect();
-                if !points.is_empty() {
-                    let point_mesh = crate::mesh::create_point_cloud_mesh(&points);
+                if dbg_sdf {
+                    eprintln!(
+                        "[c3d][sdf_viz] mode=points chunks={} active_voxels={} voxel_size={} bg={}",
+                        grid.chunks.len(),
+                        local_points.len(),
+                        grid.voxel_size,
+                        grid.background_value
+                    );
+                }
+                if !local_points.is_empty() {
+                    let point_mesh = crate::mesh::create_point_cloud_mesh(&local_points);
                     commands.spawn((
-                        Name::new("VDB Visualization"),
+                        Name::new("SDF Visualization"),
                         VolumeVizTag,
                         DisplayedGeometryInfo { dirty_id: final_geo.dirty_id },
+                        // Reuse the existing GPU point renderer (same as FinalPoints), because
+                        // StandardMaterial does not reliably render point primitives.
+                        PointMarker,
+                        SyncToRenderWorld,
+                        bevy::camera::visibility::NoFrustumCulling,
                         Mesh3d(meshes.add(point_mesh)),
-                        MeshMaterial3d(materials.add(StandardMaterial { base_color: Color::WHITE, unlit: true, ..default() })),
-                        Transform::default(),
+                        Transform::from_matrix(volume_handle.transform),
+                        GlobalTransform::default(),
                         Visibility::Visible,
+                        bevy::camera::visibility::InheritedVisibility::default(),
+                        bevy::camera::visibility::ViewVisibility::default(),
                     ));
                 }
             } else {
-                let mesh_geo = crate::nodes::vdb::vdb_to_mesh::vdb_to_geometry(volume_handle, 0.0, false, false);
-                if mesh_geo.get_point_count() > 0 {
-                    let bevy_mesh = meshes.add(mesh_geo.to_bevy_mesh());
-                    commands.spawn((
-                        Name::new("VDB Visualization"),
-                        VolumeVizTag,
-                        DisplayedGeometryInfo { dirty_id: final_geo.dirty_id },
-                        Mesh3d(bevy_mesh),
-                        MeshMaterial3d(materials.add(StandardMaterial {
-                            base_color: Color::srgb(0.6, 0.6, 0.65),
-                            perceptual_roughness: 0.8,
-                            metallic: 0.1,
-                            ..default()
-                        })),
-                        Transform::default(),
-                        Visibility::Visible,
-                    ));
+                if dbg_sdf {
+                    eprintln!(
+                        "[c3d][sdf_viz] mode=surface chunks={} voxel_size={} bg={}",
+                        grid.chunks.len(),
+                        grid.voxel_size,
+                        grid.background_value
+                    );
                 }
+                commands.spawn((
+                    Name::new("SDF Visualization"),
+                    VolumeVizTag,
+                    DisplayedGeometryInfo { dirty_id: final_geo.dirty_id },
+                    // Dummy mesh for visibility + phase binning; triangles come from GPU marching cubes.
+                    Mesh3d(sdf_dummy_mesh.0.clone()),
+                    bevy::camera::visibility::NoFrustumCulling,
+                    SyncToRenderWorld,
+                    crate::render::sdf_surface::SdfSurfaceViz {
+                        handle: volume_handle.clone(),
+                        iso_value: 0.0,
+                        invert: false,
+                        color: Vec4::new(0.6, 0.6, 0.65, 1.0),
+                        ..Default::default()
+                    },
+                    Transform::default(),
+                    GlobalTransform::default(),
+                    Visibility::Visible,
+                    bevy::camera::visibility::InheritedVisibility::default(),
+                    bevy::camera::visibility::ViewVisibility::default(),
+                ));
             }
         }
     }
@@ -632,7 +678,7 @@ pub fn update_final_mesh_visibility_system(
         ),
     >,
 ) {
-    let is_pure_uv_mode = display_options.view_mode == ViewportViewMode::UV && display_options.uv_pure_mode;
+    let is_uv_mode = display_options.view_mode == ViewportViewMode::UV;
     let is_node_image_mode = display_options.view_mode == ViewportViewMode::NodeImage;
     let is_pure_voxel = query_mat
         .single()
@@ -645,7 +691,7 @@ pub fn update_final_mesh_visibility_system(
             Visibility::Hidden
         } else if is_node_image_mode {
             Visibility::Hidden
-        } else if is_pure_uv_mode || matches!(display_options.final_geometry_display_mode, DisplayMode::Shaded | DisplayMode::ShadedAndWireframe) {
+        } else if is_uv_mode || matches!(display_options.final_geometry_display_mode, DisplayMode::Shaded | DisplayMode::ShadedAndWireframe) {
             Visibility::Visible
         } else {
             Visibility::Hidden
@@ -657,7 +703,7 @@ pub fn update_final_mesh_visibility_system(
             Visibility::Hidden
         } else if is_node_image_mode {
             Visibility::Hidden
-        } else if is_pure_uv_mode || matches!(display_options.final_geometry_display_mode, DisplayMode::Wireframe | DisplayMode::ShadedAndWireframe) {
+        } else if is_uv_mode || matches!(display_options.final_geometry_display_mode, DisplayMode::Wireframe | DisplayMode::ShadedAndWireframe) {
             Visibility::Visible
         } else {
             Visibility::Hidden

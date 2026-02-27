@@ -101,17 +101,17 @@ impl NativeModel {
                     d
                 }
                 Err(e) => {
-                    warn!("CUDA 初始化失败: {}, 回退到 CPU", e);
+                    warn!("CUDA initialization failed: {e}, falling back to CPU");
                     Device::Cpu
                 }
             }
         } else {
-            info!("CUDA 不可用，使用 CPU");
+            info!("CUDA not available; using CPU");
             Device::Cpu
         };
         #[cfg(not(feature = "cuda"))]
         let device = {
-            info!("CPU 推理模式 (加 --features cuda 启用 GPU)");
+            info!("CPU inference mode (enable GPU with `--features cuda`)");
             Device::Cpu
         };
         let model_path_s = model_path.as_ref().to_string_lossy().to_string();
@@ -121,9 +121,9 @@ impl NativeModel {
 
         // Automatically detect architecture and select correct loader (Learned from Oxide-Lab)
         let arch = ArchKind::detect(&content.metadata)
-            .ok_or_else(|| E::msg("无法识别模型架构，请使用 Qwen3/Qwen2/Llama 系列"))?;
+            .ok_or_else(|| E::msg("Unrecognized model architecture. Please use Qwen3/Qwen2/Llama."))?;
 
-        info!("检测到模型架构: {:?}", arch);
+        info!("Detected model architecture: {:?}", arch);
 
         let backend: Box<dyn ModelBackend> = match arch {
             ArchKind::Qwen3 => {
@@ -169,7 +169,7 @@ impl NativeModel {
         F: FnMut(&str),
     {
         info!(
-            "[First Children] 开始流式推理 prompt_len={} max_tokens={} device={:?}",
+            "[First Children] Starting streaming inference prompt_len={} max_tokens={} device={:?}",
             prompt.len(),
             max_tokens,
             self.device
@@ -182,7 +182,7 @@ impl NativeModel {
         }
         let base_len = prompt_ids.len();
         info!(
-            "[First Children] Tokenized: {} tokens, 开始 Prefill...",
+            "[First Children] Tokenized: {} tokens, starting prefill...",
             base_len
         );
         let eos = self
@@ -193,7 +193,7 @@ impl NativeModel {
 
         // Check cancel before prefill
         if cancel.load(Ordering::Relaxed) {
-            info!("[First Children] 推理被取消(prefill前)");
+            info!("[First Children] Inference cancelled (before prefill)");
             return Err(E::msg("cancelled"));
         }
 
@@ -204,7 +204,7 @@ impl NativeModel {
         let logits = logits.squeeze(0)?.to_dtype(DType::F32)?;
         let mut next = self.logits_processor.sample(&logits)?;
         info!(
-            "[First Children] Prefill 完成 ({:.2}s), 首 token={}",
+            "[First Children] Prefill done ({:.2}s), first token={}",
             prefill_start.elapsed().as_secs_f32(),
             next
         );
@@ -213,7 +213,7 @@ impl NativeModel {
         let gen_start = std::time::Instant::now();
         for i in 0..max_tokens {
             if cancel.load(Ordering::Relaxed) {
-                info!("[First Children] 推理被取消(生成中)");
+                info!("[First Children] Inference cancelled (during generation)");
                 return Err(E::msg("cancelled"));
             }
             if next == eos {
@@ -238,7 +238,7 @@ impl NativeModel {
         }
         let total = self.tokenizer.decode(&out, true).map_err(E::msg)?;
         info!(
-            "[First Children] 生成完成: {} tokens, {:.2}s ({:.1} tok/s)",
+            "[First Children] Generation complete: {} tokens, {:.2}s ({:.1} tok/s)",
             out.len(),
             gen_start.elapsed().as_secs_f32(),
             out.len() as f32 / gen_start.elapsed().as_secs_f32()
@@ -313,26 +313,26 @@ impl NativeAiHost {
                         if native_model.as_ref().is_some_and(|m| {
                             m.model_path == model_path && m.tokenizer_path == tokenizer_path
                         }) {
-                            info!("[First Children] 模型已加载, 跳过重复加载");
+                            info!("[First Children] Model already loaded; skipping reload");
                             let _ = tx_resp.send(AiResponse::ModelLoaded);
                             continue;
                         }
-                        info!("[First Children] 开始加载模型: {}", model_path);
+                        info!("[First Children] Loading model: {}", model_path);
                         let load_start = std::time::Instant::now();
                         match NativeModel::new(&model_path, &tokenizer_path) {
                             Ok(model) => {
                                 info!(
-                                    "[First Children] 模型加载成功 ({:.2}s)",
+                                    "[First Children] Model loaded ({:.2}s)",
                                     load_start.elapsed().as_secs_f32()
                                 );
                                 native_model = Some(model);
                                 let _ = tx_resp.send(AiResponse::ModelLoaded);
                             }
                             Err(e) => {
-                                info!("[First Children] 模型加载失败: {}", e);
+                                info!("[First Children] Model load failed: {}", e);
                                 let _ = tx_resp.send(AiResponse::Error {
                                     id: "load".into(),
-                                    message: format!("加载模型失败: {}", e),
+                                    message: format!("Model load failed: {}", e),
                                 });
                             }
                         }
@@ -361,7 +361,7 @@ impl NativeAiHost {
                             ) {
                                 Ok(_result) => {
                                     info!(
-                                        "推理完成 id={} elapsed={:.2}s",
+                                        "Inference finished id={} elapsed={:.2}s",
                                         id,
                                         start.elapsed().as_secs_f32()
                                     );
@@ -372,20 +372,20 @@ impl NativeAiHost {
                                     });
                                 }
                                 Err(e) if e.to_string().contains("cancelled") => {
-                                    info!("推理已取消 id={}", id);
+                                    info!("Inference cancelled id={}", id);
                                 }
                                 Err(e) => {
-                                    info!("推理失败 id={} err={}", id, e);
+                                    info!("Inference failed id={} err={}", id, e);
                                     let _ = tx_resp.send(AiResponse::Error {
                                         id,
-                                        message: format!("推理失败: {}", e),
+                                        message: format!("Inference failed: {}", e),
                                     });
                                 }
                             }
                         } else {
                             let _ = tx_resp.send(AiResponse::Error {
                                 id,
-                                message: "模型未加载".into(),
+                                message: "Model not loaded".into(),
                             });
                         }
                     }
@@ -465,7 +465,7 @@ impl Plugin for NativeAiPlugin {
 
 fn autoload_native_ai_model(host: Res<NativeAiHost>) {
     info!(
-        "[First Children] 启动自动加载模型: {} / {}",
+        "[First Children] Auto-loading model on startup: {} / {}",
         DEFAULT_QWEN_GGUF, DEFAULT_QWEN_TOKENIZER
     );
     host.load_model(

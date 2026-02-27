@@ -424,14 +424,14 @@ impl Topology {
         self.half_edges.remove(he_id.into())
     }
     
-    /// 批量移除指定 primitive 的所有 half-edges，O(k) 复杂度
+    /// Bulk-remove all half-edges of a given primitive in O(k) time
     pub fn remove_primitive(&mut self, prim_id: PrimId) {
         let start = self.get_primitive_start_halfedge(prim_id);
         if !start.is_valid() { return; }
         self.clear_primitive_start_halfedge(prim_id);
         if !start.is_valid() { return; }
         
-        // 收集这个面的所有 half-edges
+        // Collect all half-edges of this face
         let mut to_remove = Vec::new();
         let mut curr = start;
         let mut iter = 0;
@@ -442,17 +442,17 @@ impl Topology {
             if curr == start || !curr.is_valid() || iter > 100 { break; }
         }
         
-        // 批量删除
+        // Bulk delete
         for he_id in to_remove { let _ = self.remove_half_edge(he_id); }
     }
     
-    /// 增量添加一个 primitive 的拓扑，返回起始 HalfEdgeId
+    /// Incrementally add topology for a primitive; returns the starting HalfEdgeId
     pub fn insert_primitive(&mut self, prim_id: PrimId, point_ids: &[PointId]) -> Option<HalfEdgeId> {
         if point_ids.len() < 3 { return None; }
         let count = point_ids.len();
         let mut face_hes = Vec::with_capacity(count);
         
-        // 创建 half-edges
+        // Create half-edges
         for i in 0..count {
             let he = HalfEdge {
                 origin_point: point_ids[i],
@@ -465,7 +465,7 @@ impl Topology {
             self.set_point_start_halfedge(point_ids[i], he_id);
         }
         
-        // 链接 next 指针
+        // Link next pointers
         for i in 0..count {
             let next_id = face_hes[(i + 1) % count];
             if let Some(he) = self.half_edges.get_mut(face_hes[i].into()) { he.next = next_id; }
@@ -476,7 +476,7 @@ impl Topology {
         Some(start)
     }
     
-    /// 链接等价 half-edges（pair 关系），用于批量插入后建立完整拓扑
+    /// Link equivalent half-edges (pair relationship) to build full topology after batch insertion
     pub fn link_equivalent_edges(&mut self, edge_map: &mut HashMap<(PointId, PointId), Vec<HalfEdgeId>>) {
         for (_, he_list) in edge_map.iter() {
             if he_list.is_empty() { continue; }
@@ -490,7 +490,7 @@ impl Topology {
         }
     }
     
-    /// 检查是否需要完全重建
+    /// Check whether a full rebuild is required
     pub fn needs_rebuild(&self) -> bool { false }
 
     /// Get all neighbor points connected to the given point by an edge.

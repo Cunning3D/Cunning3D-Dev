@@ -1,4 +1,4 @@
-//! PLY 导入器 (使用 ply-rs 库)
+//! PLY importer (using the ply-rs crate)
 use super::{FileImporter, FileMetadata};
 use crate::libs::geometry::attrs;
 use crate::libs::geometry::mesh::{Attribute, GeoPrimitive, Geometry, PolygonPrim};
@@ -56,10 +56,10 @@ impl FileImporter for PlyImporter {
             }
         }
 
-        // 设置位置
+        // Set positions
         geo.insert_point_attribute(attrs::P, Attribute::new(positions));
 
-        // 创建面
+        // Create faces
         for face_indices in faces {
             let mut poly_vids = Vec::new();
             for idx in face_indices {

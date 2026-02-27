@@ -1,4 +1,4 @@
-//! `create_sphere` 节点的功能实现。
+//! Implementation of the `create_sphere` node.
 
 use crate::libs::geometry::geo_ref::GeometryRef;
 use crate::{

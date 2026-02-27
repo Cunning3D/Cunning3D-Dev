@@ -1,4 +1,4 @@
-//! STL 导入器 (使用 stl_io 库)
+//! STL importer (using the stl_io crate)
 use super::{FileImporter, FileMetadata};
 use crate::libs::geometry::attrs;
 use crate::libs::geometry::mesh::{Attribute, GeoPrimitive, Geometry, PolygonPrim};
@@ -24,7 +24,7 @@ impl FileImporter for StlImporter {
 
         let mut geo = Geometry::new();
 
-        // STL 是三角形 soup，需要合并重复顶点
+        // STL is a triangle soup; merge duplicate vertices
         let mut vertex_map: HashMap<[i32; 3], usize> = HashMap::new();
         let mut positions: Vec<Vec3> = Vec::new();
 
@@ -56,7 +56,7 @@ impl FileImporter for StlImporter {
             }
         }
 
-        // 设置位置
+        // Set positions
         geo.insert_point_attribute(attrs::P, Attribute::new(positions));
 
         if geo.primitives().len() > 0 {

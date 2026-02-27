@@ -221,10 +221,10 @@ impl Render for VoiceAssistantSettings {
                             ),
                     ),
             )
-            .child(Self::field_row("Wake Phrases (e.g. hello gemini|hi gemini|你好)", self.wake_phrases.clone()))
-            .child(Self::field_row("Input Command (e.g. start dictation|输入)", self.cmd_input_phrases.clone()))
-            .child(Self::field_row("Send Command (e.g. send|发送)", self.cmd_send_phrases.clone()))
-            .child(Self::field_row("Cancel Command (e.g. cancel|取消)", self.cmd_cancel_phrases.clone()))
+            .child(Self::field_row("Wake Phrases (e.g. hello gemini|hi gemini)", self.wake_phrases.clone()))
+            .child(Self::field_row("Input Command (e.g. start dictation|input)", self.cmd_input_phrases.clone()))
+            .child(Self::field_row("Send Command (e.g. send|submit)", self.cmd_send_phrases.clone()))
+            .child(Self::field_row("Cancel Command (e.g. cancel|stop)", self.cmd_cancel_phrases.clone()))
             .child(Self::field_row("Greeting Text", self.greet_text.clone()))
             .child(Self::field_row("Sleep Text", self.sleep_text.clone()))
             .child(

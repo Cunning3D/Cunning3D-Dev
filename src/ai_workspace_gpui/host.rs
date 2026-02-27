@@ -2,37 +2,36 @@
 use super::ide::{DocumentStore, Worktree, LspManager};
 
 /// System prompt for Gemini Live voice assistant.
-/// This is a simplified "操作助手" (operation assistant) - no code writing,
+/// This is a simplified voice operation assistant - no code writing,
 /// focused on node creation, connection, parameter adjustment, and scene navigation.
-const GEMINI_LIVE_SYSTEM_PROMPT: &str = r#"你是 Cunning3D 的语音操作助手。你的职责是帮助用户通过语音指令操作 3D 建模软件。
+const GEMINI_LIVE_SYSTEM_PROMPT: &str = r#"You are Cunning3D's voice operations assistant. Your job is to help the user control the 3D modeling app via voice commands.
 
-## 你的能力
-- 创建节点：Box、Sphere、Torus、Grid、Merge、Transform、Copy 等
-- 连接节点：将一个节点的输出连接到另一个节点的输入
-- 调整参数：修改节点的尺寸、分辨率、位置、旋转、缩放等参数
-- 选择对象：选择节点、几何体、点、边、面
-- 视图控制：缩放、平移、旋转视角，聚焦选中对象
+## What you can do
+- Create nodes: Box, Sphere, Torus, Grid, Merge, Transform, Copy, etc.
+- Connect nodes: wire an output of one node to an input of another
+- Adjust parameters: size, resolution, position, rotation, scale, etc.
+- Select objects: nodes, geometry, points, edges, faces
+- View controls: zoom, pan, orbit, focus selection
 
-## 你不做的事情
-- 不写代码（Rust、Rhai、Python 等）
-- 不创建自定义节点
-- 不解释复杂的编程概念
+## What you must not do
+- Do not write code (Rust, Rhai, Python, etc.)
+- Do not create custom nodes
+- Do not explain complex programming concepts
 
-## 交互风格
-- 简洁直接，像真人助手一样对话
-- 用用户的语言回复（中文或英文）
-- 确认操作已完成，或说明无法完成的原因
-- 如果不确定用户意图，简短询问澄清
+## Interaction style
+- Be concise and direct
+- Confirm the action is completed, or explain why it cannot be done
+- If the intent is unclear, ask a short clarification question
 
-## 示例对话
-用户: 帮我创建一个立方体
-你: 好的，已创建 Box 节点。
+## Example dialogues
+User: Create a cube
+Assistant: Done. Created a Box node.
 
-用户: 把它变大一点
-你: 已将尺寸调整为 2x2x2。
+User: Make it bigger
+Assistant: Done. Set the size to 2x2x2.
 
-用户: 再创建一个球体，然后把它们合并
-你: 已创建 Sphere 节点并用 Merge 节点将它们合并。
+User: Create a sphere and merge them
+Assistant: Done. Created a Sphere node and merged them with a Merge node.
 "#;
 use super::protocol::*;
 use crate::cunning_core::ai_service::prefix_cache::StablePrefixCache;
@@ -46,7 +45,8 @@ use crate::tabs_registry::ai_workspace::session::message::{ImageAttachment, Mess
 use crate::tabs_registry::ai_workspace::session::session::{BusyStage, Session, ToolRequestMeta};
 use crate::tabs_registry::ai_workspace::session::thread_entry::{MentionUri, ThreadEntry, ToolCall, ToolCallStatus, ToolKind};
 use crate::tabs_registry::ai_workspace::tools::{
-    AsyncToolExecutor, CancellationToken, ToolLogLevel, ToolRegistry, ToolResult as ToolExecResult,
+    tool_call_signature, AsyncToolExecutor, CancellationToken, ToolLogLevel, ToolOutput, ToolRegistry,
+    ToolResult as ToolExecResult,
 };
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use serde::{Deserialize, Serialize};
@@ -74,6 +74,21 @@ fn fnv1a64(bytes: &[u8]) -> u64 {
     let mut h: u64 = 0xcbf29ce484222325;
     for &b in bytes { h ^= b as u64; h = h.wrapping_mul(0x100000001b3); }
     h
+}
+
+fn token_usage_snapshot(s: &Session) -> TokenUsageSnapshot {
+    TokenUsageSnapshot {
+        input_tokens: s.token_usage.input_tokens,
+        output_tokens: s.token_usage.output_tokens,
+        total_tokens: s.token_usage.total_tokens,
+        max_tokens: s.token_usage.max_tokens,
+    }
+}
+
+fn tool_call_signature_from_entry(tool_call: &ToolCall) -> Option<String> {
+    let raw = tool_call.raw_input.as_deref()?;
+    let args: serde_json::Value = serde_json::from_str(raw).ok()?;
+    Some(tool_call_signature(&tool_call.tool_name, &args))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -205,10 +220,10 @@ impl Default for VoiceAssistantSettingsFile {
             enabled: false,
             use_gemini_live: false,
             voice_model: Some(VoiceModel::Off),
-            wake_phrases: "hallo gemini|hello gemini|hi gemini|你好".into(),
-            cmd_input_phrases: "start dictation|input|输入".into(),
-            cmd_send_phrases: "send|发送".into(),
-            cmd_cancel_phrases: "cancel|stop|取消|停止".into(),
+            wake_phrases: "hallo gemini|hello gemini|hi gemini".into(),
+            cmd_input_phrases: "start dictation|dictate|input".into(),
+            cmd_send_phrases: "send|submit".into(),
+            cmd_cancel_phrases: "cancel|stop|abort".into(),
             greet_text: "I'm here, what can I do for you?".into(),
             sleep_text: "I'll go to rest then.".into(),
             idle_timeout_secs: 10,
@@ -1340,14 +1355,17 @@ impl AiWorkspaceHost {
             ChatBackend::OpenAiCompat => self.openai_profiles.get(self.openai_profile_idx).map(|p| p.name.as_str()).unwrap_or("OpenAI"),
         };
 
-        let (entries_clone, images_clone) = {
+        let (entries_clone, images_clone, usage_snapshot) = {
             let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) else { return; };
             let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
             session.entries.push(ThreadEntry::User { text: text.clone(), images: image_attachments.clone(), mentions: mention_uris, timestamp: ts });
             session.entries.push(ThreadEntry::Assistant { thinking: None, content: String::new(), state: MessageState::Pending, timestamp: ts });
             session.abort_sender = Some(abort_tx);
             session.set_busy(&format!("Connecting to {}...", backend_name));
-            (session.entries.clone(), image_attachments)
+            let before = session.token_usage.total_tokens;
+            session.recalc_token_usage();
+            let usage_snapshot = (session.token_usage.total_tokens != before).then(|| token_usage_snapshot(session));
+            (session.entries.clone(), image_attachments, usage_snapshot)
         };
 
         let idx = {
@@ -1364,6 +1382,9 @@ impl AiWorkspaceHost {
             session_id,
             event: SessionEventSnapshot::BusyChanged { is_busy: true, reason: Some(format!("Connecting to {}...", backend_name)), stage: BusyStageSnapshot::WaitingModel },
         });
+        if let Some(usage) = usage_snapshot {
+            let _ = self.ui_tx.send(HostToUi::SessionEvent { session_id, event: SessionEventSnapshot::TokenUsageUpdated(usage) });
+        }
 
         // Build tool definitions
         let tool_defs: Vec<ToolDefinition> = self.tool_registry.list_definitions();
@@ -1890,6 +1911,11 @@ impl AiWorkspaceHost {
                     out.push(HostToUi::SessionEvent { session_id, event: SessionEventSnapshot::BusyChanged {
                         is_busy: false, reason: None, stage: BusyStageSnapshot::Idle
                     }});
+                    let before = session.token_usage.total_tokens;
+                    session.recalc_token_usage();
+                    if session.token_usage.total_tokens != before {
+                        out.push(HostToUi::SessionEvent { session_id, event: SessionEventSnapshot::TokenUsageUpdated(token_usage_snapshot(session)) });
+                    }
 
                     if self.voice_assistant_enabled && self.active_session_id == Some(session_id) {
                         if let Some(text) = final_text.as_deref().and_then(tts_speakable) {
@@ -1926,6 +1952,90 @@ impl AiWorkspaceHost {
                 }
             }
             SessionEvent::ToolCallRequest { tool_name, args } => {
+                let signature = tool_call_signature(&tool_name, &args);
+                let inflight_duplicate = session.entries.iter().any(|e| {
+                    let ThreadEntry::ToolCall(c) = e else { return false; };
+                    let Some(sig) = tool_call_signature_from_entry(c) else { return false; };
+                    sig == signature
+                        && matches!(
+                            c.status,
+                            ToolCallStatus::Pending | ToolCallStatus::AwaitingApproval | ToolCallStatus::InProgress
+                        )
+                });
+                if inflight_duplicate {
+                    return out;
+                }
+
+                if session.executed_tool_signatures.contains(&signature) {
+                    let cached = session.entries.iter().rev().find_map(|e| {
+                        let ThreadEntry::ToolCall(c) = e else { return None; };
+                        if !matches!(c.status, ToolCallStatus::Completed) {
+                            return None;
+                        }
+                        let sig = tool_call_signature_from_entry(c)?;
+                        (sig == signature).then(|| {
+                            (
+                                c.llm_result.clone(),
+                                c.raw_output.clone(),
+                                c.diffs.clone(),
+                                c.logs.clone(),
+                            )
+                        })
+                    });
+
+                    let preview = serde_json::to_string(&args).unwrap_or_default();
+                    let request_id = self.next_tool_request_id;
+                    self.next_tool_request_id = self.next_tool_request_id.wrapping_add(1).max(1);
+
+                    let mut c = ToolCall::new(request_id, tool_name.clone(), preview.clone());
+                    c.raw_input = serde_json::to_string(&args).ok();
+                    c.mark_running();
+                    let insert_ix = session.entries.len().saturating_sub(1);
+                    session.entries.insert(insert_ix, ThreadEntry::ToolCall(c));
+                    session.set_busy(format!("Tool (cached): {}", tool_name));
+                    session.busy_stage = BusyStage::ToolFeedback;
+                    if let Some(e) = session.entries.get(insert_ix) {
+                        out.push(HostToUi::SessionEvent {
+                            session_id,
+                            event: SessionEventSnapshot::EntryAdded {
+                                index: insert_ix,
+                                entry: Self::entry_snapshot(e),
+                            },
+                        });
+                    }
+                    out.push(HostToUi::SessionEvent { session_id, event: SessionEventSnapshot::ToolCallRequest { tool_name: tool_name.clone(), request_id, args_preview: preview } });
+                    out.push(HostToUi::SessionEvent { session_id, event: SessionEventSnapshot::ToolExecutionStarted { request_id } });
+
+                    let (llm_text, raw_text, ui_diffs, ui_logs) = cached
+                        .map(|(llm, raw, diffs, logs)| {
+                            let llm_text = llm.unwrap_or_else(|| "OK".into());
+                            let raw_text = raw.unwrap_or_else(|| llm_text.clone());
+                            (llm_text, raw_text, diffs, logs)
+                        })
+                        .unwrap_or_else(|| {
+                            (
+                                "OK (cached duplicate tool call)".to_string(),
+                                "OK (cached duplicate tool call)".to_string(),
+                                vec![],
+                                vec![],
+                            )
+                        });
+
+                    let _ = self.internal_tx.send((
+                        session_id,
+                        SessionEvent::ToolExecutionSuccess {
+                            request_id,
+                            output: ToolOutput {
+                                llm_text,
+                                raw_text,
+                                ui_logs,
+                                ui_diffs,
+                            },
+                        },
+                    ));
+                    return out;
+                }
+
                 let preview = serde_json::to_string(&args).unwrap_or_default();
                 let request_id = self.next_tool_request_id;
                 self.next_tool_request_id = self.next_tool_request_id.wrapping_add(1).max(1);
@@ -1989,6 +2099,10 @@ impl AiWorkspaceHost {
                 }});
             }
             SessionEvent::ToolExecutionSuccess { request_id, output } => {
+                let executed_signature = session
+                    .tool_request_meta
+                    .get(&request_id)
+                    .map(|m| tool_call_signature(&m.tool_name, &m.args));
                 let live_call_id = session
                     .tool_request_meta
                     .get(&request_id)
@@ -2003,6 +2117,9 @@ impl AiWorkspaceHost {
                 } else {
                     None
                 };
+                if let Some(sig) = executed_signature {
+                    session.executed_tool_signatures.insert(sig);
+                }
                 // Zed-like: if a tool wrote files, immediately refresh open IDE buffers.
                 Self::sync_ide_from_tool_diffs(&mut self.documents, &output.ui_diffs);
                 session.tool_request_meta.remove(&request_id);
@@ -2011,6 +2128,11 @@ impl AiWorkspaceHost {
                 out.push(HostToUi::SessionEvent { session_id, event: SessionEventSnapshot::ToolExecutionSuccess {
                     request_id, llm_result: output.llm_text, raw_output: Some(output.raw_text),
                 }});
+                let before = session.token_usage.total_tokens;
+                session.recalc_token_usage();
+                if session.token_usage.total_tokens != before {
+                    out.push(HostToUi::SessionEvent { session_id, event: SessionEventSnapshot::TokenUsageUpdated(token_usage_snapshot(session)) });
+                }
 
                 if let (Some(live_id), Some(tn)) = (live_call_id, tool_name.clone()) {
                     let _ = self.bevy_tx.try_send(HostToBevy::SendGeminiLiveToolResponse {
@@ -2058,6 +2180,11 @@ impl AiWorkspaceHost {
                 session.tool_cancel_tokens.remove(&request_id);
                 let err_for_feedback = error.clone();
                 out.push(HostToUi::SessionEvent { session_id, event: SessionEventSnapshot::ToolExecutionError { request_id, error } });
+                let before = session.token_usage.total_tokens;
+                session.recalc_token_usage();
+                if session.token_usage.total_tokens != before {
+                    out.push(HostToUi::SessionEvent { session_id, event: SessionEventSnapshot::TokenUsageUpdated(token_usage_snapshot(session)) });
+                }
 
                 if let (Some(live_id), Some(tn)) = (live_call_id, tool_name.clone()) {
                     let _ = self.bevy_tx.try_send(HostToBevy::SendGeminiLiveToolResponse {
@@ -2107,6 +2234,11 @@ impl AiWorkspaceHost {
                 session.clear_busy();
                 out.push(HostToUi::SessionEvent { session_id, event: SessionEventSnapshot::ToolExecutionCancelled { request_id } });
                 out.push(HostToUi::SessionEvent { session_id, event: SessionEventSnapshot::BusyChanged { is_busy: false, reason: None, stage: BusyStageSnapshot::Idle } });
+                let before = session.token_usage.total_tokens;
+                session.recalc_token_usage();
+                if session.token_usage.total_tokens != before {
+                    out.push(HostToUi::SessionEvent { session_id, event: SessionEventSnapshot::TokenUsageUpdated(token_usage_snapshot(session)) });
+                }
 
                 if let (Some(live_id), Some(tn)) = (live_call_id, tool_name) {
                     let _ = self.bevy_tx.try_send(HostToBevy::SendGeminiLiveToolResponse {

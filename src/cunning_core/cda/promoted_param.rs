@@ -1,19 +1,19 @@
-//! 参数提升定义：将CDA内部节点参数暴露到资产顶层，支持通道级绑定
+//! Promoted-parameter definitions: expose CDA internal node parameters at the asset top level, with channel-level bindings
 use crate::nodes::structs::NodeId;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-/// 提升的参数定义
+/// Definition of a promoted parameter
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct PromotedParam {
     pub id: Uuid,
-    pub name: String,  // 内部名（唯一标识）
-    pub label: String, // UI显示标签
-    pub group: String, // 参数分组
-    pub order: i32,    // 排序权重
+    pub name: String,  // Internal name (unique id)
+    pub label: String, // UI display label
+    pub group: String, // Parameter group
+    pub order: i32,    // Sort weight
     pub param_type: PromotedParamType,
     pub ui_config: ParamUIConfig,
-    pub channels: Vec<ParamChannel>, // 通道（Vec3有3个，Float有1个）
+    pub channels: Vec<ParamChannel>, // Channels (Vec3 has 3; Float has 1)
 }
 
 impl PromotedParam {
@@ -138,19 +138,19 @@ impl PromotedParam {
         self
     }
 
-    /// 获取通道数量
+    /// Get number of channels
     pub fn channel_count(&self) -> usize {
         self.channels.len()
     }
 
-    /// 添加绑定到指定通道
+    /// Add a binding to a specific channel
     pub fn add_binding(&mut self, channel_idx: usize, binding: ParamBinding) {
         if let Some(ch) = self.channels.get_mut(channel_idx) {
             ch.bindings.push(binding);
         }
     }
 
-    /// 移除绑定
+    /// Remove a binding
     pub fn remove_binding(&mut self, channel_idx: usize, target_node: NodeId, target_param: &str) {
         if let Some(ch) = self.channels.get_mut(channel_idx) {
             ch.bindings
@@ -158,16 +158,16 @@ impl PromotedParam {
         }
     }
 
-    /// 获取所有绑定总数
+    /// Get total number of bindings
     pub fn total_bindings(&self) -> usize {
         self.channels.iter().map(|c| c.bindings.len()).sum()
     }
 }
 
-/// 参数通道（Vec3有xyz三个通道，Float只有一个）
+/// Parameter channel (Vec3 has x/y/z channels; Float has one)
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct ParamChannel {
-    pub name: String, // "x", "y", "z", "r", "g", "b" 或 "" (单通道)
+    pub name: String, // "x", "y", "z", "r", "g", "b" or "" (single-channel)
     pub default_value: f64,
     pub bindings: Vec<ParamBinding>,
 }
@@ -182,12 +182,12 @@ impl ParamChannel {
     }
 }
 
-/// 参数绑定：指向内部节点的某个参数的某个通道
+/// Parameter binding: points to a specific channel of an internal node parameter
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct ParamBinding {
     pub target_node: NodeId,
     pub target_param: String,
-    pub target_channel: Option<usize>, // 目标参数的通道索引（向量类型时）
+    pub target_channel: Option<usize>, // Channel index of the target parameter (for vector types)
 }
 
 impl ParamBinding {
@@ -204,7 +204,7 @@ impl ParamBinding {
     }
 }
 
-/// 参数类型定义
+/// Parameter type definition
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub enum PromotedParamType {
     Float {
@@ -237,7 +237,7 @@ pub enum PromotedParamType {
 }
 
 impl PromotedParamType {
-    /// 获取类型名称（用于UI显示）
+    /// Get type name (for UI display)
     pub fn display_name(&self) -> &'static str {
         match self {
             Self::Float { .. } => "Float",
@@ -257,7 +257,7 @@ impl PromotedParamType {
         }
     }
 
-    /// 获取通道数
+    /// Get channel count
     pub fn channel_count(&self) -> usize {
         match self {
             Self::Vec2 => 2,
@@ -267,7 +267,7 @@ impl PromotedParamType {
         }
     }
 
-    /// 获取通道名称
+    /// Get channel name
     pub fn channel_names(&self) -> Vec<&'static str> {
         match self {
             Self::Vec2 => vec!["x", "y"],
@@ -280,14 +280,14 @@ impl PromotedParamType {
     }
 }
 
-/// 下拉菜单项
+/// Dropdown menu item
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct DropdownItem {
     pub value: i32,
     pub label: String,
 }
 
-/// 参数UI配置
+/// Parameter UI configuration
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct ParamUIConfig {
     pub visible: bool,

@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use rayon::prelude::*;
 use std::collections::HashMap;
 
-/// 并行 VMesh 生成结果
+/// Result of parallel VMesh generation
 #[derive(Clone, Default)]
 pub struct VMeshResult {
     pub points: Vec<Vec3>,
@@ -22,7 +22,7 @@ impl VMeshResult {
     }
 }
 
-/// 并行生成多个 corner 的 VMesh（多核加速 2-4x）
+/// Generate VMesh for multiple corners in parallel (2-4x speedup on multicore)
 pub fn parallel_vmesh_emit(corners: &[(VMeshGrid, usize)], ns: usize) -> VMeshResult {
     if corners.is_empty() {
         return VMeshResult::new();
@@ -36,7 +36,7 @@ pub fn parallel_vmesh_emit(corners: &[(VMeshGrid, usize)], ns: usize) -> VMeshRe
         .map(|(vm, _)| emit_vmesh_result(vm, ns))
         .collect();
 
-    // 合并所有结果
+    // Merge all results
     let total_pts: usize = results.iter().map(|r| r.points.len()).sum();
     let total_polys: usize = results.iter().map(|r| r.polys.len()).sum();
     let mut merged = VMeshResult::with_capacity(total_pts, total_polys);
@@ -53,7 +53,7 @@ pub fn parallel_vmesh_emit(corners: &[(VMeshGrid, usize)], ns: usize) -> VMeshRe
     merged
 }
 
-/// 单个 VMesh 生成结果（无外部依赖，可并行）
+/// Result of generating a single VMesh (no external deps; can run in parallel)
 fn emit_vmesh_result(vm: &VMeshGrid, ns: usize) -> VMeshResult {
     let n_bndv = vm.n;
     let ns2 = ns / 2;

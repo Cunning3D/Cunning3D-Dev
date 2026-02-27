@@ -42,7 +42,7 @@ use spacing::build_profile_spacing;
 use tri_corner::{tri_corner_test, tri_corner_vmesh};
 use vmesh::{cubic_subdiv, emit_vmesh_faces, interp_vmesh, VMeshGrid};
 
-// Thread-local workspace 缓存 (避免跨调用重复分配)
+// Thread-local workspace cache (avoid repeated allocations across calls)
 thread_local! {
     static WORKSPACE: std::cell::RefCell<BevelWorkspace> = std::cell::RefCell::new(BevelWorkspace::new());
 }
@@ -112,7 +112,7 @@ impl<'a> BevelPipeline<'a> {
     }
 
     fn build_output(&mut self) {
-        // v2: 高性能 bevel 管线，使用对象池避免重复分配
+        // v2: high-performance bevel pipeline; uses an object pool to avoid repeated allocations
         let mut dist = 0.0f32;
         let mut divisions = 1usize;
         for e in &self.graph.edges {
@@ -177,7 +177,7 @@ impl<'a> BevelPipeline<'a> {
         let n_prims = self.geo.primitives().len();
         let n_halfedges = self.topo.half_edges.len();
 
-        // 使用 thread-local workspace 复用内存
+        // Reuse memory via thread-local workspace
         let (
             mut bev_edge,
             mut any_bev_point,
@@ -298,7 +298,7 @@ impl<'a> BevelPipeline<'a> {
             }
         }
 
-        // 初始化 dense 映射表 (workspace 已预分配)
+        // Initialize the dense mapping table (workspace is preallocated)
         for (pid_idx, _) in self.geo.points().iter_enumerated() {
             let pid = PointId::from(pid_idx);
             if let Some(di) = self.geo.points().get_dense_index(pid.into()) {
@@ -2097,7 +2097,7 @@ impl<'a> BevelPipeline<'a> {
         }
         self.new_geo = g;
 
-        // 归还 workspace 缓冲区供下次复用
+        // Return workspace buffers for reuse next time
         WORKSPACE.with(|ws| {
             let mut ws = ws.borrow_mut();
             ws.bev_edge = bev_edge;
@@ -2106,7 +2106,7 @@ impl<'a> BevelPipeline<'a> {
             ws.face_normals_dense = face_n_dense;
             ws.dense_to_pid = dense_to_pid;
             ws.dense_to_he = dense_to_he;
-            ws.reset(); // 重置但保留 capacity
+            ws.reset(); // Reset while keeping capacity
         });
     }
 

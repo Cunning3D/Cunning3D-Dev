@@ -19,15 +19,15 @@ pub enum MessageState {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ThinkingSection {
     pub content: String,
-    pub collapsed: bool, // UI 状态：是否折叠
-    pub done: bool,      // 是否思考完毕
+    pub collapsed: bool, // UI state: collapsed?
+    pub done: bool,      // Whether the thinking phase is finished
 }
 
 impl Default for ThinkingSection {
     fn default() -> Self {
         Self {
             content: String::new(),
-            collapsed: false, // 默认展开，让用户看到思考过程
+            collapsed: false, // Expanded by default so the user can see the thinking process
             done: false,
         }
     }

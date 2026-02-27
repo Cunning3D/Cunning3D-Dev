@@ -15,6 +15,7 @@ use crate::nodes::structs::NodeId;
 use crate::nodes::structs::NodeType;
 use crate::nodes::NodeGraph;
 use crate::tabs_system::node_editor::cda::navigation as cda_nav;
+use crate::tabs_system::viewport_3d::ViewportLayout;
 use crate::ui::NodeEditorState;
 use crate::{nodes::NodeGraphResource, GraphChanged, GeometryChanged};
 use std::sync::Arc;
@@ -64,8 +65,13 @@ pub fn dispatch_compute_tasks(
     viewport_interaction: Res<crate::ViewportInteractionState>,
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     mut egui_query: Query<&mut EguiContext, With<PrimaryWindow>>,
+    mut viewport_perf: ResMut<crate::viewport_perf::ViewportPerfTrace>,
 ) {
     puffin::profile_function!();
+    let _perf = crate::viewport_perf::PerfScope::new(
+        &mut viewport_perf,
+        crate::viewport_perf::ViewportPerfSection::ComputeDispatch,
+    );
     if perf_monitor.is_paused {
         return;
     }
@@ -285,8 +291,20 @@ pub fn receive_compute_results(
     mut perf_monitor: ResMut<crate::cunning_core::profiling::PerformanceMonitor>,
     nav_input: Res<crate::input::NavigationInput>,
     viewport_interaction: Res<crate::ViewportInteractionState>,
+    viewport_layout: Res<ViewportLayout>,
+    mut viewport_perf: ResMut<crate::viewport_perf::ViewportPerfTrace>,
 ) {
     puffin::profile_function!();
+    let _perf = crate::viewport_perf::PerfScope::new(
+        &mut viewport_perf,
+        crate::viewport_perf::ViewportPerfSection::ComputeReceive,
+    );
+    let viewport_active = viewport_layout.logical_rect.is_some();
+    let viewport_busy = viewport_active
+        && (viewport_interaction.is_gizmo_dragging
+            || viewport_interaction.is_right_button_dragged
+            || viewport_interaction.is_middle_button_dragged
+            || viewport_interaction.is_alt_left_button_dragged);
     // If we deferred a result (viewport was interacting), apply it once idle.
     if async_state.pending_result.is_some()
         && !nav_input.active
@@ -294,9 +312,7 @@ pub fn receive_compute_results(
         && nav_input.orbit_delta.length_squared() == 0.0
         && nav_input.pan_delta.length_squared() == 0.0
         && nav_input.fly_vector.length_squared() == 0.0
-        && !viewport_interaction.is_right_button_dragged
-        && !viewport_interaction.is_middle_button_dragged
-        && !viewport_interaction.is_alt_left_button_dragged
+        && !viewport_busy
     {
         if let Some((computed_graph, stats)) = async_state.pending_result.take() {
             let root = &mut node_graph_res.0;
@@ -346,9 +362,7 @@ pub fn receive_compute_results(
                 || nav_input.orbit_delta.length_squared() != 0.0
                 || nav_input.pan_delta.length_squared() != 0.0
                 || nav_input.fly_vector.length_squared() != 0.0
-                || viewport_interaction.is_right_button_dragged
-                || viewport_interaction.is_middle_button_dragged
-                || viewport_interaction.is_alt_left_button_dragged
+                || viewport_busy
             {
                 async_state.pending_result = Some((computed_graph, stats));
                 // Cook is complete even if apply is deferred; stop accepting updates from worker.

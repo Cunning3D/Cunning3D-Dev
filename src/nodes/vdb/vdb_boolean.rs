@@ -1,2 +1,0 @@
-// Placeholder
-pub struct VdbBooleanNode;

@@ -1,13 +1,13 @@
-//! AI 默认配置（统一管理，避免散落硬编码）
+//! AI default configuration (centralized; avoid scattered hardcoding).
 
 pub const DEFAULT_QWEN_GGUF: &str = "Lmodels/Qwen3-4B-Thinking-2507-Q4_K_M.gguf";
 pub const DEFAULT_QWEN_TOKENIZER: &str = "Lmodels/tokenizer.json";
 
-// 推理参数 (参考 LM Studio: context=100K, batch=512)
-pub const DEFAULT_LOCAL_MAX_TOKENS: usize = 8192; // 最大生成长度（与 LM Studio 对齐）
-pub const DEFAULT_TEMPERATURE: f64 = 0.7; // 采样温度
-pub const DEFAULT_TOP_P: f64 = 0.95; // Top-P 采样
-pub const LOCAL_STREAM_LOG_VERBOSE: bool = true; // 本地流式调试日志（很吵，必要时关）
+// Inference parameters (aligned with LM Studio defaults: context=100K, batch=512).
+pub const DEFAULT_LOCAL_MAX_TOKENS: usize = 8192; // Max generation length (aligned with LM Studio).
+pub const DEFAULT_TEMPERATURE: f64 = 0.7; // Sampling temperature.
+pub const DEFAULT_TOP_P: f64 = 0.95; // Top-P sampling.
+pub const LOCAL_STREAM_LOG_VERBOSE: bool = true; // Local streaming debug logs (very noisy; disable when needed).
 
 // Tiny Copilot (Ghost Path Completion) context budget
 pub const TINY_GHOST_MAX_NODES: usize = 12; // Full info nodes (reduced for token efficiency)

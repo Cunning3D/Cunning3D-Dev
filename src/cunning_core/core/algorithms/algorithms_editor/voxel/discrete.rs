@@ -28,13 +28,13 @@ pub struct PaletteEntry {
 impl Default for PaletteEntry { fn default() -> Self { Self { color: [255, 255, 255, 255], roughness: 0.5, metallic: 0.0, emissive: 0.0 } } }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DiscreteVoxelGrid {
+pub struct DiscreteSdfGrid {
     pub voxels: HashMap<VoxelCoord, DiscreteVoxel>,
     pub palette: Vec<PaletteEntry>,
     #[serde(default)] pub voxel_size: f32,
 }
 
-impl Default for DiscreteVoxelGrid {
+impl Default for DiscreteSdfGrid {
     fn default() -> Self {
         let mut palette = vec![PaletteEntry::default(); PALETTE_SIZE];
         palette[0] = PaletteEntry { color: [0, 0, 0, 0], ..default() }; // 0 = empty/transparent
@@ -68,7 +68,7 @@ fn palette_color(i: u8) -> [u8; 4] {
     [((r1 + m) * 255.0) as u8, ((g1 + m) * 255.0) as u8, ((b1 + m) * 255.0) as u8, 255]
 }
 
-impl DiscreteVoxelGrid {
+impl DiscreteSdfGrid {
     pub fn new(voxel_size: f32) -> Self { Self { voxel_size: voxel_size.max(0.01), ..default() } }
     #[inline] pub fn get(&self, x: i32, y: i32, z: i32) -> Option<&DiscreteVoxel> { self.voxels.get(&VoxelCoord::new(x, y, z)) }
     #[inline] pub fn set(&mut self, x: i32, y: i32, z: i32, v: DiscreteVoxel) { self.voxels.insert(VoxelCoord::new(x, y, z), v); }
@@ -119,7 +119,7 @@ impl DiscreteVoxelCmdList {
     pub fn from_json(s: &str) -> Self { serde_json::from_str(s).unwrap_or_default() }
 }
 
-pub fn apply_op(grid: &mut DiscreteVoxelGrid, op: &DiscreteVoxelOp) {
+pub fn apply_op(grid: &mut DiscreteSdfGrid, op: &DiscreteVoxelOp) {
     match op {
         DiscreteVoxelOp::SetVoxel { x, y, z, palette_index } => { grid.set(*x, *y, *z, DiscreteVoxel { palette_index: *palette_index, color_override: None }); }
         DiscreteVoxelOp::RemoveVoxel { x, y, z } => { grid.remove(*x, *y, *z); }
@@ -210,7 +210,7 @@ fn perlin3(x: f32, y: f32, z: f32, seed: u32) -> f32 {
     lerp(y0, y1, zf) * 2.0 - 1.0
 }
 
-pub fn bake_cmds_full(grid: &mut DiscreteVoxelGrid, cmds: &DiscreteVoxelCmdList) {
+pub fn bake_cmds_full(grid: &mut DiscreteSdfGrid, cmds: &DiscreteVoxelCmdList) {
     grid.voxels.clear();
     for op in cmds.active_ops() { apply_op(grid, op); }
 }
@@ -218,7 +218,7 @@ pub fn bake_cmds_full(grid: &mut DiscreteVoxelGrid, cmds: &DiscreteVoxelCmdList)
 #[derive(Debug, Clone, Default)]
 pub struct DiscreteBakeState { pub baked_cursor: usize }
 
-pub fn bake_cmds_incremental(grid: &mut DiscreteVoxelGrid, cmds: &DiscreteVoxelCmdList, st: &mut DiscreteBakeState) {
+pub fn bake_cmds_incremental(grid: &mut DiscreteSdfGrid, cmds: &DiscreteVoxelCmdList, st: &mut DiscreteBakeState) {
     let cur = cmds.cursor.min(cmds.ops.len());
     if cur < st.baked_cursor { st.baked_cursor = 0; grid.voxels.clear(); }
     if st.baked_cursor == 0 { bake_cmds_full(grid, cmds); st.baked_cursor = cur; return; }

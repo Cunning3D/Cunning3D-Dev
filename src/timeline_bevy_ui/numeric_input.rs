@@ -1,4 +1,4 @@
-//! NumericInput 控件 - 支持键盘输入 + 拖拽微调
+//! NumericInput widget - supports keyboard input + drag-to-adjust
 use bevy::input::keyboard::{Key, KeyCode, KeyboardInput};
 use bevy::input::ButtonState;
 use bevy::picking::prelude::*;
@@ -6,7 +6,7 @@ use bevy::prelude::*;
 use bevy_cgui_widgets::ValueChange;
 use bevy_input_focus::{FocusedInput, InputFocus};
 
-/// NumericInput 组件配置
+/// NumericInput component configuration
 #[derive(Component, Clone)]
 pub struct NumericInput {
     pub min: f32,
@@ -26,18 +26,18 @@ impl Default for NumericInput {
     }
 }
 
-/// NumericInput 当前值
+/// Current value of NumericInput
 #[derive(Component, Clone, Copy, Default)]
 pub struct NumericInputValue(pub f32);
 
-/// 编辑状态
+/// Edit state
 #[derive(Component, Default)]
 pub struct NumericInputEditing {
     pub text: String,
     pub original: f32,
 }
 
-/// 拖拽状态
+/// Drag state
 #[derive(Component, Default)]
 pub struct NumericInputDragState {
     pub dragging: bool,
@@ -57,7 +57,7 @@ impl Plugin for NumericInputPlugin {
     }
 }
 
-/// 点击进入编辑态
+/// Click to enter edit mode
 fn on_numeric_click(
     mut click: On<Pointer<Click>>,
     mut commands: Commands,
@@ -76,7 +76,7 @@ fn on_numeric_click(
     click.propagate(false);
 }
 
-/// 非编辑态拖拽开始
+/// Drag start (when not editing)
 fn on_numeric_drag_start(
     mut drag: On<Pointer<DragStart>>,
     mut commands: Commands,
@@ -93,7 +93,7 @@ fn on_numeric_drag_start(
     drag.propagate(false);
 }
 
-/// 拖拽中
+/// Dragging
 fn on_numeric_drag(
     mut drag: On<Pointer<Drag>>,
     mut commands: Commands,
@@ -122,7 +122,7 @@ fn on_numeric_drag(
     drag.propagate(false);
 }
 
-/// 拖拽结束
+/// Drag end
 fn on_numeric_drag_end(mut drag: On<Pointer<DragEnd>>, mut q: Query<&mut NumericInputDragState>) {
     let entity = drag.event_target();
     if let Ok(mut state) = q.get_mut(entity) {
@@ -131,7 +131,7 @@ fn on_numeric_drag_end(mut drag: On<Pointer<DragEnd>>, mut q: Query<&mut Numeric
     drag.propagate(false);
 }
 
-/// 键盘输入处理
+/// Keyboard input handling
 fn on_numeric_keyboard(
     mut event: On<FocusedInput<KeyboardInput>>,
     mut commands: Commands,

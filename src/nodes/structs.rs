@@ -236,8 +236,8 @@ impl NodeType {
             NodeType::Spline => "Spline",
             NodeType::AttributePromote(_) => "Attribute Promote",
             NodeType::FbxImporter => "FBX Import",
-            NodeType::VdbFromPolygons => "VDB From Polygons",
-            NodeType::VdbToPolygons => "VDB To Polygons",
+            NodeType::VdbFromPolygons => "SDF From Polygons",
+            NodeType::VdbToPolygons => "SDF To Polygons",
             NodeType::VoxelEdit => "Voxel Edit",
             NodeType::GroupCreate => "Group Create",
             NodeType::GroupCombine => "Group Combine",
@@ -265,8 +265,9 @@ impl NodeType {
             NodeType::Spline => "cunning.spline.unity",
             NodeType::AttributePromote(_) => "cunning.attribute.promote",
             NodeType::FbxImporter => "cunning.io.fbx_import",
-            NodeType::VdbFromPolygons => "cunning.vdb.from_polygons",
-            NodeType::VdbToPolygons => "cunning.vdb.to_polygons",
+            // Renamed from VDB -> SDF. Keep old ids as load aliases in `graph::converter`.
+            NodeType::VdbFromPolygons => "cunning.sdf.from_polygons",
+            NodeType::VdbToPolygons => "cunning.sdf.to_polygons",
             NodeType::VoxelEdit => "cunning.voxel.edit",
             NodeType::GroupCreate => "cunning.group.create",
             NodeType::GroupCombine => "cunning.group.combine",
@@ -285,6 +286,12 @@ impl NodeType {
                 "Merge" => "cunning.utility.merge",
                 "Fuse" => "cunning.modeling.fuse",
                 "Voxel Edit" | "VoxelEdit" => "cunning.voxel.edit",
+                "SDF From Polygons" | "SDF from Polygons" | "VDB From Polygons" | "VDB from Polygons" => {
+                    "cunning.sdf.from_polygons"
+                }
+                "SDF To Polygons" | "SDF to Polygons" | "VDB To Polygons" | "VDB to Polygons" => {
+                    "cunning.sdf.to_polygons"
+                }
                 _ => s,
             },
             // CDA instance node stores asset ref; serialized as cda://<uuid> elsewhere.
@@ -399,10 +406,10 @@ impl Node {
                 crate::nodes::io::fbx_importer::FbxImporterNode::define_parameters()
             }
             NodeType::VdbFromPolygons => {
-                crate::nodes::vdb::vdb_from_mesh::VdbFromPolygonsNode::define_parameters()
+                crate::nodes::sdf::sdf_from_mesh::SdfFromPolygonsNode::define_parameters()
             }
             NodeType::VdbToPolygons => {
-                crate::nodes::vdb::vdb_to_mesh::VdbToPolygonsNode::define_parameters()
+                crate::nodes::sdf::sdf_to_mesh::SdfToPolygonsNode::define_parameters()
             }
             NodeType::VoxelEdit => {
                 crate::nodes::voxel::voxel_edit::VoxelEditNode::define_parameters()
@@ -1787,7 +1794,7 @@ impl NodeGraph {
             )),
             NodeType::VdbFromPolygons => {
                 if let Some(input) = input_vals.first() {
-                    Arc::new(crate::nodes::vdb::vdb_from_mesh::compute_vdb_from_mesh(
+                    Arc::new(crate::nodes::sdf::sdf_from_mesh::compute_sdf_from_mesh(
                         &input.as_geo(),
                         &convert_params(ps),
                     ))
@@ -1797,7 +1804,7 @@ impl NodeGraph {
             }
             NodeType::VdbToPolygons => {
                 if let Some(input) = input_vals.first() {
-                    Arc::new(crate::nodes::vdb::vdb_to_mesh::compute_vdb_to_mesh(
+                    Arc::new(crate::nodes::sdf::sdf_to_mesh::compute_sdf_to_mesh(
                         &input.as_geo(),
                         &convert_params(ps),
                     ))

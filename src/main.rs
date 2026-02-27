@@ -84,9 +84,9 @@ pub mod nodes;
 pub mod project;
 pub mod tabs_system;
 use crate::tabs_system::viewport_3d::grid::grid_params::grid_params;
+mod build_settings;
 mod console;
 mod debug_settings;
-mod build_settings;
 mod gizmos;
 mod hot_restart;
 pub mod mesh;
@@ -97,22 +97,25 @@ mod theme;
 mod ui;
 mod ui_settings;
 mod viewport_options;
-pub use cunning_kernel::volume;
+pub mod sdf;
 mod app;
 mod app_jobs;
 mod gpu_text;
 mod input;
 mod invalidator;
+mod viewport_perf;
 mod render;
-mod scene;
 mod runtime_module;
 mod rust_code_watch;
+mod scene;
 
 mod runtime_paths;
 
 pub mod coverlay_bevy_ui; // Bevy UI Coverlay (Viewport Overlay)
 mod launcher;
 pub mod libs;
+pub mod sdf_engine;
+pub mod sdf_editor;
 pub mod shelf_bevy_ui;
 pub mod timeline_bevy_ui; // Bevy UI Timeline
 pub mod topbar_bevy_ui; // Bevy UI Topbar (Desktop) // Bevy UI Shelf (Desktop)
@@ -365,6 +368,12 @@ fn main() {
         }
     }
     puffin::set_scopes_on(false); // Puffin off by default (enable via UI)
+
+    // Smoke tests and GPU debugging often run unfocused (e.g. when launched by scripts).
+    // Ensure the app keeps ticking so RenderApp extract/queue/compute systems run promptly.
+    let smoke_force_continuous = std::env::var_os("C3D_SDF_SMOKE").is_some()
+        || std::env::var_os("C3D_SDF_SMOKE_QUIT").is_some()
+        || std::env::var_os("C3D_SDF_DEBUG_READBACK").is_some();
     App::new()
         .insert_resource(bridge_startup::BridgeStartup {
             path: bridge_path,
@@ -382,7 +391,11 @@ fn main() {
         // Use Continuous when focused to avoid visible stutter/flash during camera interaction.
         .insert_resource(WinitSettings {
             focused_mode: UpdateMode::Continuous,
-            unfocused_mode: UpdateMode::reactive_low_power(std::time::Duration::from_secs(60)),
+            unfocused_mode: if smoke_force_continuous {
+                UpdateMode::Continuous
+            } else {
+                UpdateMode::reactive_low_power(std::time::Duration::from_secs(60))
+            },
         })
         // Use small splash window: borderless, centered.
         .add_plugins((
@@ -437,6 +450,7 @@ fn main() {
         .add_plugins(topbar_bevy_ui::TopbarUiPlugin) // Bevy UI Topbar (Desktop)
         .add_plugins(coverlay_bevy_ui::CoverlayUiPlugin) // Bevy UI Coverlay (Viewport Overlay)
         .add_plugins(voxel_editor::VoxelEditorPlugin) // Voxel editor input (CPU MVP)
+        .add_plugins(sdf_editor::SdfEditorPlugin) // SDF clay edit input (GPU brush -> RenderApp)
         .add_plugins(shelf_bevy_ui::ShelfUiPlugin) // Bevy UI Shelf (Desktop)
         .add_plugins(WireframePlugin::default())
         .add_plugins((MaterialPlugin::<crate::gizmos::renderer::GizmoMaterial>::default(),))
@@ -463,6 +477,7 @@ fn main() {
         .add_plugins(CunningNormalPlugin)
         .add_plugins(CunningPrimitiveNumberPlugin)
         .add_plugins(render::voxel_faces::CunningVoxelFacesPlugin)
+        .add_plugins(render::sdf_surface::CunningSdfSurfacePlugin)
         // Must run after UI selection + voxel cmd edits are applied, otherwise root stays None.
         .add_systems(
             Update,
@@ -535,6 +550,7 @@ fn main() {
         .init_resource::<node_editor_settings::NodeEditorSettings>()
         .init_resource::<debug_settings::DebugSettings>()
         .init_resource::<build_settings::BuildSettings>()
+        .init_resource::<viewport_perf::ViewportPerfTrace>()
         // 3D scene and theme init on Editor entry; registries and plugins loaded by Launcher
         .add_systems(
             OnEnter(AppState::Editor),
@@ -642,11 +658,26 @@ fn main() {
         // Core update loop: split into smaller groups to satisfy IntoSystemConfigs limits.
         .add_systems(Update, profiler_tick) // Puffin Tick
         // Phase 3: Non-blocking Compute Pipeline
-        .add_systems(Update, dispatch_compute_tasks)
-        .add_systems(Update, receive_compute_results)
         .add_systems(
             Update,
-            crate::scene::systems::update_3d_scene_from_node_graph,
+            receive_compute_results.after(input::input_mapping_system),
+        )
+        .add_systems(
+            Update,
+            dispatch_compute_tasks
+                .after(input::input_mapping_system)
+                .after(receive_compute_results),
+        )
+        .add_systems(
+            Update,
+            // Run scene rebuild after compute results are applied, and after any DisplayOptions-dependent
+            // systems that might queue commands on the existing scene entities. This avoids "command on
+            // despawned entity" errors when a rebuild despawns entities in the same frame.
+            crate::scene::systems::update_3d_scene_from_node_graph
+                .after(receive_compute_results)
+                .after(crate::scene::systems::update_final_mesh_visibility_system)
+                .after(crate::scene::systems::update_final_mesh_material_system)
+                .after(crate::scene::systems::sync_uv_view_mode),
         )
         .add_systems(Update, sync_active_group_toggle_system) // [NEW] Sync active group when toggle changes
         .add_systems(
@@ -662,7 +693,10 @@ fn main() {
         // Camera input and control (must remain chained)
         .add_systems(
             Update,
-            (input::input_mapping_system, camera_control_system).chain(),
+            (input::input_mapping_system, camera_control_system)
+                .chain()
+                .after(show_floating_tabs_ui)
+                .after(tabs_system::viewport_3d::gizmo_systems::draw_interactive_gizmos_system),
         )
         // Handle camera view change events from viewport gizmo
         .add_systems(Startup, crate::app::startup::setup_registries)
@@ -674,6 +708,10 @@ fn main() {
                 .run_if(in_state(AppState::Editor))
                 .after(EguiSet::InitContexts)
                 .before(EguiSet::BeginFrame),
+        )
+        .add_systems(
+            PreUpdate,
+            viewport_perf::begin_frame_system.run_if(in_state(AppState::Editor)),
         )
         .add_systems(
             Update,
@@ -757,11 +795,24 @@ fn main() {
             crate::render::overlay_visibility::debug_normal_entity_state
                 .after(bevy::camera::visibility::VisibilitySystems::CheckVisibility),
         )
+        .add_systems(
+            PostUpdate,
+            viewport_perf::end_frame_log_system.run_if(in_state(AppState::Editor)),
+        )
         // Core editor UI + floating tabs + gizmo overlay + native viewport sync
+        .add_systems(
+            Update,
+            tabs_system::viewport_3d::reset_viewport_layout_system
+                .run_if(in_state(AppState::Editor))
+                .before(show_editor_ui)
+                .before(show_floating_tabs_ui),
+        )
         .add_systems(Update, show_editor_ui.run_if(in_state(AppState::Editor)))
         .add_systems(
             Update,
-            show_floating_tabs_ui.run_if(in_state(AppState::Editor)),
+            show_floating_tabs_ui
+                .run_if(in_state(AppState::Editor))
+                .after(show_editor_ui),
         )
         .add_systems(
             Update,
@@ -777,14 +828,19 @@ fn main() {
         )
         .add_systems(
             Update,
-            tabs_system::viewport_3d::gizmo_systems::draw_interactive_gizmos_system,
+            tabs_system::viewport_3d::gizmo_systems::draw_interactive_gizmos_system
+                .after(tabs_system::viewport_3d::camera_sync::sync_main_camera_viewport),
         )
-        .add_systems(Update, tabs_system::viewport_3d::draw_uv_grid_system)
+        .add_systems(
+            Update,
+            tabs_system::viewport_3d::draw_uv_grid_system.after(show_floating_tabs_ui),
+        )
         // Ensure camera viewport is synced BEFORE any viewport-bound interactions (Curve tool, gizmos)
         // and BEFORE we dispatch compute/update the scene this frame (reactive mode needs correct ordering).
         .add_systems(
             Update,
             tabs_system::viewport_3d::camera_sync::sync_main_camera_viewport
+                .after(show_floating_tabs_ui)
                 .before(dispatch_compute_tasks),
         )
         // Freeze layout mode to Desktop by default. Tablet/Phone are still available via topbar,
@@ -812,7 +868,8 @@ fn main() {
                 // draw_primitive_normals_system, // Replaced by CunningNormalPlugin
                 crate::render::viewport_draw::draw_template_wireframes_system,
             )
-                .in_set(EguiSet::ProcessOutput),
+                .in_set(EguiSet::ProcessOutput)
+                .after(show_floating_tabs_ui),
         )
         .run();
 }

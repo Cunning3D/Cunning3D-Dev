@@ -11,10 +11,9 @@ use bevy_egui::egui::Pos2;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use serde_path_to_error;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
-use uuid::Uuid;
 
 fn trunc_mid(s: &str, max_chars: usize) -> String {
     let n = s.chars().count();

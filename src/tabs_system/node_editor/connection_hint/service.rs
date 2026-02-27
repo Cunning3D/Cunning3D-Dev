@@ -45,7 +45,7 @@ pub fn connection_hint_system(
                 let source_type = knowledge
                     .get(&source)
                     .map(|n| n.io.output_type.as_str())
-                    .unwrap_or("未知");
+                    .unwrap_or("Unknown");
 
                 let target_node = knowledge
                     .get(&target)
@@ -54,7 +54,7 @@ pub fn connection_hint_system(
                 let target_type = knowledge
                     .get(&target)
                     .map(|n| n.io.input_type.as_str())
-                    .unwrap_or("未知");
+                    .unwrap_or("Unknown");
 
                 let prompt = TinyPromptBuilder::build_connection_hint(
                     source_node,

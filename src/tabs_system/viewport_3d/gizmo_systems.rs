@@ -4,8 +4,7 @@ use crate::cunning_core::traits::node_interface::XformGizmoMode;
 use crate::gizmos::GizmoActionQueue;
 use crate::nodes::spline::tool_state::SplineToolState;
 use crate::nodes::NodeGraphResource;
-use crate::tabs_system::{FloatingEditorTabs, TabViewer, Viewport3DTab};
-use crate::ui::FloatingTabRegistry;
+use super::ViewportLayout;
 use crate::{
     camera::ViewportInteractionState,
     cunning_core::traits::node_interface::{
@@ -25,10 +24,8 @@ pub struct GizmoSystemParams<'w, 's> {
     buffer: Option<ResMut<'w, GizmoDrawBuffer>>,
     node_graph_res: Option<ResMut<'w, NodeGraphResource>>,
     node_registry: Option<Res<'w, NodeRegistry>>,
-    tab_viewer: Option<Res<'w, TabViewer>>,
-    floating_tabs: Option<Res<'w, FloatingEditorTabs>>,
-    floating_registry: Option<Res<'w, FloatingTabRegistry>>,
-    nav_input: Option<Res<'w, crate::input::NavigationInput>>,
+    viewport_layout: Option<Res<'w, ViewportLayout>>,
+    viewport_perf: Option<ResMut<'w, crate::viewport_perf::ViewportPerfTrace>>,
     ui_state: Option<Res<'w, UiState>>,
     script_node_state: Option<Res<'w, ScriptNodeState>>,
     gizmo_action_queue: Option<Res<'w, GizmoActionQueue>>,
@@ -53,14 +50,17 @@ pub struct GizmoSystemParams<'w, 's> {
 }
 
 pub fn draw_interactive_gizmos_system(mut p: GizmoSystemParams<'_, '_>) {
+    let _perf = p.viewport_perf.as_mut().map(|perf| {
+        crate::viewport_perf::PerfScope::new(
+            &mut *perf,
+            crate::viewport_perf::ViewportPerfSection::Gizmos,
+        )
+    });
     let (
         buffer,
         node_graph_res,
         node_registry,
-        tab_viewer,
-        floating_tabs,
-        floating_registry,
-        nav_input,
+        viewport_layout,
         ui_state,
         script_node_state,
         gizmo_action_queue,
@@ -73,10 +73,7 @@ pub fn draw_interactive_gizmos_system(mut p: GizmoSystemParams<'_, '_>) {
         p.buffer.as_mut(),
         p.node_graph_res.as_mut(),
         p.node_registry.as_ref(),
-        p.tab_viewer.as_ref(),
-        p.floating_tabs.as_ref(),
-        p.floating_registry.as_ref(),
-        p.nav_input.as_ref(),
+        p.viewport_layout.as_ref(),
         p.ui_state.as_ref(),
         p.script_node_state.as_ref(),
         p.gizmo_action_queue.as_ref(),
@@ -90,10 +87,7 @@ pub fn draw_interactive_gizmos_system(mut p: GizmoSystemParams<'_, '_>) {
             Some(buffer),
             Some(node_graph_res),
             Some(node_registry),
-            Some(tab_viewer),
-            Some(floating_tabs),
-            Some(floating_registry),
-            Some(nav_input),
+            Some(viewport_layout),
             Some(ui_state),
             Some(script_node_state),
             Some(gizmo_action_queue),
@@ -106,10 +100,7 @@ pub fn draw_interactive_gizmos_system(mut p: GizmoSystemParams<'_, '_>) {
             buffer,
             node_graph_res,
             node_registry,
-            tab_viewer,
-            floating_tabs,
-            floating_registry,
-            nav_input,
+            viewport_layout,
             ui_state,
             script_node_state,
             gizmo_action_queue,
@@ -121,75 +112,30 @@ pub fn draw_interactive_gizmos_system(mut p: GizmoSystemParams<'_, '_>) {
         ),
         _ => return,
     };
-    // Determine where the active 3D viewport lives (main dock vs floating window),
-    // and obtain its viewport rect + gizmo visibility flag.
-    enum ViewportHost {
-        Primary,
-        Floating(Entity),
-    }
-
-    let (host, viewport_rect, show_gizmos) = {
-        // 1. Try to find a Viewport3DTab in the main DockState.
-        if let Some((rect, show)) =
-            tab_viewer
-                .dock_state
-                .iter_all_tabs()
-                .find_map(|((_s, _n), tab)| {
-                    let tab = tab.as_any().downcast_ref::<Viewport3DTab>()?;
-                    Some((tab.viewport_rect?, tab.show_gizmos))
-                })
-        {
-            (ViewportHost::Primary, rect, show)
-        } else {
-            // 2. Fallback: look for a floating Viewport3DTab instance.
-            let mut found: Option<(ViewportHost, egui::Rect, bool)> = None;
-
-            for (id, tab) in floating_tabs.tabs.iter() {
-                if let Some(vp) = tab.as_any().downcast_ref::<Viewport3DTab>() {
-                    if let Some(rect) = vp.viewport_rect {
-                        // Find which native window hosts this floating tab.
-                        if let Some((window_entity, _entry)) = floating_registry
-                            .floating_windows
-                            .iter()
-                            .find(|(_, entry)| &entry.id == id)
-                        {
-                            found = Some((
-                                ViewportHost::Floating(*window_entity),
-                                rect,
-                                vp.show_gizmos,
-                            ));
-                            break;
-                        }
-                    }
-                }
-            }
-
-            match found {
-                Some(info) => info,
-                None => return,
-            }
-        }
+    let Some(viewport_rect) = viewport_layout.logical_rect else {
+        return;
     };
-
-    if !show_gizmos {
+    if !viewport_layout.show_gizmos {
         return;
     }
 
     // Do not hide gizmos during viewport navigation (Orbit, Pan, Zoom).
     // Instead, we disable interaction below.
-    let is_navigating = nav_input.active;
+    let is_navigating = interaction_state.is_right_button_dragged
+        || interaction_state.is_middle_button_dragged
+        || interaction_state.is_alt_left_button_dragged;
 
     let Ok((camera, camera_transform, projection)) = p.camera_query.single() else {
         return;
     };
 
     // Select the correct Bevy Window depending on where the viewport is rendered.
-    let window: &Window = match host {
-        ViewportHost::Primary => match p.primary_window_query.single() {
+    let window: &Window = match viewport_layout.window_entity {
+        None => match p.primary_window_query.single() {
             Ok(w) => w,
             Err(_) => return,
         },
-        ViewportHost::Floating(window_entity) => match p.windows_query.get(window_entity) {
+        Some(window_entity) => match p.windows_query.get(window_entity) {
             Ok((_e, w)) => w,
             Err(_) => return,
         },

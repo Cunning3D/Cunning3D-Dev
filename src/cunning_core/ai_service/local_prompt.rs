@@ -53,7 +53,7 @@ LOCAL BACKEND TOOL-CALL FORMAT (MANDATORY)
             Some(ctx) => format!("{}\n\n[AI Workspace Context]\n{}", new_user_input, ctx),
             None => new_user_input.to_string(),
         };
-        // 仅用模板开启 thinking：不在 system 里额外“教”think mode
+        // Enable thinking via the template only: don't additionally "teach" think mode in the system prompt.
         out.push_str(&format!(
             "<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n<think>\n",
             user_msg

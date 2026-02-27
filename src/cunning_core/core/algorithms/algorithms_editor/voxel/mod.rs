@@ -2,10 +2,10 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 use crate::mesh::Geometry;
-use crate::volume::{Chunk, VoxelGrid, VolumeHandle};
+use crate::sdf::{SdfChunk, SdfGrid, SdfHandle};
 
 pub mod discrete;
-pub use discrete::{DiscreteVoxelGrid, DiscreteVoxelOp, DiscreteVoxelCmdList, DiscreteVoxel, PaletteEntry, DiscreteBakeState};
+pub use discrete::{DiscreteSdfGrid, DiscreteVoxelOp, DiscreteVoxelCmdList, DiscreteVoxel, PaletteEntry, DiscreteBakeState};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum VoxelOp {
@@ -29,39 +29,39 @@ impl VoxelCmdList {
 pub struct VoxelBakeState { pub baked_cursor: usize }
 
 #[inline]
-pub fn blank_edit_volume(voxel_size: f32) -> VolumeHandle { VolumeHandle::new(VoxelGrid::new(voxel_size.max(0.01), 0.0)) }
+pub fn blank_edit_volume(voxel_size: f32) -> SdfHandle { SdfHandle::new(SdfGrid::new(voxel_size.max(0.01), 0.0)) }
 
-pub fn implicit_edit_volume(input: Option<&Geometry>, voxel_size: f32) -> VolumeHandle {
+pub fn implicit_edit_volume(input: Option<&Geometry>, voxel_size: f32) -> SdfHandle {
     let Some(input) = input else { return blank_edit_volume(voxel_size); };
 
     // 1) Prefer existing volume.
-    if let Some(v) = input.volumes.first() {
+    if let Some(v) = input.sdfs.first() {
         let g = v.grid.read().unwrap();
-        let mut grid = VoxelGrid::new(g.voxel_size.max(0.001), g.background_value);
-        grid.chunks = g.chunks.iter().map(|(k, c)| (*k, Chunk { data: c.data.clone() })).collect();
-        return VolumeHandle::new(grid).with_transform(v.transform);
+        let mut grid = SdfGrid::new(g.voxel_size.max(0.001), g.background_value);
+        grid.chunks = g.chunks.clone();
+        return SdfHandle::new(grid).with_transform(v.transform);
     }
 
     // 2) Point cloud -> sparse write into new grid.
     let vs = voxel_size.max(0.01);
-    let mut grid = VoxelGrid::new(vs, 0.0);
+    let mut grid = SdfGrid::new(vs, 0.0);
     if let Some(ps) = input.get_point_attribute("@P").and_then(|a| a.as_slice::<Vec3>()) {
         for p in ps {
             let v = *p / vs;
             grid.set_voxel(v.x.floor() as i32, v.y.floor() as i32, v.z.floor() as i32, -1.0);
         }
     }
-    VolumeHandle::new(grid)
+    SdfHandle::new(grid)
 }
 
-pub fn bake_cmds_full(handle: &VolumeHandle, cmds: &VoxelCmdList) {
+pub fn bake_cmds_full(handle: &SdfHandle, cmds: &VoxelCmdList) {
     let mut grid = handle.grid.write().unwrap();
     let (vs, bg) = (grid.voxel_size, grid.background_value);
-    *grid = VoxelGrid::new(vs, bg);
+    *grid = SdfGrid::new(vs, bg);
     for op in cmds.active_ops().iter() { apply_op(&mut *grid, handle.transform, op); }
 }
 
-pub fn bake_cmds_incremental(handle: &VolumeHandle, cmds: &VoxelCmdList, st: &mut VoxelBakeState) {
+pub fn bake_cmds_incremental(handle: &SdfHandle, cmds: &VoxelCmdList, st: &mut VoxelBakeState) {
     let cur = cmds.cursor.min(cmds.ops.len());
     if cur < st.baked_cursor { st.baked_cursor = 0; }
     if st.baked_cursor == 0 { bake_cmds_full(handle, cmds); st.baked_cursor = cur; return; }
@@ -71,7 +71,7 @@ pub fn bake_cmds_incremental(handle: &VolumeHandle, cmds: &VoxelCmdList, st: &mu
     st.baked_cursor = cur;
 }
 
-fn apply_op(grid: &mut VoxelGrid, xf: Mat4, op: &VoxelOp) {
+fn apply_op(grid: &mut SdfGrid, xf: Mat4, op: &VoxelOp) {
     match op {
         VoxelOp::Sphere { center_world, radius_world, sdf } => {
             let vs = grid.voxel_size.max(0.001);
@@ -113,4 +113,3 @@ fn apply_op(grid: &mut VoxelGrid, xf: Mat4, op: &VoxelOp) {
         }
     }
 }
-

@@ -4,11 +4,24 @@ fn is_plugin_intent(s: &str) -> bool {
     let t = s.to_ascii_lowercase();
     // Keep auto-pack strongly plugin-oriented to avoid biasing normal "create node" chat into Rust code writing.
     let strong = [
-        "nodespec", "hostapi", "abi", "hud", "gizmo", "plugin", "dll", "cdylib", "pick_id", "vtable", "callback", "热加载", "插件",
-        "rust节点", "插件节点",
+        "nodespec",
+        "hostapi",
+        "abi",
+        "hud",
+        "gizmo",
+        "plugin",
+        "dll",
+        "cdylib",
+        "pick_id",
+        "vtable",
+        "callback",
+        "hot reload",
+        "hot-reload",
+        "rust node",
+        "node plugin",
     ];
     let rustish = ["rust", "wgsl", "shader", "compute", "gpu"];
-    let interaction = ["viewport", "handle", "drag", "click", "keyboard", "shortcut", "interaction", "draggable", "clickable", "拖拽", "点击", "快捷键", "交互"];
+    let interaction = ["viewport", "handle", "drag", "click", "keyboard", "shortcut", "interaction", "draggable", "clickable"];
     strong.iter().any(|k| t.contains(k) || s.contains(k))
         || (rustish.iter().any(|k| t.contains(k) || s.contains(k))
             && interaction.iter().any(|k| t.contains(k) || s.contains(k)))

@@ -74,7 +74,7 @@ impl NodeOp for NanoVoxelPointScatterNode {
     fn compute(&self, params: &[Parameter], inputs: &[std::sync::Arc<dyn crate::libs::geometry::geo_ref::GeometryRef>]) -> std::sync::Arc<Geometry> {
         puffin::profile_scope!("NanoVoxelPointScatter::compute");
         let input = inputs.first().map(|g| g.materialize()).unwrap_or_else(Geometry::new);
-        let grid = read_grid_from_input(&input).unwrap_or_else(|| vox::DiscreteVoxelGrid::new(read_voxel_size(&input)));
+        let grid = read_grid_from_input(&input).unwrap_or_else(|| vox::DiscreteSdfGrid::new(read_voxel_size(&input)));
         let mut out_grid = grid.clone();
 
         let scatter_rel = p_str(params, PARAM_SCATTER_IMAGE, "").trim().to_string();
@@ -362,7 +362,7 @@ fn read_voxel_size(g: &Geometry) -> f32 {
     g.get_detail_attribute(ATTR_VOXEL_SIZE_DETAIL).and_then(|a| a.as_slice::<f32>()).and_then(|v| v.first().copied()).unwrap_or(0.1).max(0.001)
 }
 
-fn read_grid_from_input(g: &Geometry) -> Option<vox::DiscreteVoxelGrid> {
+fn read_grid_from_input(g: &Geometry) -> Option<vox::DiscreteSdfGrid> {
     if let Some(grid) = read_discrete_payload(g, read_voxel_size(g)) { return Some(grid); }
     let nid = g.get_detail_attribute("__voxel_node").and_then(|a| a.as_slice::<String>()).and_then(|v| v.first()).and_then(|s| uuid::Uuid::parse_str(s.trim()).ok())?;
     cunning_kernel::nodes::voxel::voxel_edit::voxel_render_get_grid(nid)
@@ -371,7 +371,7 @@ fn read_grid_from_input(g: &Geometry) -> Option<vox::DiscreteVoxelGrid> {
 #[inline]
 fn clamp_pi(v: i32) -> u8 { (v.clamp(1, 255)) as u8 }
 
-fn top_y_map(grid: &vox::DiscreteVoxelGrid) -> HashMap<(i32, i32), i32> {
+fn top_y_map(grid: &vox::DiscreteSdfGrid) -> HashMap<(i32, i32), i32> {
     let mut out: HashMap<(i32, i32), i32> = HashMap::new();
     for (vox::discrete::VoxelCoord(c), _v) in grid.voxels.iter() {
         let k = (c.x, c.z);
@@ -395,8 +395,8 @@ fn rgb_sat_val01(p: [u8; 4]) -> (f32, f32, f32) {
 }
 
 fn apply_scatter(
-    grid_in: &vox::DiscreteVoxelGrid,
-    grid_out: &mut vox::DiscreteVoxelGrid,
+    grid_in: &vox::DiscreteSdfGrid,
+    grid_out: &mut vox::DiscreteSdfGrid,
     scatter: &image::DynamicImage,
     reference: &image::DynamicImage,
     ref_white_thr: f32,

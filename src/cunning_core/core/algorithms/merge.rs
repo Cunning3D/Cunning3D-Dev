@@ -146,7 +146,7 @@ fn merge_geometry_impl<'a>(len: usize, get: impl Fn(usize) -> &'a Geometry) -> G
             for (name, mask) in &mut merged_geo.primitive_groups {
                 if let Some(input_mask) = input_geo.primitive_groups.get(name) { for idx in input_mask.iter_ones() { mask.set(prim_offset + idx, true); } }
             }
-            merged_geo.volumes.extend(input_geo.volumes.iter().cloned());
+            merged_geo.sdfs.extend(input_geo.sdfs.iter().cloned());
             point_offset += p_len;
             vertex_offset += v_len;
             prim_offset += pr_len;

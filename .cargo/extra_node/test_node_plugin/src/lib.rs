@@ -42,8 +42,8 @@ fn decode_vec3(p: &CParamValue) -> (f32,f32,f32) { (f32::from_bits(p.a as u32), 
 
 // === USER_CODE_BEGIN ===
 
-// 在此处编写您的算法逻辑。
-// 您可以使用 HostApi 进行几何体或属性的相关操作。
+// Implement your algorithm logic here.
+// You can use HostApi for geometry or attribute operations.
 
 // === USER_CODE_END ===
 

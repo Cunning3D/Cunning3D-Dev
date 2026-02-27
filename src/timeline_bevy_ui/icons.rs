@@ -1,9 +1,9 @@
-//! Timeline 播放控制图标 - 用 Bevy UI Node 组合绘制
+//! Timeline playback control icons - composed from Bevy UI nodes
 use super::TIMELINE_UI_LAYER;
 use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
 
-/// 图标类型
+/// Icon type
 #[derive(Clone, Copy)]
 pub enum IconKind {
     First,
@@ -14,7 +14,7 @@ pub enum IconKind {
     Last,
 }
 
-/// 在父节点下生成图标（返回容器 Entity）
+/// Spawn an icon under a parent entity (returns the container entity)
 pub fn spawn_icon(commands: &mut Commands, kind: IconKind, size: f32) -> Entity {
     let container = commands
         .spawn_empty()
@@ -51,7 +51,7 @@ pub fn spawn_icon(commands: &mut Commands, kind: IconKind, size: f32) -> Entity 
     container
 }
 
-/// 纯矩形拼一个“▶”（可选双箭头）
+/// Build a "▶" out of rectangles (optionally double arrows)
 fn spawn_play(
     commands: &mut Commands,
     parent: Entity,
@@ -109,7 +109,7 @@ fn spawn_play(
     }
 }
 
-/// 暂停：两竖条
+/// Pause: two vertical bars
 fn spawn_pause_bars(commands: &mut Commands, parent: Entity, size: f32, col: Color) {
     let bar_w = size * 0.18;
     let bar_h = size * 0.55;
@@ -133,7 +133,7 @@ fn spawn_pause_bars(commands: &mut Commands, parent: Entity, size: f32, col: Col
     }
 }
 
-/// 跳转到开头/结尾：竖线 + 双箭头
+/// Jump to start/end: vertical bar + double arrows
 fn spawn_skip(commands: &mut Commands, parent: Entity, size: f32, col: Color, to_start: bool) {
     let w = size.max(10.0);
     let bar_w = (w * 0.12).max(2.0).round();

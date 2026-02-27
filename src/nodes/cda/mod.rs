@@ -1,2 +1,2 @@
-//! CDA节点相关模块
+//! CDA node-related modules
 pub mod cda_node;

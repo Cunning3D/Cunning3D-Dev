@@ -128,7 +128,7 @@ impl NodeOp for NanoVoxelPainterNode {
         let guide_atlas = p_str(params, PARAM_GUIDE_ATLAS, "").trim().to_string();
         let depth_eps = p_f32(params, PARAM_DEPTH_EPS, 0.02).max(0.0);
         let max_surface_voxels = p_i32(params, PARAM_MAX_SURFACE_VOXELS, 250_000).max(10_000) as usize;
-        let grid = read_grid_from_input(&input).unwrap_or_else(|| vox::DiscreteVoxelGrid::new(read_voxel_size(&input)));
+        let grid = read_grid_from_input(&input).unwrap_or_else(|| vox::DiscreteSdfGrid::new(read_voxel_size(&input)));
         let mut out_grid = grid.clone();
         if !base_atlas.is_empty() {
             let pal_max = p_i32(params, PARAM_PAL_MAX, 64).clamp(4, 200) as usize;
@@ -339,7 +339,7 @@ fn read_mask_cells(g: &Geometry) -> HashSet<IVec3> {
     out
 }
 
-fn read_grid_from_input(g: &Geometry) -> Option<vox::DiscreteVoxelGrid> {
+fn read_grid_from_input(g: &Geometry) -> Option<vox::DiscreteSdfGrid> {
     if let Some(grid) = read_discrete_payload(g, read_voxel_size(g)) { return Some(grid); }
     let nid = g.get_detail_attribute("__voxel_node").and_then(|a| a.as_slice::<String>()).and_then(|v| v.first()).and_then(|s| uuid::Uuid::parse_str(s.trim()).ok())?;
     cunning_kernel::nodes::voxel::voxel_edit::voxel_render_get_grid(nid)
@@ -509,7 +509,7 @@ fn readback_rgba8(dev: &wgpu::Device, q: &wgpu::Queue, tex: &wgpu::Texture, w: u
     Ok(out)
 }
 
-fn bbox_center_extent_voxel(grid: &vox::DiscreteVoxelGrid, voxel_size: f32) -> Option<(Vec3, Vec3)> {
+fn bbox_center_extent_voxel(grid: &vox::DiscreteSdfGrid, voxel_size: f32) -> Option<(Vec3, Vec3)> {
     let (mn, mx) = grid.bounds()?;
     let mnw = Vec3::new(mn.x as f32, mn.y as f32, mn.z as f32) * voxel_size;
     let mxw = Vec3::new((mx.x + 1) as f32, (mx.y + 1) as f32, (mx.z + 1) as f32) * voxel_size;
@@ -596,10 +596,10 @@ fn render_guides(rt: &GpuRuntime, mesh: &MeshGpu, cams: &[Cam6; 6], tile: u32) -
     readback_rgba8(dev, q, &out, w, h)
 }
 
-pub(crate) fn guide_atlas_rgba_gpu(grid: &vox::DiscreteVoxelGrid, voxel_size: f32, tile: u32, max_surface_voxels: usize) -> Result<(Vec<u8>, [Cam6; 6]), String> {
+pub(crate) fn guide_atlas_rgba_gpu(grid: &vox::DiscreteSdfGrid, voxel_size: f32, tile: u32, max_surface_voxels: usize) -> Result<(Vec<u8>, [Cam6; 6]), String> {
     if grid.voxels.is_empty() { return Err("Empty voxel grid.".to_string()); }
     // Avoid meshing the full volume (can be millions of voxels). Build a capped proxy surface set.
-    let mut proxy = vox::DiscreteVoxelGrid::new(voxel_size.max(0.001));
+    let mut proxy = vox::DiscreteSdfGrid::new(voxel_size.max(0.001));
     proxy.palette = grid.palette.clone();
     let mut surface: Vec<(IVec3, u8)> = Vec::new();
     surface.reserve(grid.voxel_count().min(max_surface_voxels.saturating_mul(2)));
@@ -795,14 +795,14 @@ fn kmeans_pp_oklab(colors: &[Vec3], k: usize, iters: usize) -> Vec<Vec3> {
 }
 
 pub(crate) fn recolor_grid_from_atlas(
-    grid: &vox::DiscreteVoxelGrid,
+    grid: &vox::DiscreteSdfGrid,
     base_atlas: &image::DynamicImage,
     guide_atlas: Option<&image::DynamicImage>,
     pal_max: usize,
     mask: Option<&HashSet<IVec3>>,
     depth_eps: f32,
     max_surface_voxels: usize,
-) -> vox::DiscreteVoxelGrid {
+) -> vox::DiscreteSdfGrid {
     if grid.bounds().is_none() { return grid.clone(); }
     if grid.voxel_count() > max_surface_voxels.saturating_mul(32) { return grid.clone(); }
     let (bw, bh) = base_atlas.dimensions();

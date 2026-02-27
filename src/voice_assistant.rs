@@ -26,11 +26,11 @@ impl Default for AiVoiceAssistantConfig {
         Self {
             enabled: true,
             wake_phrases: vec!["hallo gemini".into(), "hello gemini".into(), "hi gemini".into(), "halo gemini".into()],
-            cmd_input_phrases: vec!["输入".into(), "start dictation".into(), "input".into()],
-            cmd_send_phrases: vec!["发送".into(), "send".into()],
-            cmd_cancel_phrases: vec!["取消".into(), "停止".into(), "cancel".into(), "stop".into()],
-            greet_text: "在呢，请问有什么需求。".into(),
-            sleep_text: "那我先去休息了。".into(),
+            cmd_input_phrases: vec!["start dictation".into(), "dictate".into(), "input".into()],
+            cmd_send_phrases: vec!["send".into(), "submit".into()],
+            cmd_cancel_phrases: vec!["cancel".into(), "stop".into(), "abort".into()],
+            greet_text: "I'm here. What would you like to do?".into(),
+            sleep_text: "Going idle.".into(),
             auto_send_pause: Duration::from_secs(3),
             idle_timeout: Duration::from_secs(10),
         }
@@ -315,4 +315,3 @@ fn ai_voice_assistant_system(
         }
     }
 }
-

@@ -34,7 +34,8 @@ pub fn sync_main_camera_viewport(
     };
 
     if display_options.camera_rotation != transform.rotation {
-        display_options.camera_rotation = transform.rotation;
+        // Camera rotation is derived state; avoid invalidating DisplayOptions on every drag frame.
+        display_options.bypass_change_detection().camera_rotation = transform.rotation;
     }
 
     let scale_factor = window.scale_factor() as f32;

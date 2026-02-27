@@ -270,13 +270,13 @@ fn sync_voxel_preview_entities_from_root_system(
 
     // Spawn added chunks.
     for ck in keys {
-        let base_ws = ck.as_vec3() * (cunning_kernel::volume::CHUNK_SIZE as f32) * voxel_size;
+        let base_ws = ck.as_vec3() * (cunning_kernel::geometry::voxel::CHUNK_SIZE as f32) * voxel_size;
         if root_state.chunks.contains_key(&ck) {
             continue;
         }
         let e = if let Some(e) = root_state.free_chunks.pop() {
             commands.entity(e).insert((
-                Name::new(format!("VoxelChunk {:?}", ck)),
+                Name::new(format!("SdfChunk {:?}", ck)),
                 VoxelRenderChunk { node_id, chunk: ck },
                 Mesh3d(quad.0.clone()),
                 Transform::from_translation(base_ws),
@@ -290,7 +290,7 @@ fn sync_voxel_preview_entities_from_root_system(
         } else {
             commands
                 .spawn((
-                    Name::new(format!("VoxelChunk {:?}", ck)),
+                    Name::new(format!("SdfChunk {:?}", ck)),
                     VoxelRenderChunk { node_id, chunk: ck },
                     Mesh3d(quad.0.clone()),
                     Transform::from_translation(base_ws),
@@ -310,7 +310,7 @@ fn sync_voxel_preview_entities_from_root_system(
 // ---------------- Render World: extraction ----------------
 
 #[derive(Component)]
-pub struct RenderVoxelChunk {
+pub struct RenderSdfChunk {
     pub node_id: Uuid,
     pub chunk: IVec3,
     pub mesh_handle: Handle<Mesh>,
@@ -341,20 +341,21 @@ pub struct VoxelDirtySnapshot {
 pub fn extract_voxel_chunks(
     mut commands: Commands,
     query: Extract<Query<(RenderEntity, &VoxelRenderChunk, &Mesh3d, &ViewVisibility, &GlobalTransform)>>,
-    quad: Extract<Res<VoxelFacesQuadMesh>>,
+    quad: Extract<Option<Res<VoxelFacesQuadMesh>>>,
     display_options: Extract<Option<Res<cunning_viewport::viewport_options::DisplayOptions>>>,
 ) {
     puffin::profile_function!();
+    let quad_mesh = quad.as_ref().map(|q| q.0.clone());
     let mut nodes: HashSet<Uuid> = HashSet::new();
-    for (re, ch, _mesh, vis, tr) in &query {
+    for (re, ch, mesh, vis, tr) in &query {
         if !vis.get() {
             continue;
         }
         nodes.insert(ch.node_id);
-        commands.entity(re).insert(RenderVoxelChunk {
+        commands.entity(re).insert(RenderSdfChunk {
             node_id: ch.node_id,
             chunk: ch.chunk,
-            mesh_handle: quad.0.clone(),
+            mesh_handle: quad_mesh.clone().unwrap_or_else(|| mesh.0.clone()),
             transform: *tr,
         });
     }
@@ -810,7 +811,7 @@ pub struct VoxelGpuChunks {
 pub fn prepare_voxel_uniforms(
     mut commands: Commands,
     mut uniforms: ResMut<VoxelFacesUniforms>,
-    render_chunks: Query<(Entity, &RenderVoxelChunk)>,
+    render_chunks: Query<(Entity, &RenderSdfChunk)>,
     render_device: Res<RenderDevice>,
     render_queue: Res<RenderQueue>,
     pipeline: Res<VoxelFacesPipeline>,
@@ -919,17 +920,17 @@ pub struct SetVoxelBindGroup<const I: usize>;
 impl<const I: usize, P: PhaseItem> RenderCommand<P> for SetVoxelBindGroup<I> {
     type Param = SRes<VoxelFacesUniforms>;
     type ViewQuery = ();
-    type ItemQuery = (&'static RenderVoxelChunk, &'static VoxelUniformOffset);
+    type ItemQuery = (&'static RenderSdfChunk, &'static VoxelUniformOffset);
 
     fn render<'w>(
         _item: &P,
         _view: (),
-        item_query: Option<(&'w RenderVoxelChunk, &'w VoxelUniformOffset)>,
+        item_query: Option<(&'w RenderSdfChunk, &'w VoxelUniformOffset)>,
         uniforms: SystemParamItem<'w, '_, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
         let Some((ch, off)) = item_query else {
-            return RenderCommandResult::Failure("missing RenderVoxelChunk/VoxelUniformOffset");
+            return RenderCommandResult::Failure("missing RenderSdfChunk/VoxelUniformOffset");
         };
         let uniforms = uniforms.into_inner();
         let Some(bg) = uniforms.bind_groups.get(&ch.node_id) else {
@@ -951,17 +952,17 @@ impl<P: PhaseItem> RenderCommand<P> for DrawVoxelFaces {
         SRes<VoxelGpuChunks>,
     );
     type ViewQuery = ();
-    type ItemQuery = &'static RenderVoxelChunk;
+    type ItemQuery = &'static RenderSdfChunk;
 
     fn render<'w>(
         _item: &P,
         _view: (),
-        item: Option<&'w RenderVoxelChunk>,
+        item: Option<&'w RenderSdfChunk>,
         (meshes, mesh_allocator, gpu): SystemParamItem<'w, '_, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
         let Some(item) = item else {
-            return RenderCommandResult::Failure("missing RenderVoxelChunk");
+            return RenderCommandResult::Failure("missing RenderSdfChunk");
         };
         let gpu = gpu.into_inner();
         let lod = gpu.current_lod.get(&(item.node_id, item.chunk)).copied().unwrap_or(0);
@@ -1084,7 +1085,7 @@ fn greedy_mesh_mask(mask: &mut [i32], w: usize, h: usize, mut emit: impl FnMut(u
 }
 
 #[derive(SystemParam)]
-pub struct QueueVoxelChunksParams<'w, 's> {
+pub struct QueueSdfChunksParams<'w, 's> {
     opaque_3d_draw_functions: Res<'w, DrawFunctions<Opaque3d>>,
     pipeline: Res<'w, VoxelFacesPipeline>,
     pipelines: ResMut<'w, SpecializedMeshPipelines<VoxelFacesPipeline>>,
@@ -1098,7 +1099,7 @@ pub struct QueueVoxelChunksParams<'w, 's> {
     gpu: ResMut<'w, VoxelGpuChunks>,
     render_device: Res<'w, RenderDevice>,
     render_queue: Res<'w, RenderQueue>,
-    render_chunks: Query<'w, 's, &'static RenderVoxelChunk>,
+    render_chunks: Query<'w, 's, &'static RenderSdfChunk>,
     opaque_render_phases: ResMut<'w, ViewBinnedRenderPhases<Opaque3d>>,
     stats: ResMut<'w, VoxelFacesStats>,
     stats_shared: Res<'w, VoxelFacesStatsShared>,
@@ -1121,9 +1122,9 @@ pub struct QueueVoxelChunksParams<'w, 's> {
     >,
 }
 
-pub fn queue_voxel_chunks(mut p: QueueVoxelChunksParams) {
+pub fn queue_voxel_chunks(mut p: QueueSdfChunksParams) {
     puffin::profile_function!();
-    let QueueVoxelChunksParams {
+    let QueueSdfChunksParams {
         opaque_3d_draw_functions,
         pipeline,
         mut pipelines,
@@ -1167,7 +1168,7 @@ pub fn queue_voxel_chunks(mut p: QueueVoxelChunksParams) {
         .get_id::<DrawVoxelFacesPipeline>()
         .unwrap();
 
-    let cs = cunning_kernel::volume::CHUNK_SIZE as u32;
+    let cs = cunning_kernel::geometry::voxel::CHUNK_SIZE as u32;
     let voxels_per_chunk = (cs * cs * cs) as usize;
     let max_faces_hard = 6u32.saturating_mul(cs.saturating_pow(3));
 
@@ -2045,4 +2046,3 @@ fn downsample(@builtin(global_invocation_id) gid: vec3<u32>) {
   dst[idx(slot, p.dst_dim, x, y, z)] = out;
 }
 "#;
-

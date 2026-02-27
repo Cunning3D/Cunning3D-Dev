@@ -1,4 +1,4 @@
-//! glTF 导入器 (使用 gltf 库)
+//! glTF importer (using the gltf crate)
 use super::{FileImporter, FileMetadata};
 use crate::libs::geometry::attrs;
 use crate::libs::geometry::mesh::{Attribute, GeoPrimitive, Geometry, PolygonPrim};
@@ -25,7 +25,7 @@ impl FileImporter for GltfImporter {
                 let pt_off = geo.points().len();
                 let vt_off = geo.vertices().len();
 
-                // 读取位置
+                // Read positions
                 let positions: Vec<Vec3> = reader
                     .read_positions()
                     .map(|iter| iter.map(|p| Vec3::new(p[0], p[1], p[2])).collect())
@@ -39,7 +39,7 @@ impl FileImporter for GltfImporter {
                     geo.add_point();
                 }
 
-                // 设置位置
+                // Set positions
                 if geo.get_point_attribute(attrs::P).is_none() {
                     geo.insert_point_attribute(
                         attrs::P,
@@ -56,13 +56,13 @@ impl FileImporter for GltfImporter {
                     }
                 }
 
-                // 读取 UV
+                // Read UVs
                 let uvs: Vec<Vec2> = reader
                     .read_tex_coords(0)
                     .map(|tc| tc.into_f32().map(|uv| Vec2::new(uv[0], uv[1])).collect())
                     .unwrap_or_default();
 
-                // 读取索引并创建面
+                // Read indices and create faces
                 let mut vertex_uvs: Vec<Vec2> = Vec::new();
                 if let Some(indices) = reader.read_indices() {
                     let indices: Vec<u32> = indices.into_u32().collect();
@@ -88,7 +88,7 @@ impl FileImporter for GltfImporter {
                     }
                 }
 
-                // 设置 UV
+                // Set UVs
                 if !vertex_uvs.is_empty() {
                     if geo.get_vertex_attribute(attrs::UV).is_none() {
                         geo.insert_vertex_attribute(

@@ -12,10 +12,10 @@ pub mod ui;
 pub mod ai_service;
 pub mod libs;
 
-// Prelude 方便其他模块引用核心功能
+// Prelude: convenient re-exports for other modules
 pub mod prelude {
     pub use super::traits::node_interface::{NodeInteraction, NodeOp};
     pub use super::traits::pane_interface::PaneTab;
-    // 稍后在 input/mod.rs 中导出具体类型后取消注释
+    // Uncomment after exporting concrete types in input/mod.rs
     // pub use super::input::{PcHandler, TouchHandler};
 }

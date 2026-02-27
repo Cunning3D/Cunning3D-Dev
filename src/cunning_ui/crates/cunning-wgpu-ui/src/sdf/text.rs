@@ -621,7 +621,7 @@ fn create_font_system() -> FontSystem {
     {
         let windir = std::env::var("WINDIR").unwrap_or_else(|_| "C:\\Windows".to_owned());
         let dirs = [std::path::PathBuf::from(format!("{windir}\\Fonts")), std::path::PathBuf::from("C:\\Windows\\Fonts")];
-        // 中文支持：优先加载系统常见 CJK 字体（雅黑/宋体/黑体），并回退到系统字体库。
+        // CJK support: prefer common system CJK fonts (YaHei/SimSun/HeiTi), then fall back to the system font database.
         let candidates = [
             // UI/Latin
             "segoeui.ttf", "seguisym.ttf", "seguiemj.ttf",
@@ -631,8 +631,8 @@ fn create_font_system() -> FontSystem {
             "simhei.ttf", "msyh.ttf", "msyh.ttc", "simsun.ttc",
         ];
         for dir in dirs { if !dir.exists() { continue; } for f in candidates { if let Ok(data) = std::fs::read(dir.join(f)) { db.load_font_data(data); } } }
-        // 稳定性优先：Windows 系统字体库里可能存在损坏字体（例如 mstmc.ttf），全量扫描偶发导致 native 崩溃。
-        // 如需更广覆盖，可设置环境变量：CUNNING_GPU_TEXT_LOAD_SYSTEM_FONTS=1
+        // Stability first: the Windows font directory may contain corrupted fonts (e.g. mstmc.ttf); full scans can occasionally crash native code.
+        // For broader coverage, set env var: CUNNING_GPU_TEXT_LOAD_SYSTEM_FONTS=1
         if gpu_text_load_system_fonts() {
             db.load_system_fonts();
         }
@@ -1051,5 +1051,4 @@ impl crate::CallbackTrait for GpuTextCallback {
 pub fn create_gpu_text_callback(rect: egui::Rect, uniform: GpuTextUniform, frame_id: u64) -> egui::PaintCallback {
     crate::Callback::new_paint_callback(rect, GpuTextCallback { rect, uniform, frame_id, key: Arc::new(AtomicU64::new(0)) })
 }
-
 

@@ -21,7 +21,7 @@ use cunning_kernel::algorithms::algorithms_editor::voxel as vox;
 
 /// Padded chunk dimension: CHUNK_SIZE + 2 (one-voxel border).
 pub const PAD: i32 = 1;
-pub const CHUNK_SIZE: i32 = crate::volume::CHUNK_SIZE;
+pub const CHUNK_SIZE: i32 = crate::sdf::CHUNK_SIZE;
 pub const PADDED: i32 = CHUNK_SIZE + 2;
 
 #[repr(C)]

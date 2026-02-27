@@ -37,20 +37,19 @@ pub fn compute_sdf_remesh_v2(input_geo: &Geometry, params: &HashMap<String, Para
     let hard_surface = match params.get("hard_surface") { Some(ParameterValue::Bool(v)) => *v, _ => false };
 
     // Reuse the existing robust mesh→SDF and SDF→mesh pipeline.
-    let mut p_vdb = HashMap::new();
-    p_vdb.insert("voxel_size".to_string(), ParameterValue::Float(voxel_size));
-    p_vdb.insert("bandwidth".to_string(), ParameterValue::Int(bandwidth));
-    p_vdb.insert("display_points".to_string(), ParameterValue::Bool(false));
-    let sdf_geo = crate::nodes::vdb::vdb_from_mesh::compute_vdb_from_mesh(input_geo, &p_vdb);
-    if sdf_geo.volumes.is_empty() { return Geometry::new(); }
+    let mut p_sdf = HashMap::new();
+    p_sdf.insert("voxel_size".to_string(), ParameterValue::Float(voxel_size));
+    p_sdf.insert("bandwidth".to_string(), ParameterValue::Int(bandwidth));
+    p_sdf.insert("display_points".to_string(), ParameterValue::Bool(false));
+    let sdf_geo = crate::nodes::sdf::sdf_from_mesh::compute_sdf_from_mesh(input_geo, &p_sdf);
+    if sdf_geo.sdfs.is_empty() { return Geometry::new(); }
 
     let meshes: Vec<Geometry> = sdf_geo
-        .volumes
+        .sdfs
         .iter()
-        .map(|h| crate::nodes::vdb::vdb_to_mesh::vdb_to_geometry(h, iso_value, false, hard_surface))
+        .map(|h| crate::nodes::sdf::sdf_to_mesh::sdf_to_geometry(h, iso_value, false, hard_surface))
         .collect();
     let mut out = crate::libs::algorithms::merge::merge_geometry_slice(&meshes);
     out.calculate_smooth_normals();
     out
 }
-

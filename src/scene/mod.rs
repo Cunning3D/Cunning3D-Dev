@@ -4,7 +4,7 @@
 //! - Final mesh component management
 //! - Scene updates from node graph changes
 //! - Wireframe, point cloud, and normal visualization
-//! - Volume (VDB) rendering
+//! - Volume (SDF) rendering
 //!
 //! ## Migration Strategy
 //!

@@ -202,9 +202,9 @@ impl ThinkingParser {
             }
 
             ThinkingState::CollectingThinking => {
-                // 检查 </think> 是否"独占一行"或"行首"（避免 thinking 内容中讨论标签时误判）
+                // Check whether </think> is at the start of a line / is the only thing on the line (avoid false positives when the content discusses tags).
                 if let Some(close_idx) = find_line_start_marker(&buf_str, &self.closing_tag) {
-                    // 真正的结束标记
+                    // Actual end marker
                     let thinking = buf_str[..close_idx].trim_end().to_string();
                     let after_tag = close_idx + self.closing_tag.len();
                     let remaining = buf_str[after_tag..].trim_start().to_string();
@@ -328,19 +328,19 @@ impl Default for ThinkingParser {
     }
 }
 
-/// 查找 marker 是否在"行首"或"前面只有空白"的位置出现
-/// 返回 marker 的起始位置（如果找到有效的），否则 None
+/// Find whether a marker occurs at the start of a line or only preceded by whitespace
+/// Returns the marker start index (if a valid occurrence is found), otherwise None
 fn find_line_start_marker(s: &str, marker: &str) -> Option<usize> {
     let mut search_start = 0;
     while let Some(rel_idx) = s[search_start..].find(marker) {
         let idx = search_start + rel_idx;
-        // 检查 marker 之前的内容：找到上一个换行，检查之间是否只有空白
+        // Check the content before the marker: find the previous newline and ensure only whitespace in between
         let line_start = s[..idx].rfind('\n').map(|i| i + 1).unwrap_or(0);
         let before_marker = &s[line_start..idx];
         if before_marker.chars().all(|c| c.is_whitespace()) {
             return Some(idx);
         }
-        // 不是有效的，继续搜索
+        // Not a valid occurrence; keep searching
         search_start = idx + 1;
         if search_start >= s.len() {
             break;

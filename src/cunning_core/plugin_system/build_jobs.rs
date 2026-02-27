@@ -165,7 +165,7 @@ struct CompileRustPluginJob {
 
 impl JobRunnable for CompileRustPluginJob {
     fn title(&self) -> String {
-        format!("编译插件: {}", self.req.plugin_name)
+        format!("Build plugin: {}", self.req.plugin_name)
     }
     fn kind(&self) -> &'static str {
         "compile_rust_plugin"
@@ -272,7 +272,7 @@ impl JobRunnable for CompileRustPluginJob {
 
             let _ = cx.progress.send(crate::app_jobs::JobProgress {
                 fraction: 0.86,
-                message: "复制 DLL...".into(),
+                message: "Copying DLL...".into(),
             });
 
             let built = expected_windows_dll_path(&req.crate_dir, req.release, req.target_dir.as_deref())?;
@@ -285,7 +285,7 @@ impl JobRunnable for CompileRustPluginJob {
 
             let _ = cx.progress.send(crate::app_jobs::JobProgress {
                 fraction: 1.0,
-                message: "完成".into(),
+                message: "Done".into(),
             });
 
             Ok(Box::new(CompileRustPluginOutput {
@@ -467,4 +467,3 @@ fn spawn_line_reader(
         }
     })
 }
-

@@ -680,7 +680,7 @@ impl CodeEditor {
             self.rebuild_visual_rows();
 
             if self.tool_diff.is_some() {
-                // Zed-like "刷刷刷": replay every tool-driven change inline (top-to-bottom).
+                // Zed-like "instant edits": replay every tool-driven change inline (top-to-bottom).
                 self.tool_replay(cx);
             } else {
                 self.external_line_marks = self.tool_diff.as_ref().map(Self::marks_from_tool_diff).unwrap_or_default();

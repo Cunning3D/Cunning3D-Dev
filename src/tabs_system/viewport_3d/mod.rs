@@ -43,7 +43,12 @@ pub fn draw_uv_grid_system(
     mut egui_contexts: EguiContexts,
     node_graph_res: Res<crate::nodes::NodeGraphResource>,
     ui_state: Res<crate::ui::UiState>,
+    mut viewport_perf: ResMut<crate::viewport_perf::ViewportPerfTrace>,
 ) {
+    let _perf = crate::viewport_perf::PerfScope::new(
+        &mut viewport_perf,
+        crate::viewport_perf::ViewportPerfSection::OverlayUvGrid,
+    );
     if !matches!(display_options.view_mode, ViewportViewMode::UV | ViewportViewMode::NodeImage) {
         return;
     }
@@ -330,6 +335,16 @@ pub fn draw_uv_grid_system(
 pub struct ViewportLayout {
     pub window_entity: Option<Entity>,
     pub logical_rect: Option<egui::Rect>,
+    pub show_gizmos: bool,
+}
+
+/// ViewportLayout is written by egui UI code. If the viewport tab is hidden this frame, the
+/// previously written rect can become stale and incorrectly capture input.
+/// Reset it each frame before UI runs; the active viewport tab will write it back.
+pub fn reset_viewport_layout_system(mut viewport_layout: ResMut<ViewportLayout>) {
+    viewport_layout.window_entity = None;
+    viewport_layout.logical_rect = None;
+    viewport_layout.show_gizmos = true;
 }
 
 pub struct Viewport3DTab {
@@ -672,6 +687,7 @@ impl Viewport3DTab {
         self.viewport_rect = Some(rect);
         if context.viewport_layout.window_entity != Some(context.window_entity) { context.viewport_layout.window_entity = Some(context.window_entity); }
         if context.viewport_layout.logical_rect != Some(rect) { context.viewport_layout.logical_rect = Some(rect); }
+        if context.viewport_layout.show_gizmos != self.show_gizmos { context.viewport_layout.show_gizmos = self.show_gizmos; }
         let interaction_state = &mut context.viewport_interaction_state;
         let (was_r, was_m, was_a) = (interaction_state.is_right_button_dragged, interaction_state.is_middle_button_dragged, interaction_state.is_alt_left_button_dragged);
         let hovered = response.hovered();

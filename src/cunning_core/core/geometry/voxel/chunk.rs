@@ -5,12 +5,12 @@ use super::types::{VoxelPi, CHUNK_SIZE, CHUNK_SIZE_USIZE};
 
 /// Dense chunk storing palette indices (0 = empty).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VoxelChunk {
+pub struct SdfChunk {
     pub data: Vec<VoxelPi>,
     pub solid_count: u32,
 }
 
-impl VoxelChunk {
+impl SdfChunk {
     #[inline]
     pub fn new() -> Self {
         let n = CHUNK_SIZE_USIZE * CHUNK_SIZE_USIZE * CHUNK_SIZE_USIZE;

@@ -6,17 +6,17 @@ const THINK_CLOSE: &str = "</think>";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ThinkingState {
-    LookingForOpening,               // 寻找开标签，还没看到非空白内容
-    ThinkingStartedEatingWhitespace, // 看到开标签，吃空白
-    CollectingThinking,              // 在 thinking 块内，收集内容
-    ThinkingDoneEatingWhitespace,    // 看到闭标签，吃空白
-    CollectingContent,               // thinking 完成，收集正文
+    LookingForOpening,               // Looking for the opening tag; no non-whitespace seen yet
+    ThinkingStartedEatingWhitespace, // Saw opening tag; consuming whitespace
+    CollectingThinking,              // Inside the thinking block; collecting content
+    ThinkingDoneEatingWhitespace,    // Saw closing tag; consuming whitespace
+    CollectingContent,               // Thinking complete; collecting main content
 }
 
 pub struct StreamParser {
     state: ThinkingState,
     buffer: String,
-    started_thinking_emitted: bool, // 是否已发出 StartedThoughtProcess
+    started_thinking_emitted: bool, // Whether StartedThoughtProcess has been emitted
 }
 
 impl StreamParser {
@@ -28,7 +28,7 @@ impl StreamParser {
         }
     }
 
-    /// 从 thinking 模式开始（当 prompt 已以 `<think>` 结尾时用）
+    /// Start in thinking mode (used when the prompt already ends with `<think>`)
     pub fn new_thinking() -> Self {
         Self {
             state: ThinkingState::CollectingThinking,
@@ -79,11 +79,11 @@ impl StreamParser {
                     };
                     (events, true)
                 } else if THINK_OPEN.starts_with(trimmed) && !trimmed.is_empty() {
-                    (events, false) // 部分标签，继续缓冲
+                    (events, false) // Partial tag; keep buffering
                 } else if trimmed.is_empty() {
-                    (events, false) // 纯空白
+                    (events, false) // Whitespace only
                 } else {
-                    // 非空白出现在 <think> 之前，跳过 thinking
+                    // Non-whitespace appeared before <think>; skip thinking
                     self.state = ThinkingState::CollectingContent;
                     let content = std::mem::take(&mut self.buffer);
                     events.push(SessionEvent::Text(content));
@@ -123,7 +123,7 @@ impl StreamParser {
                     }
                     (events, true)
                 } else if let Some(ol) = overlap(&buf, THINK_CLOSE) {
-                    // 部分闭标签在末尾，缓冲歧义部分
+                    // Partial closing tag at the end; buffer the ambiguous tail
                     let before = &buf[..buf.len() - ol];
                     let ws_len = trailing_ws_len(before);
                     let safe = &buf[..before.len() - ws_len];
@@ -135,7 +135,7 @@ impl StreamParser {
                     }
                     (events, false)
                 } else {
-                    // 纯 thinking 内容，但保留尾部空白
+                    // Thinking-only content, but keep trailing whitespace
                     let ws_len = trailing_ws_len(&buf);
                     let safe = &buf[..buf.len() - ws_len];
                     let ambig = &buf[buf.len() - ws_len..];

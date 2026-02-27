@@ -1025,16 +1025,16 @@ fn request_multi_agg_then_path(
             if ins >= n || is_multi {
                 let text = format!("{} {} {}", k.category, k.description, name).to_lowercase();
                 let mut score = 0;
-                if text.contains("merge") || text.contains("合并") || text.contains("汇总") {
+                if text.contains("merge") || text.contains("aggregate") {
                     score += 50;
                 }
-                if text.contains("boolean") || text.contains("布尔") {
+                if text.contains("boolean") {
                     score += 30;
                 }
-                if text.contains("switch") || text.contains("开关") {
+                if text.contains("switch") {
                     score += 20;
                 }
-                if text.contains("combine") || text.contains("组合") {
+                if text.contains("combine") {
                     score += 20;
                 }
                 if ins >= n {

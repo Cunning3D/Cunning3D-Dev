@@ -1,4 +1,4 @@
-//! 万能文件导入节点 - 类似 Houdini File 节点
+//! Universal file import node - similar to Houdini's File node
 use crate::cunning_core::traits::node_interface::{NodeOp, NodeParameters};
 use crate::libs::geometry::geo_ref::GeometryRef;
 use crate::libs::geometry::mesh::Geometry;

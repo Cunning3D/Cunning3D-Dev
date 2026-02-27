@@ -1,4 +1,4 @@
-//! 绑定卡片：Parameter/Channels/Menu三个Tab
+//! Binding card: three tabs (Parameter/Channels/Menu)
 use super::super::drag_payload::ParamDragPayload;
 use super::super::editor_state::{BindingCardTab, CDAEditorState};
 use crate::cunning_core::cda::promoted_param::{
@@ -8,7 +8,7 @@ use crate::cunning_core::cda::ParamBinding;
 use bevy_egui::egui::{self, Color32, DragAndDrop, RichText, Ui};
 
 pub fn draw(ui: &mut Ui, param: &mut PromotedParam, cda_state: &mut CDAEditorState) {
-    // Tab栏
+    // Tab bar
     ui.horizontal(|ui| {
         for (tab, label) in [
             (BindingCardTab::Parameter, "Parameter"),
@@ -50,7 +50,7 @@ pub fn draw(ui: &mut Ui, param: &mut PromotedParam, cda_state: &mut CDAEditorSta
     }
 }
 
-/// Parameter标签页：修改参数类型和基本属性
+/// Parameter tab: edit parameter type and basic properties
 fn draw_parameter_tab(ui: &mut Ui, param: &mut PromotedParam) {
     egui::ScrollArea::vertical()
         .max_height(ui.available_height())
@@ -154,7 +154,7 @@ fn draw_parameter_tab(ui: &mut Ui, param: &mut PromotedParam) {
 
             ui.add_space(8.0);
 
-            // 类型特定配置
+            // Type-specific config
             match &mut param.param_type {
                 PromotedParamType::Float {
                     min,
@@ -186,7 +186,7 @@ fn draw_parameter_tab(ui: &mut Ui, param: &mut PromotedParam) {
 
             ui.add_space(8.0);
 
-            // UI配置
+            // UI config
             ui.collapsing("UI Config", |ui| {
                 ui.checkbox(&mut param.ui_config.visible, "Visible");
                 ui.checkbox(&mut param.ui_config.enabled, "Enabled");
@@ -242,12 +242,12 @@ fn sync_channels(param: &mut PromotedParam) {
         .collect();
 }
 
-/// Channels标签页：通道级绑定管理
+/// Channels tab: channel-level binding management
 fn draw_channels_tab(ui: &mut Ui, param: &mut PromotedParam, _cda_state: &mut CDAEditorState) {
     ui.add_sized(
         [ui.available_width(), 0.0],
         egui::Label::new(
-            RichText::new(format!("{} - {} 个通道", param.label, param.channels.len())).strong(),
+            RichText::new(format!("{} - {} channels", param.label, param.channels.len())).strong(),
         )
         .truncate(),
     );
@@ -300,7 +300,7 @@ fn draw_channels_tab(ui: &mut Ui, param: &mut PromotedParam, _cda_state: &mut CD
                         ui.add_space(4.0);
 
                         if channel.bindings.is_empty() {
-                            ui.label(RichText::new("(无绑定)").weak().italics());
+                            ui.label(RichText::new("(unbound)").weak().italics());
                         } else {
                             let mut to_remove = None;
                             for (i, binding) in channel.bindings.iter().enumerate() {
@@ -352,7 +352,7 @@ fn draw_channels_tab(ui: &mut Ui, param: &mut PromotedParam, _cda_state: &mut CD
                             }
                         }
 
-                        // 拖拽放置区（从Properties/内部参数列表拖进来）
+                        // Drag-and-drop drop zone (drag from Properties/internal parameter list)
                         ui.add_space(4.0);
                         let frame = egui::Frame::NONE
                             .fill(Color32::from_rgb(50, 50, 55))
@@ -360,7 +360,7 @@ fn draw_channels_tab(ui: &mut Ui, param: &mut PromotedParam, _cda_state: &mut CD
                             .inner_margin(egui::Margin::symmetric(8, 4));
                         let (_inner, payload) =
                             ui.dnd_drop_zone::<ParamDragPayload, _>(frame, |ui| {
-                                ui.label(RichText::new("拖拽参数到此绑定").weak().small());
+                                ui.label(RichText::new("Drag a parameter here to bind").weak().small());
                             });
 
                         if DragAndDrop::has_payload_of_type::<ParamDragPayload>(ui.ctx()) {
@@ -412,14 +412,14 @@ fn draw_channels_tab(ui: &mut Ui, param: &mut PromotedParam, _cda_state: &mut CD
         });
 }
 
-/// Menu标签页：下拉菜单项定义
+/// Menu tab: dropdown menu item definitions
 fn draw_menu_tab(ui: &mut Ui, param: &mut PromotedParam) {
     let PromotedParamType::Dropdown { items } = &mut param.param_type else {
-        ui.label("此参数类型不支持菜单配置");
+        ui.label("This parameter type does not support menu configuration.");
         return;
     };
 
-    ui.label(RichText::new("菜单项定义").strong());
+    ui.label(RichText::new("Menu Item Definition").strong());
     ui.add_space(8.0);
 
     egui::ScrollArea::vertical()
@@ -431,8 +431,8 @@ fn draw_menu_tab(ui: &mut Ui, param: &mut PromotedParam) {
                 .num_columns(4)
                 .striped(true)
                 .show(ui, |ui| {
-                    ui.label("值");
-                    ui.label("显示标签");
+                    ui.label("Value");
+                    ui.label("Display label");
                     ui.label("");
                     ui.label("");
                     ui.end_row();
@@ -446,8 +446,8 @@ fn draw_menu_tab(ui: &mut Ui, param: &mut PromotedParam) {
                             to_remove = Some(i);
                         }
                         ui.horizontal(|ui| {
-                    if ui.small_button("↑").clicked() && i > 0 { /* TODO: 上移 */ }
-                    if ui.small_button("↓").clicked() && i < item_count - 1 { /* TODO: 下移 */ }
+                    if ui.small_button("↑").clicked() && i > 0 { /* TODO: move up */ }
+                    if ui.small_button("↓").clicked() && i < item_count - 1 { /* TODO: move down */ }
                 });
                         ui.end_row();
                     }
@@ -458,7 +458,7 @@ fn draw_menu_tab(ui: &mut Ui, param: &mut PromotedParam) {
             }
 
             ui.add_space(8.0);
-            if ui.button("+ 添加选项").clicked() {
+            if ui.button("+ Add option").clicked() {
                 let next_value = items.iter().map(|i| i.value).max().unwrap_or(-1) + 1;
                 items.push(DropdownItem {
                     value: next_value,

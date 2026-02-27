@@ -377,8 +377,12 @@ pub fn create_generic_node(
         }
         "Fuse" => NodeType::Fuse,
         "FBX Importer" => NodeType::FbxImporter,
-        "VDB from Polygons" => NodeType::VdbFromPolygons,
-        "VDB to Polygons" => NodeType::VdbToPolygons,
+        "SDF From Polygons" | "SDF from Polygons" | "VDB From Polygons" | "VDB from Polygons" => {
+            NodeType::VdbFromPolygons
+        }
+        "SDF To Polygons" | "SDF to Polygons" | "VDB To Polygons" | "VDB to Polygons" => {
+            NodeType::VdbToPolygons
+        }
         "Voxel Edit" | "VoxelEdit" => NodeType::VoxelEdit,
         "Group Create" => NodeType::GroupCreate,
         _ => NodeType::Generic(node_name.to_string()),
@@ -457,8 +461,12 @@ pub fn prepare_generic_node(
         }
         "Fuse" => NodeType::Fuse,
         "FBX Importer" => NodeType::FbxImporter,
-        "VDB from Polygons" => NodeType::VdbFromPolygons,
-        "VDB to Polygons" => NodeType::VdbToPolygons,
+        "SDF From Polygons" | "SDF from Polygons" | "VDB From Polygons" | "VDB from Polygons" => {
+            NodeType::VdbFromPolygons
+        }
+        "SDF To Polygons" | "SDF to Polygons" | "VDB To Polygons" | "VDB to Polygons" => {
+            NodeType::VdbToPolygons
+        }
         "Voxel Edit" | "VoxelEdit" => NodeType::VoxelEdit,
         "Group Create" => NodeType::GroupCreate,
         _ => NodeType::Generic(node_name.to_string()),
@@ -577,7 +585,7 @@ pub fn create_fbx_importer_node(
     ui_state.last_selected_node_id = Some(node_id);
 }
 
-pub fn create_vdb_from_polygons_node(
+pub fn create_sdf_from_polygons_node(
     ui_state: &mut UiState,
     node_graph_res: &mut NodeGraphResource,
     node_editor_settings: &crate::node_editor_settings::NodeEditorSettings,
@@ -587,7 +595,7 @@ pub fn create_vdb_from_polygons_node(
     let node_id = create_and_add_node(
         node_graph,
         node_editor_settings,
-        "VDB from Polygons",
+        "SDF From Polygons",
         NodeType::VdbFromPolygons,
         pos,
     );
@@ -598,7 +606,7 @@ pub fn create_vdb_from_polygons_node(
     ui_state.last_selected_node_id = Some(node_id);
 }
 
-pub fn create_vdb_to_polygons_node(
+pub fn create_sdf_to_polygons_node(
     ui_state: &mut UiState,
     node_graph_res: &mut NodeGraphResource,
     node_editor_settings: &crate::node_editor_settings::NodeEditorSettings,
@@ -608,7 +616,7 @@ pub fn create_vdb_to_polygons_node(
     let node_id = create_and_add_node(
         node_graph,
         node_editor_settings,
-        "VDB to Polygons",
+        "SDF To Polygons",
         NodeType::VdbToPolygons,
         pos,
     );
@@ -617,4 +625,23 @@ pub fn create_vdb_to_polygons_node(
     ui_state.selected_nodes.clear();
     ui_state.selected_nodes.insert(node_id);
     ui_state.last_selected_node_id = Some(node_id);
+}
+
+// Back-compat helpers (older callers / UI actions).
+pub fn create_vdb_from_polygons_node(
+    ui_state: &mut UiState,
+    node_graph_res: &mut NodeGraphResource,
+    node_editor_settings: &crate::node_editor_settings::NodeEditorSettings,
+    pos: egui::Pos2,
+) {
+    create_sdf_from_polygons_node(ui_state, node_graph_res, node_editor_settings, pos);
+}
+
+pub fn create_vdb_to_polygons_node(
+    ui_state: &mut UiState,
+    node_graph_res: &mut NodeGraphResource,
+    node_editor_settings: &crate::node_editor_settings::NodeEditorSettings,
+    pos: egui::Pos2,
+) {
+    create_sdf_to_polygons_node(ui_state, node_graph_res, node_editor_settings, pos);
 }

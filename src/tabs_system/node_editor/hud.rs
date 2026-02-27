@@ -107,7 +107,7 @@ fn draw_pan_joystick(
     let mut is_active = false;
 
     if response.dragged() {
-        if let Some(pointer_pos) = ui.ctx().pointer_interact_pos() {
+        if let Some(pointer_pos) = response.interact_pointer_pos() {
             let mut vec = pointer_pos - center;
             // Clamp to radius
             if vec.length() > radius {
@@ -130,6 +130,8 @@ fn draw_pan_joystick(
                 let move_vec = (thumb_offset / radius) * sensitivity;
                 state.pan -= move_vec;
                 state.target_pan = state.pan;
+                context.node_editor_state.pan = state.pan;
+                context.node_editor_state.target_pan = state.target_pan;
                 let moved = ui.input(|i| {
                     i.events.iter().any(|e| {
                         matches!(
@@ -139,7 +141,7 @@ fn draw_pan_joystick(
                         )
                     })
                 });
-                if moved {
+                if moved || response.dragged() {
                     context.ui_invalidator.request_repaint_after_tagged(
                         "node_editor/hud_drag",
                         Duration::ZERO,
@@ -247,7 +249,7 @@ fn draw_zoom_slider(
     let mut is_active = false;
 
     if response.dragged() {
-        if let Some(pointer_pos) = ui.ctx().pointer_interact_pos() {
+        if let Some(pointer_pos) = response.interact_pointer_pos() {
             // Calculate distance from vertical center of the slider
             let dy = pointer_pos.y - center_y;
 
@@ -311,6 +313,11 @@ fn draw_zoom_slider(
 
                 state.target_pan = state.pan;
                 state.target_zoom = state.zoom;
+
+                context.node_editor_state.pan = state.pan;
+                context.node_editor_state.zoom = state.zoom;
+                context.node_editor_state.target_pan = state.target_pan;
+                context.node_editor_state.target_zoom = state.target_zoom;
             }
 
             let moved = ui.input(|i| {
@@ -322,7 +329,7 @@ fn draw_zoom_slider(
                     )
                 })
             });
-            if moved {
+            if moved || response.dragged() {
                 context.ui_invalidator.request_repaint_after_tagged(
                     "node_editor/hud_drag",
                     Duration::ZERO,

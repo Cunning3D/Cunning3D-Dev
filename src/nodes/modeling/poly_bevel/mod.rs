@@ -511,7 +511,7 @@ impl NodeOp for PolyBevelNode {
             }
         }
 
-        // OffsetType: Percent 用所选边平均长度转换为绝对距离（先保证 UI 变化可见）
+        // OffsetType: Percent uses the average selected-edge length to convert to an absolute distance (ensure UI changes are visible first).
         if offset_type == 3 {
             let positions = src.get_point_position_attribute().unwrap_or(&[]);
             let mut sum = 0.0f32;

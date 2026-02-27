@@ -196,7 +196,7 @@ impl EditorTab for SettingsPane {
                     let mut t = egui_wgpu::sdf::gpu_text_tuning_get();
                     let mut changed = false;
 
-                    ui.label("实时预览：拖动立刻生效。字太粗就把 weight 调大（更细）。");
+                    ui.label("Live preview: changes apply immediately while dragging. If text looks too bold, increase weight (thinner).");
 
                     ui.horizontal(|ui| {
                         ui.label("Font");
@@ -227,7 +227,7 @@ impl EditorTab for SettingsPane {
                         changed |= ui
                             .add(
                                 egui::Slider::new(&mut t.content_weight, 0.6..=2.0)
-                                    .text("weight(细)"),
+                                    .text("weight (thin)"),
                             )
                             .changed();
                         changed |= ui
@@ -247,7 +247,7 @@ impl EditorTab for SettingsPane {
                                     .text("upload budget/frame"),
                             )
                             .changed();
-                        ui.weak("展开大量 UI 时卡顿就调小；0=暂停上传(字会延迟补齐)");
+                        ui.weak("If expanding lots of UI stutters, lower this. 0 = pause uploads (text may appear later).");
                     });
 
                     ui.horizontal(|ui| {
@@ -313,7 +313,7 @@ impl EditorTab for SettingsPane {
             egui::CollapsingHeader::new("Node Graph Text LOD (Live)")
                 .default_open(false)
                 .show(ui, |ui| {
-                    ui.label("控制节点标题在 zoom out 时何时开始淡出/何时隐藏（原来写死 5.0）。");
+                    ui.label("Controls when node titles fade/hide while zoomed out (previously hard-coded at 5.0).");
                     let hide_id = "node_editor.nodes.typography.title_lod_hide_px".to_string();
                     let fade_id = "node_editor.nodes.typography.title_lod_fade_px".to_string();
                     let mut hide = stores

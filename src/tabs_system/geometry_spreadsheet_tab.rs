@@ -9,6 +9,7 @@ use crate::{
     mesh::{Attribute, Geometry},
     nodes::NodeId,
 };
+use crate::tabs_system::node_editor::cda::navigation as cda_nav;
 
 use super::{EditorTab, EditorTabContext};
 
@@ -58,7 +59,18 @@ impl EditorTab for GeometrySpreadsheetTab {
             .rect_filled(ui.clip_rect(), 0.0, ui.visuals().panel_fill);
 
         let target_node_id = context.ui_state.last_selected_node_id;
-        let graph = &context.node_graph_res.0;
+        let cda_path = context.node_editor_state.cda_path.clone();
+        let (node_exists, geo_opt) = cda_nav::with_graph_by_path(
+            &context.node_graph_res.0,
+            &cda_path,
+            |graph| {
+                let exists = target_node_id
+                    .and_then(|id| graph.nodes.get(&id).map(|_| ()))
+                    .is_some();
+                let geo = target_node_id.and_then(|id| graph.geometry_cache.get(&id).cloned());
+                (exists, geo)
+            },
+        );
 
         let mut needs_update = false;
 
@@ -69,35 +81,30 @@ impl EditorTab for GeometrySpreadsheetTab {
         }
 
         if let Some(node_id) = self.displayed_node_id {
-            if let Some(_) = graph.nodes.get(&node_id) {
-                if let Some(geo) = graph.geometry_cache.get(&node_id) {
-                    if geo.dirty_id != self.displayed_geometry_id {
-                        needs_update = true;
-                    }
-                } else {
-                    if self.displayed_geometry_id != 0 {
-                        needs_update = true;
-                    }
-                }
-            } else {
+            if !node_exists {
                 self.displayed_node_id = None;
                 if self.displayed_geometry_id != 0 {
                     needs_update = true;
                 }
+            } else if let Some(geo) = geo_opt.as_ref() {
+                if geo.dirty_id != self.displayed_geometry_id {
+                    needs_update = true;
+                }
+            } else if self.displayed_geometry_id != 0 {
+                needs_update = true;
             }
         }
 
         if needs_update {
             if let Some(node_id) = self.displayed_node_id {
-                if let Some(_) = graph.nodes.get(&node_id) {
-                    if let Some(geo) = graph.geometry_cache.get(&node_id) {
-                        self.displayed_geometry_id = geo.dirty_id;
-                        self.rebuild_cache(geo);
-                    } else {
-                        self.displayed_geometry_id = 0;
-                        self.cached_columns.clear();
-                        self.cached_display_data.clear();
-                    }
+                let _ = node_id; // keep structure stable
+                if let Some(geo) = geo_opt.as_ref() {
+                    self.displayed_geometry_id = geo.dirty_id;
+                    self.rebuild_cache(geo);
+                } else {
+                    self.displayed_geometry_id = 0;
+                    self.cached_columns.clear();
+                    self.cached_display_data.clear();
                 }
             } else {
                 self.displayed_geometry_id = 0;
@@ -145,6 +152,12 @@ impl EditorTab for GeometrySpreadsheetTab {
             if self.displayed_node_id.is_none() {
                 ui.label("Select a node to view its geometry.");
             } else if self.cached_display_data.is_empty() && self.cached_columns.is_empty() {
+                if let Some(geo) = geo_opt.as_ref() {
+                    if !geo.sdfs.is_empty() && self.mode != SpreadsheetMode::Detail {
+                        ui.label("This node outputs an SDF volume (no point/vertex/primitive rows). Switch to Detail to inspect attributes.");
+                        return;
+                    }
+                }
                 match self.mode {
                     SpreadsheetMode::Detail => ui.label("No detail attributes."),
                     SpreadsheetMode::Edges => {

@@ -155,7 +155,7 @@ impl DocumentStore {
     }
 
     /// Apply external on-disk content change as an undoable edit.
-    /// This keeps the editor "刷刷改代码" feeling when tools patch files.
+    /// This keeps the editor feeling snappy when tools patch files.
     pub fn sync_from_disk_as_edit(&mut self, path: &Path) -> Result<u64, String> {
         let new_content = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
         let doc = self.documents.get_mut(path).ok_or("File not open")?;

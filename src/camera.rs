@@ -40,7 +40,12 @@ pub fn camera_control_system(
     mut query: Query<(&mut Transform, &mut CameraController), With<Camera>>,
     nav_input: Res<NavigationInput>,
     time: Res<Time>,
+    mut viewport_perf: ResMut<crate::viewport_perf::ViewportPerfTrace>,
 ) {
+    let _perf = crate::viewport_perf::PerfScope::new(
+        &mut viewport_perf,
+        crate::viewport_perf::ViewportPerfSection::CameraControl,
+    );
     for (mut transform, mut controller) in query.iter_mut() {
         if !controller.enabled {
             controller.is_orbiting = false;

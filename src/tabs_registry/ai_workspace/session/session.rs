@@ -58,24 +58,24 @@ pub struct Session {
     #[serde(default, rename = "messages", skip_serializing)]
     pub legacy_messages: Vec<Message>,
 
-    /// 多文件工作副本：记录每个文件在当前会话中的编辑状态（Diff）
-    /// Key: 文件的绝对路径
+    /// Multi-file working copy: tracks per-file edit state (Diff) in this session
+    /// Key: absolute file path
     pub working_copy: HashMap<PathBuf, TextBuffer>,
 
-    /// 当前会话关注的主文件（用于 Context 构建和初始视图）
+    /// Primary file in focus for this session (used for context building and initial view)
     pub active_file: Option<PathBuf>,
 
-    /// 原始文件快照缓存（用于 Diff 基准）
-    /// Key: 文件的绝对路径, Value: 文件内容
+    /// Original file snapshot cache (Diff baseline)
+    /// Key: absolute file path; Value: file contents
     pub original_snapshots: HashMap<PathBuf, String>,
 
-    /// 待处理的流式事件队列（为了 UI 打字机效果）
-    /// 以前在 Pane 里，现在移到 Session 级别，这样后台可以继续累积
+    /// Pending streaming events queue (for UI typewriter effect)
+    /// Previously lived in the Pane; moved to Session so background work can keep accumulating
     #[serde(skip)]
     pub pending_events: std::collections::VecDeque<super::event::SessionEvent>,
 
-    /// 当前正在运行的任务的取消信号发送端
-    /// 如果为 Some，说明有任务在跑；调用 send() 可停止任务
+    /// Sender for the cancel signal of the currently running task
+    /// If Some, a task is running; call send() to stop it
     #[serde(skip)]
     pub abort_sender: Option<tokio::sync::oneshot::Sender<()>>,
 
@@ -87,24 +87,24 @@ pub struct Session {
     #[serde(skip)]
     pub tool_request_meta: HashMap<u64, ToolRequestMeta>,
 
-    /// 当前一次 LLM 流式对话中已经执行过的工具调用签名，用于去重
-    /// Key 形如 "tool_name::{json_args}"，仅存在于内存中，不参与持久化
+    /// Tool-call signatures already executed during the current LLM streaming run (for deduplication)
+    /// Key looks like \"tool_name::{json_args}\"; memory-only and not persisted
     #[serde(skip)]
     pub executed_tool_signatures: std::collections::HashSet<String>,
 
-    /// 编译重试计数器，Key 为 node_name，Value 为当前连续重试次数
+    /// Compile retry counter; key is node_name, value is the current consecutive retry count
     #[serde(skip)]
     pub compile_retry_count: HashMap<String, u32>,
 
-    /// 当前会话是否正在进行一次 AI 交互（网络流/工具链/自愈链路进行中）
+    /// Whether this session is currently in an AI interaction (network stream/toolchain/self-heal pipeline running)
     #[serde(skip)]
     pub is_busy: bool,
 
-    /// Busy 原因（用于 UI 展示），例如：模型生成中 / 工具执行中：xxx / 自动修复中：n/3
+    /// Busy reason (for UI), e.g. generating / running tool: xxx / auto-fixing: n/3
     #[serde(skip)]
     pub busy_reason: Option<String>,
 
-    /// Busy 阶段（用于 UI 稳定显示“工具→回喂→等待→生成”）
+    /// Busy phase (for stable UI messaging: \"tool → feedback → waiting → generation\")
     #[serde(skip)]
     pub busy_stage: BusyStage,
 
@@ -358,8 +358,8 @@ impl Session {
         session.active_file = Some(path.clone());
         session
             .original_snapshots
-            .insert(path.clone(), original_code); // 存一份快照
-                                                  // 自动设置标题
+            .insert(path.clone(), original_code); // Store a snapshot
+                                                  // Auto-set title
         if let Some(name) = session.active_file.as_ref().and_then(|p| p.file_name()) {
             session.title = format!("Chat about {}", name.to_string_lossy());
         }
@@ -453,7 +453,7 @@ impl Session {
         self.busy_stage = BusyStage::Idle;
     }
 
-    /// 获取当前活跃文件的 Diff Buffer，如果不存在则基于 Snapshot 创建
+    /// Get the active file's diff buffer; if missing, create from the snapshot
     pub fn get_or_create_buffer(&mut self, path: &PathBuf) -> Option<&mut TextBuffer> {
         if !self.working_copy.contains_key(path) {
             if let Some(original) = self.original_snapshots.get(path) {
@@ -466,7 +466,7 @@ impl Session {
         self.working_copy.get_mut(path)
     }
 
-    /// 强制设置某个文件的 Snapshot（当用户拖入新文件或切换关注点时）
+    /// Force-set a file snapshot (when the user drops in a new file or changes focus)
     pub fn set_file_context(&mut self, path: PathBuf, code: String) {
         self.active_file = Some(path.clone());
         if !self.original_snapshots.contains_key(&path) {

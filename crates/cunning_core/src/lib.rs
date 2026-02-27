@@ -21,7 +21,7 @@ pub mod libs {
 #[path = "../../../src/mesh.rs"]
 pub mod mesh;
 
-pub mod volume { pub use crate::geometry::volume::*; }
+pub mod sdf { pub use crate::geometry::sdf::*; }
 
 #[path = "../../../src/cunning_core/traits/parameter.rs"]
 pub mod parameter;
@@ -114,4 +114,3 @@ pub mod nodes {
 
 #[macro_export]
 macro_rules! register_node { ($($tt:tt)*) => {}; }
-

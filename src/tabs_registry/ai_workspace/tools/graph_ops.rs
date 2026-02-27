@@ -57,8 +57,8 @@ fn resolve_node_type(label: &str) -> NodeType {
         "Boolean" => NodeType::Boolean,
         "Curve" | "Curve (Plugin)" => NodeType::Generic("Curve".to_string()),
         "FBX Import" | "FBX Importer" => NodeType::FbxImporter,
-        "VDB From Polygons" => NodeType::VdbFromPolygons,
-        "VDB To Polygons" => NodeType::VdbToPolygons,
+        "SDF From Polygons" => NodeType::VdbFromPolygons,
+        "SDF To Polygons" => NodeType::VdbToPolygons,
         other => NodeType::Generic(other.to_string()),
     }
 }

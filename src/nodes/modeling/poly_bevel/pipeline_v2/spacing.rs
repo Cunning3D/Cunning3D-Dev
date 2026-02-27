@@ -3,7 +3,7 @@ use super::math::{PRO_CIRCLE_R, PRO_LINE_R, PRO_SQUARE_IN_R, PRO_SQUARE_R};
 use std::collections::HashMap;
 use std::sync::RwLock;
 
-// ProfileSpacing 缓存：避免重复计算相同 (seg, pro_r) 的曲线采样
+// ProfileSpacing cache: avoid recomputing curve samples for the same (seg, pro_r)
 type SpacingCacheKey = (usize, u32); // (seg, pro_r as bits)
 static SPACING_CACHE: RwLock<Option<HashMap<SpacingCacheKey, ProfileSpacing>>> = RwLock::new(None);
 
@@ -20,7 +20,7 @@ fn set_cached(key: SpacingCacheKey, val: ProfileSpacing) {
         let cache = guard.get_or_insert_with(HashMap::new);
         if cache.len() > 64 {
             cache.clear();
-        } // 限制缓存大小
+        } // Cap cache size
         cache.insert(key, val);
     }
 }
@@ -191,7 +191,7 @@ fn find_even_superellipse_chords(seg: usize, r: f32, xvals: &mut [f64], yvals: &
     find_even_superellipse_chords_general(seg, r, xvals, yvals);
 }
 
-/// 构建 profile 采样点（带缓存，避免重复计算）
+/// Build profile sample points (cached to avoid recomputation)
 pub fn build_profile_spacing(seg: usize, r: f32) -> ProfileSpacing {
     if seg <= 1 {
         return ProfileSpacing {
@@ -200,13 +200,13 @@ pub fn build_profile_spacing(seg: usize, r: f32) -> ProfileSpacing {
         };
     }
 
-    // 检查缓存
+    // Check cache
     let key = cache_key(seg, r);
     if let Some(cached) = get_cached(key) {
         return cached;
     }
 
-    // 计算
+    // Compute
     let seg_2 = seg.next_power_of_two().max(4);
     let mut xvals = vec![0.0f64; seg + 1];
     let mut yvals = vec![0.0f64; seg + 1];

@@ -1,12 +1,11 @@
 use crate::cunning_core::traits::node_interface::{NodeOp, NodeParameters};
-use crate::libs::algorithms::algorithms_dcc::PagedBuffer;
 use crate::libs::geometry::geo_ref::GeometryRef;
 use crate::libs::geometry::ids::VertexId;
 use crate::mesh::{Attribute, Geometry};
 use crate::nodes::parameter::{Parameter, ParameterUIType, ParameterValue};
 use crate::nodes::{InputStyle, NodeStyle};
 use crate::register_node;
-use crate::volume::{VolumeHandle, VoxelGrid, CHUNK_SIZE};
+use crate::sdf::{SdfHandle, SdfGrid, CHUNK_SIZE};
 use bevy::prelude::*;
 use dashmap::DashSet;
 #[cfg(not(target_arch = "wasm32"))]
@@ -21,13 +20,13 @@ use parry3d::query::PointQuery;
 use parry3d::shape::TriMesh;
 
 // Import Chunk from volume
-use crate::volume::Chunk;
+use crate::sdf::SdfChunk;
 use std::sync::Arc;
 
 #[derive(Default)]
-pub struct VdbFromPolygonsNode;
+pub struct SdfFromPolygonsNode;
 
-impl NodeParameters for VdbFromPolygonsNode {
+impl NodeParameters for SdfFromPolygonsNode {
     fn define_parameters() -> Vec<Parameter> {
         vec![
             Parameter::new(
@@ -58,7 +57,7 @@ impl NodeParameters for VdbFromPolygonsNode {
     }
 }
 
-impl NodeOp for VdbFromPolygonsNode {
+impl NodeOp for SdfFromPolygonsNode {
     fn compute(&self, params: &[Parameter], inputs: &[Arc<dyn GeometryRef>]) -> Arc<Geometry> {
         let input = inputs
             .first()
@@ -68,11 +67,11 @@ impl NodeOp for VdbFromPolygonsNode {
             .iter()
             .map(|p| (p.name.clone(), p.value.clone()))
             .collect();
-        Arc::new(compute_vdb_from_mesh(&input, &param_map))
+        Arc::new(compute_sdf_from_mesh(&input, &param_map))
     }
 }
 
-register_node!("VDB From Polygons", "Volume", VdbFromPolygonsNode);
+register_node!("SDF From Polygons", "Volume", SdfFromPolygonsNode);
 
 pub fn node_style() -> NodeStyle {
     NodeStyle::Normal
@@ -82,7 +81,7 @@ pub fn input_style() -> InputStyle {
     InputStyle::Individual
 }
 
-pub fn compute_vdb_from_mesh(
+pub fn compute_sdf_from_mesh(
     input_geo: &Geometry,
     params: &HashMap<String, ParameterValue>,
 ) -> Geometry {
@@ -197,29 +196,29 @@ pub fn compute_vdb_from_mesh(
 
     // Process each chunk in parallel using Global Parry Query (Robust)
     #[cfg(not(target_arch = "wasm32"))]
-    let chunks_map: FxHashMap<IVec3, Chunk> = active_chunks
+    let chunks_map: FxHashMap<IVec3, SdfChunk> = active_chunks
         .par_iter()
         .map(|&chunk_idx| process_active_chunk(chunk_idx, limit, voxel_size, &trimesh, &identity))
         .collect();
 
     #[cfg(target_arch = "wasm32")]
-    let chunks_map: FxHashMap<IVec3, Chunk> = active_chunks
+    let chunks_map: FxHashMap<IVec3, SdfChunk> = active_chunks
         .iter()
         .map(|&chunk_idx| process_active_chunk(chunk_idx, limit, voxel_size, &trimesh, &identity))
         .collect();
 
     // 5. Construct Grid
-    let mut grid = VoxelGrid::new(voxel_size, limit);
+    let mut grid = SdfGrid::new(voxel_size, limit);
     grid.chunks = chunks_map;
 
     let mut output = Geometry::new();
-    output.volumes.push(VolumeHandle::new(grid));
+    output.sdfs.push(SdfHandle::new(grid));
 
     // Store visualization preference
     let viz_val = if display_points { 1.0 } else { 0.0 };
     output.insert_detail_attribute(
         "display_points",
-        Attribute::new(PagedBuffer::from(vec![viz_val])),
+        Attribute::new(vec![viz_val]),
     );
 
     output
@@ -272,8 +271,8 @@ fn process_active_chunk(
     voxel_size: f32,
     trimesh: &TriMesh,
     identity: &Isometry3<f32>,
-) -> (IVec3, Chunk) {
-    let mut chunk = Chunk::new(limit);
+) -> (IVec3, SdfChunk) {
+    let mut chunk = SdfChunk::new(limit);
     let chunk_origin = chunk_idx * CHUNK_SIZE;
 
     for z in 0..CHUNK_SIZE {

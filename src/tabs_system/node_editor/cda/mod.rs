@@ -1,4 +1,4 @@
-//! CDA编辑相关UI模块
+//! CDA editing UI modules
 pub mod create_dialog;
 pub mod drag_payload;
 pub mod editor_state;

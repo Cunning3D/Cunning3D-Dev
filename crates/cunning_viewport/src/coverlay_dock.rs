@@ -10,6 +10,7 @@ pub enum CoverlayPanelKind {
     Manager,
     VoxelTools,
     VoxelPalette,
+    SdfTools,
     VoxelDebug,
     Import,
     Export,
@@ -245,7 +246,10 @@ pub fn build_default_viewport_dock_from_preset(
     {
         for p in stack.drain(..) {
             match p.kind {
-                CoverlayPanelKind::VoxelTools | CoverlayPanelKind::Manager | CoverlayPanelKind::Parameters => {
+                CoverlayPanelKind::VoxelTools
+                | CoverlayPanelKind::SdfTools
+                | CoverlayPanelKind::Manager
+                | CoverlayPanelKind::Parameters => {
                     right.push(p)
                 }
                 CoverlayPanelKind::VoxelPalette => left.push(p),

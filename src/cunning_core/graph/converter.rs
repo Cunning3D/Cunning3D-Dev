@@ -188,8 +188,18 @@ fn resolve_legacy_node_type(type_name: &str, id: NodeId) -> Option<Node> {
         "PolyBevel" | "Poly Bevel" | "cunning.modeling.poly_bevel" => NodeType::PolyBevel,
         "Fuse" | "cunning.modeling.fuse" => NodeType::Fuse,
         "Group Create" | "cunning.group.create" => NodeType::GroupCreate,
-        "VDB From Polygons" | "cunning.vdb.from_polygons" => NodeType::VdbFromPolygons,
-        "VDB To Polygons" | "cunning.vdb.to_polygons" => NodeType::VdbToPolygons,
+        "SDF From Polygons"
+        | "SDF from Polygons"
+        | "VDB From Polygons"
+        | "VDB from Polygons"
+        | "cunning.sdf.from_polygons"
+        | "cunning.vdb.from_polygons" => NodeType::VdbFromPolygons,
+        "SDF To Polygons"
+        | "SDF to Polygons"
+        | "VDB To Polygons"
+        | "VDB to Polygons"
+        | "cunning.sdf.to_polygons"
+        | "cunning.vdb.to_polygons" => NodeType::VdbToPolygons,
         "Voxel Edit" | "VoxelEdit" | "cunning.voxel.edit" => NodeType::VoxelEdit,
         // ... add others
         _ => return None,

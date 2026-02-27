@@ -130,9 +130,9 @@ pub fn timeline_playback_system(
         state.play_started_at = None;
         return;
     }
-    // 触发 bevy_ui 刷新 (Reactive 模式)
+    // Trigger bevy_ui refresh (reactive mode)
     redraw_writer.write(RequestRedraw);
-    // 保留 egui 刷新 (兼容)
+    // Keep egui refresh (compatibility)
     inv.request_repaint_after_tagged(
         "timeline/play",
         Duration::from_secs_f32(1.0 / 60.0),

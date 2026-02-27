@@ -61,7 +61,7 @@ struct RaycastDdaState {
 
 impl RaycastDdaState {
     #[inline]
-    fn ensure(&mut self, grid: &vox::DiscreteVoxelGrid, origin: Vec3, dir: Vec3, voxel_size: f32, max_dist_world: f32) {
+    fn ensure(&mut self, grid: &vox::DiscreteSdfGrid, origin: Vec3, dir: Vec3, voxel_size: f32, max_dist_world: f32) {
         let vs = voxel_size.max(0.001);
         if !self.active
             || self.key_vs != vs
@@ -100,7 +100,7 @@ impl RaycastDdaState {
     }
 
     #[inline]
-    fn step(&mut self, grid: &vox::DiscreteVoxelGrid, max_steps: u32) -> Option<(f32, IVec3, IVec3, Vec3)> {
+    fn step(&mut self, grid: &vox::DiscreteSdfGrid, max_steps: u32) -> Option<(f32, IVec3, IVec3, Vec3)> {
         if !self.active || self.done { return None; }
         for _ in 0..max_steps {
             if self.t > self.max_t { self.done = true; break; }
@@ -141,14 +141,14 @@ struct VoxelCmdBakeCache {
     cmds_len: usize,
     cmds_cursor: usize,
     bake: vox::DiscreteBakeState,
-    grid: vox::DiscreteVoxelGrid,
+    grid: vox::DiscreteSdfGrid,
     bounds: Option<(IVec3, IVec3)>,
     bounds_dirty: bool,
 }
 
 impl VoxelCmdBakeCache {
     #[inline]
-    fn reset(&mut self, target: VoxelEditTarget, base_node: Option<uuid::Uuid>, base_grid: Option<vox::DiscreteVoxelGrid>, voxel_size: f32) {
+    fn reset(&mut self, target: VoxelEditTarget, base_node: Option<uuid::Uuid>, base_grid: Option<vox::DiscreteSdfGrid>, voxel_size: f32) {
         let vs = voxel_size.max(0.001);
         self.target = Some(target);
         self.base_node = base_node;
@@ -156,7 +156,7 @@ impl VoxelCmdBakeCache {
         self.cmds_len = 0;
         self.cmds_cursor = 0;
         self.bake = vox::DiscreteBakeState { baked_cursor: 0 };
-        self.grid = base_grid.unwrap_or_else(|| vox::DiscreteVoxelGrid::new(vs));
+        self.grid = base_grid.unwrap_or_else(|| vox::DiscreteSdfGrid::new(vs));
         self.bounds = self.grid.bounds();
         self.bounds_dirty = false;
     }
@@ -198,7 +198,7 @@ impl VoxelCmdBakeCache {
     }
 
     #[inline]
-    fn ensure_baked(&mut self, target: VoxelEditTarget, base_node: Option<uuid::Uuid>, base_grid: Option<vox::DiscreteVoxelGrid>, voxel_size: f32, cmds: &DiscreteVoxelCmdList) {
+    fn ensure_baked(&mut self, target: VoxelEditTarget, base_node: Option<uuid::Uuid>, base_grid: Option<vox::DiscreteSdfGrid>, voxel_size: f32, cmds: &DiscreteVoxelCmdList) {
         let vs = voxel_size.max(0.001);
         if self.target != Some(target) || self.base_node != base_node || (self.voxel_size - vs).abs() > 0.0 {
             self.reset(target, base_node, base_grid, vs);
@@ -240,7 +240,7 @@ fn cached_output_geo(graph: &crate::nodes::NodeGraph, nid: NodeId, port: &PortId
 }
 
 #[inline]
-fn base_grid_for_target(graph: &crate::nodes::NodeGraph, target: VoxelEditTarget) -> (Option<uuid::Uuid>, Option<vox::DiscreteVoxelGrid>) {
+fn base_grid_for_target(graph: &crate::nodes::NodeGraph, target: VoxelEditTarget) -> (Option<uuid::Uuid>, Option<vox::DiscreteSdfGrid>) {
     let VoxelEditTarget::Direct(node_id) = target else { return (None, None); };
     let in0 = port_key::in0();
     let Some((src_n, src_p)) = first_src(graph, node_id, &in0) else { return (None, None); };
@@ -366,7 +366,7 @@ fn spawn_prompt_stamp_job(req: VoxelAiPromptStampRequest) -> crossbeam_channel::
             let voxel_size = req.voxel_size.max(0.001);
             let cmds = vox::DiscreteVoxelCmdList::from_json(&req.cmds_json);
             let pal_json = req.palette_json;
-            let mut grid = vox::DiscreteVoxelGrid::new(voxel_size);
+            let mut grid = vox::DiscreteSdfGrid::new(voxel_size);
             if let Ok(p) = serde_json::from_str::<Vec<vox::discrete::PaletteEntry>>(&pal_json) {
                 for (i, e) in p.into_iter().enumerate() { if i < grid.palette.len() { grid.palette[i] = e; } }
             }
@@ -1094,7 +1094,7 @@ fn voxel_editor_input_system(
                                     undo_stack.push(VoxelChanges { min: mn, max: mx, coords: std::mem::take(&mut scratch.coords), before: std::mem::take(&mut scratch.before), after: std::mem::take(&mut scratch.after) });
                                 }
 
-                                // Voxy: 更新 last_cell 用于 Spacing 计算
+                                // Voxy: update last_cell for spacing calculations
                                 st.last_cell = Some(cell);
                             }
                         }
@@ -1570,7 +1570,7 @@ fn aabb_face_normal(hit: Vec3, bmin: Vec3, bmax: Vec3) -> IVec3 {
 }
 
 #[inline]
-fn raycast_discrete_dda(grid: &vox::DiscreteVoxelGrid, origin: Vec3, dir: Vec3, voxel_size: f32, max_dist_world: f32) -> Option<(f32, IVec3, IVec3, Vec3)> {
+fn raycast_discrete_dda(grid: &vox::DiscreteSdfGrid, origin: Vec3, dir: Vec3, voxel_size: f32, max_dist_world: f32) -> Option<(f32, IVec3, IVec3, Vec3)> {
     if grid.voxels.is_empty() { return None; }
     let vs = voxel_size.max(0.001);
     let d = dir.normalize_or_zero();

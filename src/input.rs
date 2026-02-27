@@ -9,8 +9,8 @@ use bevy::{
     prelude::*,
     window::{PrimaryWindow, RequestRedraw},
 };
-use bevy_egui::EguiContext;
 use bevy_egui::EguiInput;
+use bevy_egui::EguiContexts;
 
 /// An abstraction of navigation commands.
 /// This resource holds the "intent" of the user, regardless of the input method (Mouse vs Touch).
@@ -38,13 +38,20 @@ pub fn input_mapping_system(
     mut mouse_motion_events: MessageReader<MouseMotion>,
     mut mouse_wheel_events: MessageReader<MouseWheel>,
     touches: Res<Touches>,
-    mut egui_query: Query<(&mut EguiContext, &mut EguiInput), With<PrimaryWindow>>,
+    mut egui_contexts: EguiContexts,
+    mut egui_inputs: Query<&mut EguiInput>,
+    primary_window_query: Query<Entity, With<PrimaryWindow>>,
     viewport_layout: Res<ViewportLayout>,
     timeline_wants: Res<TimelineUiWantsInput>,
     topbar_wants: Res<TopbarUiWantsInput>,
     coverlay_wants: Res<CoverlayUiWantsInput>,
+    mut viewport_perf: ResMut<crate::viewport_perf::ViewportPerfTrace>,
     mut redraw: MessageWriter<RequestRedraw>,
 ) {
+    let _perf = crate::viewport_perf::PerfScope::new(
+        &mut viewport_perf,
+        crate::viewport_perf::ViewportPerfSection::InputMapping,
+    );
     // 1. Reset state for this frame
     *nav_input = NavigationInput::default();
 
@@ -53,14 +60,30 @@ pub fn input_mapping_system(
         return;
     }
 
+    let primary_window_entity = primary_window_query.iter().next();
+    let target_window_entity = viewport_layout.window_entity.or(primary_window_entity);
+
     // Check if egui is actively consuming input (widgets active / text focused).
-    let (egui_wants_pointer, egui_wants_keyboard) =
-        if let Ok((mut egui_ctx, _egui_in)) = egui_query.single_mut() {
-            let c = egui_ctx.get_mut();
-            (c.wants_pointer_input(), c.wants_keyboard_input())
-        } else {
-            (false, false)
-        };
+    // NOTE: use the viewport host window's egui context (supports floating viewport windows).
+    let (egui_wants_pointer, egui_wants_keyboard, pointer_pos) = {
+        let mut wants_pointer = false;
+        let mut wants_keyboard = false;
+        let mut pointer_pos: Option<bevy_egui::egui::Pos2> = None;
+
+        if let Some(window_entity) = target_window_entity {
+            if let Some(ctx) = egui_contexts.try_ctx_for_window_mut(window_entity) {
+                wants_pointer = ctx.wants_pointer_input();
+                wants_keyboard = ctx.wants_keyboard_input();
+                pointer_pos = ctx.pointer_latest_pos().or_else(|| ctx.pointer_hover_pos());
+            }
+        } else if let Some(ctx) = egui_contexts.try_ctx_mut() {
+            wants_pointer = ctx.wants_pointer_input();
+            wants_keyboard = ctx.wants_keyboard_input();
+            pointer_pos = ctx.pointer_latest_pos().or_else(|| ctx.pointer_hover_pos());
+        }
+
+        (wants_pointer, wants_keyboard, pointer_pos)
+    };
 
     let mut raw_mouse_delta = Vec2::ZERO;
     for event in mouse_motion_events.read() {
@@ -128,33 +151,27 @@ pub fn input_mapping_system(
         return;
     }
 
+    let viewport_layout_active = viewport_layout.logical_rect.is_some();
+
     // If egui is actively consuming pointer, don't passthrough to viewport *unless*
     // the interaction started inside the native viewport hole (viewport gets priority).
-    let viewport_cursor_over = if viewport_layout.logical_rect.is_some() {
-        if let Ok((mut egui_ctx, _egui_in)) = egui_query.single_mut() {
-            let ctx = egui_ctx.get_mut();
-            let p = ctx.pointer_latest_pos().or_else(|| ctx.pointer_hover_pos());
-            viewport_layout
-                .logical_rect
-                .map_or(false, |r| p.map_or(false, |p| r.contains(p)))
-        } else {
-            false
-        }
-    } else {
-        false
-    };
+    let viewport_cursor_over = viewport_layout
+        .logical_rect
+        .map_or(false, |r| pointer_pos.map_or(false, |p| r.contains(p)));
     // Robust "viewport interaction in progress" detection:
     // - interaction_state is written later in the frame (egui UI), so it can lag by 1 frame.
     // - during MMB/RMB drag some platforms/cursor-lock setups can make pointer pos temporarily unavailable.
-    let ongoing_drag = interaction_state.is_right_button_dragged
-        || interaction_state.is_middle_button_dragged
-        || interaction_state.is_alt_left_button_dragged;
+    let ongoing_drag = viewport_layout_active
+        && (interaction_state.is_right_button_dragged
+            || interaction_state.is_middle_button_dragged
+            || interaction_state.is_alt_left_button_dragged);
     let buttons_dragging_now = mouse_buttons.pressed(MouseButton::Right)
         || mouse_buttons.pressed(MouseButton::Middle)
         || (mouse_buttons.pressed(MouseButton::Left)
             && (keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight)));
-    let dragging_now = ongoing_drag
-        || (buttons_dragging_now && (viewport_cursor_over || interaction_state.is_hovered));
+    let viewport_hovered = viewport_layout_active && interaction_state.is_hovered;
+    let dragging_now =
+        ongoing_drag || (buttons_dragging_now && (viewport_cursor_over || viewport_hovered));
 
     // Keyboard/Focus isolation:
     // If the cursor is over the 3D viewport and the user starts interacting (keys/buttons),
@@ -162,33 +179,49 @@ pub fn input_mapping_system(
     let any_key_down = keys.get_pressed().next().is_some();
     let any_mouse_down = mouse_buttons.get_pressed().next().is_some();
     let any_wheel = raw_scroll != 0.0;
-    if viewport_cursor_over && (any_key_down || any_mouse_down || any_wheel || dragging_now) {
-        if let Ok((mut egui_ctx, mut egui_in)) = egui_query.single_mut() {
-            let ctx = egui_ctx.get_mut();
+    if (viewport_cursor_over || dragging_now) && (any_key_down || any_mouse_down || any_wheel || dragging_now) {
+        if let Some(window_entity) = target_window_entity {
+            let mut filter_keys = false;
+            if let Some(ctx) = egui_contexts.try_ctx_for_window_mut(window_entity) {
+                filter_keys = ctx.wants_keyboard_input();
+                if filter_keys {
+                    ctx.memory_mut(|m| {
+                        if let Some(id) = m.focused() {
+                            m.surrender_focus(id);
+                        }
+                    });
+                }
+            }
+
+            if let Ok(mut egui_in) = egui_inputs.get_mut(window_entity) {
+                if filter_keys {
+                    // Best-effort: prevent queued key/char events from reaching the old focused TextEdit this frame.
+                    egui_in.events.retain(|e| {
+                        !matches!(
+                            e,
+                            bevy_egui::egui::Event::Text(_)
+                                | bevy_egui::egui::Event::Key { .. }
+                                | bevy_egui::egui::Event::Copy
+                                | bevy_egui::egui::Event::Cut
+                                | bevy_egui::egui::Event::Paste(_)
+                        )
+                    });
+                }
+                // Wheel isolation: when cursor is over the native 3D viewport hole, prevent egui widgets
+                // (scroll areas, zoomable canvas, etc.) from also consuming the wheel in the same frame.
+                if any_wheel {
+                    egui_in
+                        .events
+                        .retain(|e| !matches!(e, bevy_egui::egui::Event::MouseWheel { .. }));
+                }
+            }
+        } else if let Some(ctx) = egui_contexts.try_ctx_mut() {
             if ctx.wants_keyboard_input() {
                 ctx.memory_mut(|m| {
                     if let Some(id) = m.focused() {
                         m.surrender_focus(id);
                     }
                 });
-                // Best-effort: prevent queued key/char events from reaching the old focused TextEdit this frame.
-                egui_in.events.retain(|e| {
-                    !matches!(
-                        e,
-                        bevy_egui::egui::Event::Text(_)
-                            | bevy_egui::egui::Event::Key { .. }
-                            | bevy_egui::egui::Event::Copy
-                            | bevy_egui::egui::Event::Cut
-                            | bevy_egui::egui::Event::Paste(_)
-                    )
-                });
-            }
-            // Wheel isolation: when cursor is over the native 3D viewport hole, prevent egui widgets
-            // (scroll areas, zoomable canvas, etc.) from also consuming the wheel in the same frame.
-            if any_wheel {
-                egui_in
-                    .events
-                    .retain(|e| !matches!(e, bevy_egui::egui::Event::MouseWheel { .. }));
             }
         }
     }
@@ -198,9 +231,9 @@ pub fn input_mapping_system(
     }
     // If egui is consuming keyboard (text edit focused), don't use WASD unless we're actively dragging navigation.
     if egui_wants_keyboard
-        && !interaction_state.is_right_button_dragged
-        && !interaction_state.is_middle_button_dragged
-        && !interaction_state.is_alt_left_button_dragged
+        && !(viewport_layout_active && interaction_state.is_right_button_dragged)
+        && !(viewport_layout_active && interaction_state.is_middle_button_dragged)
+        && !(viewport_layout_active && interaction_state.is_alt_left_button_dragged)
     {
         return;
     }
@@ -208,21 +241,22 @@ pub fn input_mapping_system(
     // If not hovered and not dragging, ignore inputs.
     // We check distinct flags because drag might continue even if cursor leaves viewport (if Egui captured it).
     // Also check if we are interacting with a Gizmo. If so, we suppress camera navigation to prevent conflict.
-    if interaction_state.is_gizmo_dragging {
+    if viewport_layout_active && interaction_state.is_gizmo_dragging {
         return;
     }
 
     // IMPORTANT: `interaction_state` is written by egui later in the frame (after this system),
     // so we can't rely on it for same-frame capture. We instead use the last known viewport rect.
-    let right_drag = interaction_state.is_right_button_dragged
+    let right_drag = (viewport_layout_active && interaction_state.is_right_button_dragged)
         || (viewport_cursor_over && mouse_buttons.pressed(MouseButton::Right));
-    let middle_drag = interaction_state.is_middle_button_dragged
+    let middle_drag = (viewport_layout_active && interaction_state.is_middle_button_dragged)
         || (viewport_cursor_over && mouse_buttons.pressed(MouseButton::Middle));
-    let alt_left_drag = interaction_state.is_alt_left_button_dragged
+    let alt_left_drag = (viewport_layout_active && interaction_state.is_alt_left_button_dragged)
         || (viewport_cursor_over
             && mouse_buttons.pressed(MouseButton::Left)
             && keys.pressed(KeyCode::AltLeft));
-    let is_interacting = interaction_state.is_hovered || right_drag || middle_drag || alt_left_drag;
+    let is_interacting = viewport_layout_active
+        && (interaction_state.is_hovered || right_drag || middle_drag || alt_left_drag);
 
     if !is_interacting {
         return;

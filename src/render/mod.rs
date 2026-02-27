@@ -6,6 +6,7 @@ pub mod normal;
 pub mod overlay_visibility;
 pub mod point;
 pub mod primitive_number;
+pub mod sdf_surface;
 pub mod uv_material;
 pub mod viewport_draw;
 pub use cunning_voxel_faces as voxel_faces;

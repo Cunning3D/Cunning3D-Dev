@@ -17,8 +17,8 @@ pub mod ops;
 pub mod meshing;
 
 pub use types::{PaletteEntry, Voxel, VoxelPalette, VoxelPi, CHUNK_SIZE, CHUNK_SIZE_USIZE};
-pub use chunk::VoxelChunk;
-pub use volume::{VoxelVolume, VoxelChunkKey};
+pub use chunk::SdfChunk;
+pub use volume::{VoxelVolume, SdfChunkKey};
 pub use dirty::{DirtyChunks, DirtyAabb};
 pub use ops::VoxelOp;
 pub use meshing::{ChunkMesh, mesh_chunk_greedy, mesh_dirty_chunks_greedy, volume_to_geometry_greedy};

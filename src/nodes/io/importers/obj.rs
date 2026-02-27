@@ -1,4 +1,4 @@
-//! OBJ 导入器 (使用 tobj 库)
+//! OBJ importer (using the tobj crate)
 use super::{FileImporter, FileMetadata};
 use crate::libs::geometry::attrs;
 use crate::libs::geometry::mesh::{Attribute, GeoPrimitive, Geometry, PolygonPrim};
@@ -23,7 +23,7 @@ impl FileImporter for ObjImporter {
             let pt_off = geo.points().len();
             let vt_off = geo.vertices().len();
 
-            // 添加点
+            // Add points
             let positions: Vec<Vec3> = mesh
                 .positions
                 .chunks(3)
@@ -34,7 +34,7 @@ impl FileImporter for ObjImporter {
                 geo.add_point();
             }
 
-            // 设置位置
+            // Set positions
             if geo.get_point_attribute(attrs::P).is_none() {
                 geo.insert_point_attribute(
                     attrs::P,
@@ -51,7 +51,7 @@ impl FileImporter for ObjImporter {
                 }
             }
 
-            // 解析面
+            // Parse faces
             let mut vertex_uvs: Vec<Vec2> = Vec::new();
             for face_start in (0..mesh.indices.len()).step_by(3) {
                 let mut poly_vids = Vec::new();
@@ -81,7 +81,7 @@ impl FileImporter for ObjImporter {
                 }
             }
 
-            // 设置 UV
+            // Set UVs
             if !vertex_uvs.is_empty() {
                 if geo.get_vertex_attribute(attrs::UV).is_none() {
                     geo.insert_vertex_attribute(

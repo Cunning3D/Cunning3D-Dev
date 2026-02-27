@@ -1,5 +1,5 @@
-//! Qwen3 model backend - 移植自 Oxide-Lab (https://github.com/FerrisMind/Oxide-Lab)
-//! 支持 GGUF (quantized) 和 SafeTensors (full) 格式
+//! Qwen3 model backend - ported from Oxide-Lab (https://github.com/FerrisMind/Oxide-Lab)
+//! Supports GGUF (quantized) and SafeTensors (full) formats
 
 mod gguf;
 pub mod model;
@@ -15,7 +15,7 @@ use super::models_api::ModelBackend;
 
 use model::ModelForCausalLM;
 
-/// Qwen3 后端 - 支持 GGUF 和 SafeTensors 两种格式
+/// Qwen3 backend - supports both GGUF and SafeTensors formats
 pub struct Qwen3Backend {
     inner: Qwen3Inner,
     device: Device,
@@ -117,7 +117,7 @@ impl ModelBackend for Qwen3Backend {
     fn get_embeddings(&mut self, input: &Tensor) -> candle_core::Result<Tensor> {
         match &mut self.inner {
             Qwen3Inner::Full(model) => model.get_hidden_states(input, 0),
-            Qwen3Inner::Quantized(_) => candle_core::bail!("GGUF 模型暂不支持 Embeddings"),
+            Qwen3Inner::Quantized(_) => candle_core::bail!("Embeddings are not supported for GGUF models yet"),
         }
     }
 }

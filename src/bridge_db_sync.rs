@@ -84,6 +84,7 @@ fn pull_unity_viewport(
     mut q: Query<(&mut Transform, &mut Projection), With<crate::MainCamera>>,
     nav_input: Res<crate::input::NavigationInput>,
     viewport_interaction: Res<crate::ViewportInteractionState>,
+    viewport_layout: Res<crate::tabs_system::viewport_3d::ViewportLayout>,
     time: Res<Time>,
     mut tick: Local<BridgeTick>,
     mut task: Local<Option<Task<Option<(u64, Vec<u8>)>>>>,
@@ -129,15 +130,17 @@ fn pull_unity_viewport(
     }
 
     // Never let an external bridge overwrite the local camera while the user is interacting.
+    let viewport_active = viewport_layout.logical_rect.is_some();
     if nav_input.active
         || nav_input.zoom_delta != 0.0
         || nav_input.orbit_delta.length_squared() != 0.0
         || nav_input.pan_delta.length_squared() != 0.0
         || nav_input.fly_vector.length_squared() != 0.0
-        || viewport_interaction.is_gizmo_dragging
-        || viewport_interaction.is_right_button_dragged
-        || viewport_interaction.is_middle_button_dragged
-        || viewport_interaction.is_alt_left_button_dragged
+        || (viewport_active
+            && (viewport_interaction.is_gizmo_dragging
+                || viewport_interaction.is_right_button_dragged
+                || viewport_interaction.is_middle_button_dragged
+                || viewport_interaction.is_alt_left_button_dragged))
     {
         return;
     }
@@ -405,7 +408,8 @@ impl Plugin for BridgeDbSyncPlugin {
                 pull_unity_splines,
                 push_cunning_viewport,
             )
-                .run_if(in_state(crate::launcher::plugin::AppState::Editor)),
+                .run_if(in_state(crate::launcher::plugin::AppState::Editor))
+                .after(crate::input::input_mapping_system),
         );
     }
 }

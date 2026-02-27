@@ -1,17 +1,17 @@
-//! CDA拖拽载荷定义（用于egui DragAndDrop）
+//! CDA drag payload definitions (for egui DragAndDrop)
 use crate::nodes::structs::NodeId;
 
-/// 内部节点参数拖拽载荷
+/// Drag payload for internal node parameters
 #[derive(Clone, Debug)]
 pub struct ParamDragPayload {
-    pub source_node: NodeId,          // 来源节点
-    pub param_name: String,           // 参数名
-    pub channel_index: Option<usize>, // 通道索引（向量类型时）
-    pub param_type: ParamTypeHint,    // 类型提示（用于匹配）
-    pub display_label: String,        // 显示标签
+    pub source_node: NodeId,          // Source node
+    pub param_name: String,           // Parameter name
+    pub channel_index: Option<usize>, // Channel index (for vector types)
+    pub param_type: ParamTypeHint,    // Type hint (for matching)
+    pub display_label: String,        // Display label
 }
 
-/// 参数类型提示（用于拖拽匹配）
+/// Parameter type hint (for drag-and-drop matching)
 #[derive(Clone, Debug, PartialEq)]
 pub enum ParamTypeHint {
     Float,
@@ -26,7 +26,7 @@ pub enum ParamTypeHint {
 }
 
 impl ParamTypeHint {
-    /// 从ParameterValue推断类型
+    /// Infer type from ParameterValue
     pub fn from_value(value: &crate::nodes::parameter::ParameterValue) -> Self {
         use crate::nodes::parameter::ParameterValue;
         match value {
@@ -42,20 +42,20 @@ impl ParamTypeHint {
         }
     }
 
-    /// 检查是否可以绑定到目标类型
+    /// Check whether it can be bound to the target type
     pub fn can_bind_to(&self, target: &crate::cunning_core::cda::PromotedParamType) -> bool {
         use crate::cunning_core::cda::PromotedParamType;
         match (self, target) {
-            // Float可以绑定到Float、Angle、Vec的单个通道
+            // Float can bind to Float, Angle, or a single channel of Vec
             (Self::Float, PromotedParamType::Float { .. }) => true,
             (Self::Float, PromotedParamType::Angle) => true,
-            // Int可以绑定到Int、Dropdown
+            // Int can bind to Int or Dropdown
             (Self::Int, PromotedParamType::Int { .. }) => true,
             (Self::Int, PromotedParamType::Dropdown { .. }) => true,
-            // Bool可以绑定到Bool、Toggle
+            // Bool can bind to Bool or Toggle
             (Self::Bool, PromotedParamType::Bool) => true,
             (Self::Bool, PromotedParamType::Toggle) => true,
-            // Vec3可以绑定到Vec3、Color
+            // Vec3 can bind to Vec3 or Color
             (Self::Vec3, PromotedParamType::Vec3) => true,
             (Self::Vec3, PromotedParamType::Color { .. }) => true,
             (Self::Color, PromotedParamType::Color { .. }) => true,
@@ -72,7 +72,7 @@ impl ParamTypeHint {
         }
     }
 
-    /// 检查是否可以绑定到单个通道
+    /// Check whether it can bind to a single channel
     pub fn can_bind_to_channel(&self) -> bool {
         matches!(self, Self::Float | Self::Int)
     }
@@ -101,7 +101,7 @@ impl ParamDragPayload {
     }
 }
 
-/// 暴露参数拖拽载荷（用于重新排序）
+/// Drag payload for promoted parameters (used for reordering)
 #[derive(Clone, Debug)]
 pub struct PromotedParamDragPayload {
     pub param_id: uuid::Uuid,

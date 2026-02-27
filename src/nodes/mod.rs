@@ -15,7 +15,7 @@ pub mod runtime;
 pub mod spline;
 pub mod utility;
 pub mod uv;
-pub mod vdb;
+pub mod sdf;
 pub mod voxel;
 pub mod test_assets;
 pub mod graph_model;
@@ -29,4 +29,4 @@ pub use crate::cunning_core::traits::parameter;
 pub use parameter::Parameter;
 
 // Legacy alias for volume
-pub use vdb as volume;
+

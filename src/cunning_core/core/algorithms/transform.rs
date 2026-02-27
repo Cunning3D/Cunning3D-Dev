@@ -40,7 +40,7 @@ pub fn transform_geometry(
     let transform_mat = bevy::math::Mat4::from_scale_rotation_translation(scale, rotation, translate);
     
     // Iterate and update each volume handle (CoW)
-    for volume in output_geo.volumes.iter_mut() {
+    for volume in output_geo.sdfs.iter_mut() {
         // Combine new transform with existing volume transform
         // New = Transform * Old (Parent * Local)
         let new_transform = transform_mat * volume.transform;
@@ -69,7 +69,7 @@ pub fn transform_geometry_quat(
         }
     }
     let transform_mat = bevy::math::Mat4::from_scale_rotation_translation(scale, rotation, translate);
-    for volume in output_geo.volumes.iter_mut() {
+    for volume in output_geo.sdfs.iter_mut() {
         let new_transform = transform_mat * volume.transform;
         *volume = volume.clone().with_transform(new_transform);
     }

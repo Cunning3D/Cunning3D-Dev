@@ -4,7 +4,7 @@ use crate::mesh::{Attribute, GeoPrimitive, GeoVertex, Geometry, PolygonPrim, Pri
 use crate::nodes::parameter::{Parameter, ParameterUIType, ParameterValue};
 use crate::nodes::{InputStyle, NodeStyle};
 use crate::register_node;
-use crate::volume::{VolumeHandle, VoxelGrid, CHUNK_SIZE};
+use crate::sdf::{SdfHandle, SdfGrid, CHUNK_SIZE};
 use bevy::prelude::*;
 use std::collections::HashMap;
 // Use our new Surface Nets implementation
@@ -13,9 +13,9 @@ use crate::libs::algorithms::mc::extract_surface_nets;
 use std::sync::Arc;
 
 #[derive(Default)]
-pub struct VdbToPolygonsNode;
+pub struct SdfToPolygonsNode;
 
-impl NodeParameters for VdbToPolygonsNode {
+impl NodeParameters for SdfToPolygonsNode {
     fn define_parameters() -> Vec<Parameter> {
         vec![
             Parameter::new(
@@ -46,7 +46,7 @@ impl NodeParameters for VdbToPolygonsNode {
     }
 }
 
-impl NodeOp for VdbToPolygonsNode {
+impl NodeOp for SdfToPolygonsNode {
     fn compute(&self, params: &[Parameter], inputs: &[Arc<dyn GeometryRef>]) -> Arc<Geometry> {
         let input = inputs
             .first()
@@ -56,11 +56,11 @@ impl NodeOp for VdbToPolygonsNode {
             .iter()
             .map(|p| (p.name.clone(), p.value.clone()))
             .collect();
-        Arc::new(compute_vdb_to_mesh(&input, &param_map))
+        Arc::new(compute_sdf_to_mesh(&input, &param_map))
     }
 }
 
-register_node!("VDB To Polygons", "Volume", VdbToPolygonsNode);
+register_node!("SDF To Polygons", "Volume", SdfToPolygonsNode);
 
 pub fn node_style() -> NodeStyle {
     NodeStyle::Normal
@@ -70,11 +70,11 @@ pub fn input_style() -> InputStyle {
     InputStyle::Individual
 }
 
-pub fn compute_vdb_to_mesh(
+pub fn compute_sdf_to_mesh(
     input_geo: &Geometry,
     params: &HashMap<String, ParameterValue>,
 ) -> Geometry {
-    if input_geo.volumes.is_empty() {
+    if input_geo.sdfs.is_empty() {
         return Geometry::new();
     }
 
@@ -94,16 +94,16 @@ pub fn compute_vdb_to_mesh(
     // If we have multiple volumes, we need to merge the results.
     // For now, we collect geometry from each volume and merge them.
     let geometries: Vec<Geometry> = input_geo
-        .volumes
+        .sdfs
         .iter()
-        .map(|handle| vdb_to_geometry(handle, iso_value, invert, hard_surface))
+        .map(|handle| sdf_to_geometry(handle, iso_value, invert, hard_surface))
         .collect();
 
     crate::libs::algorithms::merge::merge_geometry_slice(&geometries)
 }
 
-pub fn vdb_to_geometry(
-    volume_handle: &VolumeHandle,
+pub fn sdf_to_geometry(
+    volume_handle: &SdfHandle,
     iso_value: f32,
     invert: bool,
     hard_surface: bool,
@@ -139,7 +139,7 @@ pub fn vdb_to_geometry(
 
     // Safety check for OOM
     if width * height * depth > 100_000_000 {
-        println!("Warning: VDB to Mesh bounds too large: {:?}", size);
+        println!("Warning: SDF to Mesh bounds too large: {:?}", size);
         return Geometry::new();
     }
 
@@ -270,4 +270,14 @@ pub fn vdb_to_geometry(
     output.calculate_flat_normals();
 
     output
+}
+
+#[allow(dead_code)]
+pub fn vdb_to_geometry(
+    volume_handle: &SdfHandle,
+    iso_value: f32,
+    invert: bool,
+    hard_surface: bool,
+) -> Geometry {
+    sdf_to_geometry(volume_handle, iso_value, invert, hard_surface)
 }

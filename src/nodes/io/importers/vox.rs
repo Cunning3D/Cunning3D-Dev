@@ -37,7 +37,7 @@ pub(crate) fn import_vox_bytes(bytes: &[u8], node_id: Uuid, voxel_size: f32) -> 
     let mut mn = IVec3::splat(i32::MAX);
     for (p, _) in vox.voxels.iter() { mn = mn.min(*p); }
     if mn.x == i32::MAX { mn = IVec3::ZERO; }
-    let mut grid = vox::DiscreteVoxelGrid::new(voxel_size);
+    let mut grid = vox::DiscreteSdfGrid::new(voxel_size);
     for (i, e) in vox.palette.into_iter().enumerate() { if i < grid.palette.len() { grid.palette[i] = e; } }
     for (p, pi) in vox.voxels.into_iter() {
         let pi = if let Some(imap) = vox.imap.as_ref() { imap.get(pi as usize).copied().unwrap_or(pi) } else { pi }.max(1);

@@ -1,4 +1,4 @@
-//! CDA (Cunning Digital Asset) - 可参数化的节点图资产，类似Houdini HDA但更灵活
+//! CDA (Cunning Digital Asset) - a parameterizable node-graph asset, similar to Houdini HDA but more flexible
 pub mod asset;
 pub mod evaluate;
 pub mod interface;

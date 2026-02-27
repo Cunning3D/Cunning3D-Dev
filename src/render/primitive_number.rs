@@ -176,8 +176,9 @@ pub struct RenderPrimitiveNumber {
 pub fn extract_primitive_numbers(
     mut commands: Commands,
     query: Extract<
-        Query<(Entity, Option<RenderEntity>, &PrimitiveNumberData), With<PrimitiveNumberMarker>>,
+        Query<(Entity, Option<RenderEntity>, Ref<PrimitiveNumberData>), With<PrimitiveNumberMarker>>,
     >,
+    existing: Query<(), With<RenderPrimitiveNumber>>,
 ) {
     static LAST_EXTRACT: AtomicU32 = AtomicU32::new(u32::MAX);
     let (mut total, mut miss_render, mut inserted) = (0u32, 0u32, 0u32);
@@ -187,6 +188,11 @@ pub fn extract_primitive_numbers(
             miss_render += 1;
             continue;
         };
+        // Only clone data into the RenderWorld when it actually changed, or when the render entity
+        // is newly available (RenderEntity was missing on a previous frame).
+        if !data.is_added() && !data.is_changed() && existing.get(render_entity).is_ok() {
+            continue;
+        }
         commands
             .entity(render_entity)
             .insert(RenderPrimitiveNumber {

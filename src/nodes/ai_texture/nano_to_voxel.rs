@@ -211,16 +211,16 @@ Rules:\n\
             // Call Gemini Stage 1
             let img1 = gemini_generate_image(spec.timeout_s, sys_stage1, spec.prompt.as_str(), &imgs_stage1, atlas_w, atlas_h)?;
             
-            // Process Stage 1 -> Coarse VDB
+            // Process Stage 1 -> Coarse SDF
             let rgba1 = decode_rgba_resized(&img1.bytes, atlas_w, atlas_h)?;
             let points1 = points_from_depth_atlas(&rgba1, spec.tile_res, spec.world_size, spec.sample_step, spec.depth_min);
             if points1.is_empty() { return Err("Stage 1 produced no points.".to_string()); }
             
             // Use splat_radius=3 for coarse model
-            let vdb1 = splat_points_to_vdb(&points1, spec.voxel_size, 3);
+            let sdf1 = splat_points_to_sdf(&points1, spec.voxel_size, 3);
             
-            // Render Coarse VDB -> Normal Atlas (6 views)
-            let atlas_bytes = render_vdb_to_atlas(&vdb1, spec.tile_res, spec.world_size, false)?;
+            // Render Coarse SDF -> Normal Atlas (6 views)
+            let atlas_bytes = render_sdf_to_atlas(&sdf1, spec.tile_res, spec.world_size, false)?;
             
             // --- Stage 2: Refinement (6 Views) ---
             let mut imgs_stage2: Vec<ImgIn> = Vec::new();
@@ -233,14 +233,14 @@ Rules:\n\
             let img2 = gemini_generate_image(spec.timeout_s, spec.sys.as_str(), spec.prompt.as_str(), &imgs_stage2, atlas_w, atlas_h)?;
             
             // --- Stage 3: High Fidelity (24 Views) ---
-            // Process Stage 2 -> Refined VDB
+            // Process Stage 2 -> Refined SDF
             let rgba2 = decode_rgba_resized(&img2.bytes, atlas_w, atlas_h)?;
             let points2 = points_from_depth_atlas(&rgba2, spec.tile_res, spec.world_size, spec.sample_step, spec.depth_min);
             if points2.is_empty() { return Err("Stage 2 produced no points.".to_string()); }
-            let vdb2 = splat_points_to_vdb(&points2, spec.voxel_size, 2); // Tighter radius for stage 2
+            let sdf2 = splat_points_to_sdf(&points2, spec.voxel_size, 2); // Tighter radius for stage 2
 
-            // Render Refined VDB -> Normal Atlas (24 views)
-            let atlas_24_bytes = render_vdb_to_atlas(&vdb2, spec.tile_res, spec.world_size, true)?;
+            // Render Refined SDF -> Normal Atlas (24 views)
+            let atlas_24_bytes = render_sdf_to_atlas(&sdf2, spec.tile_res, spec.world_size, true)?;
             
             let sys_stage3 = "You are a 3D Consistency Refiner.
 Input: A 24-view Normal Atlas (8x3 grid) derived from a refined 3D model.
@@ -273,7 +273,7 @@ Rules:
             
             let (chunks, solid) = raster_points_to_voxel_chunks(&points3, spec.voxel_size, spec.pi);
             let node_uuid = uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_URL, format!("c3d:nano_to_voxel:{}:{}", spec.node_id, spec.gen.max(0)).as_bytes());
-            let palette = vox::DiscreteVoxelGrid::new(spec.voxel_size.max(0.001)).palette;
+            let palette = vox::DiscreteSdfGrid::new(spec.voxel_size.max(0.001)).palette;
             cunning_kernel::nodes::voxel::voxel_edit::voxel_render_register_chunks(node_uuid, spec.voxel_size.max(0.001), palette, chunks, solid);
             Ok((rel, node_uuid.to_string()))
         })();
@@ -390,4 +390,3 @@ fn cached_output_geo(graph: &crate::nodes::structs::NodeGraph, nid: NodeId, port
     let is_cda = graph.nodes.get(&nid).map(|n| matches!(n.node_type, NodeType::CDA(_))).unwrap_or(false);
     if is_cda { graph.port_geometry_cache.get(&(nid, port.clone())).cloned() } else { graph.geometry_cache.get(&nid).cloned() }
 }
-

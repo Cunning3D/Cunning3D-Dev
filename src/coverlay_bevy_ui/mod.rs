@@ -357,9 +357,16 @@ fn pick_target(ui: &UiState, g: &NodeGraph) -> Option<CoverlayTarget> {
     match &n.node_type {
         NodeType::CDA(_) => Some(CoverlayTarget::Cda(id)),
         NodeType::VoxelEdit => Some(CoverlayTarget::DirectVoxel(id)),
-        NodeType::Generic(s) if s.trim() == "Coverlay Panel" => Some(CoverlayTarget::DirectNode(id)),
+        NodeType::Generic(s) if s.trim() == "Coverlay Panel" || is_sdf_clay_edit_node_type(Some(&n.node_type)) => {
+            Some(CoverlayTarget::DirectNode(id))
+        }
         _ => None,
     }
+}
+
+#[inline]
+fn is_sdf_clay_edit_node_type(node_type: Option<&NodeType>) -> bool {
+    matches!(node_type, Some(NodeType::Generic(s)) if s.trim().eq_ignore_ascii_case("SDF Clay Edit"))
 }
 
 fn palette_color32(i: u8) -> egui::Color32 {
@@ -424,7 +431,20 @@ fn coverlay_egui_system(mut ctx: EguiContexts, mut cx: CoverlayEguiSystemParams)
             panels.push(PanelDesc { key: CoverlayPanelKey::DirectVoxel { node_id, kind: CoverlayPanelKind::VoxelPalette }, title: "Palette".to_string(), kind: CoverlayPanelKind::VoxelPalette, order: 1 });
         }
         CoverlayTarget::DirectNode(node_id) => {
-            panels.push(PanelDesc { key: CoverlayPanelKey::DirectNode { node_id }, title: "Controls".to_string(), kind: CoverlayPanelKind::NodeCoverlay, order: 0 });
+            let kind = g
+                .nodes
+                .get(&node_id)
+                .map(|n| &n.node_type)
+                .and_then(|nt| {
+                    if is_sdf_clay_edit_node_type(Some(nt)) {
+                        Some(CoverlayPanelKind::SdfTools)
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or(CoverlayPanelKind::NodeCoverlay);
+            let title = if kind == CoverlayPanelKind::SdfTools { "SDF Tools" } else { "Controls" };
+            panels.push(PanelDesc { key: CoverlayPanelKey::DirectNode { node_id }, title: title.to_string(), kind, order: 0 });
         }
         CoverlayTarget::Cda(inst_id) => {
             let Some(inst) = g.nodes.get(&inst_id) else { cx.wants_input.0 = false; return; };
@@ -540,6 +560,7 @@ fn coverlay_egui_system(mut ctx: EguiContexts, mut cx: CoverlayEguiSystemParams)
                         vxui::draw_voxel_tools_panel(ui, &mut cx.voxel_state, ops, pdesc.key, &mut backend, &mut cx.voxel_overlay, &cx.voxel_hud, &mut cx.display_options);
                     }
                     CoverlayPanelKind::VoxelPalette => vxui::draw_voxel_palette_panel(ui, &mut cx.voxel_state),
+                    CoverlayPanelKind::SdfTools => draw_sdf_tools_panel(ui, &mut cx.node_graph_res, &cx.ui_state, pdesc.key, &mut cx.graph_changed),
                     CoverlayPanelKind::VoxelDebug | CoverlayPanelKind::Import | CoverlayPanelKind::Export => {} // Merged into VoxelTools
                     CoverlayPanelKind::Anim => draw_anim_panel(ui, &mut cx.timeline),
                     CoverlayPanelKind::NodeCoverlay => draw_node_coverlay_panel(ui, &mut cx.node_graph_res, pdesc.key, &mut cx.graph_changed),
@@ -562,6 +583,7 @@ fn panel_kind_for_unit(label: &str, node_type: Option<&NodeType>) -> CoverlayPan
     // Debug/Import/Export merged into VoxelTools; "tools", "debug", "import", "export" -> VoxelTools
     if l.contains("tools") || l.contains("debug") || l.contains("import") || l.contains("export") { return CoverlayPanelKind::VoxelTools; }
     if is_voxel_edit_node_type(node_type) { return CoverlayPanelKind::VoxelTools; }
+    if is_sdf_clay_edit_node_type(node_type) { return CoverlayPanelKind::SdfTools; }
     if matches!(node_type, Some(NodeType::Generic(s)) if s.trim() == "Coverlay Panel") { return CoverlayPanelKind::NodeCoverlay; }
     CoverlayPanelKind::VoxelTools
 }
@@ -697,6 +719,99 @@ fn draw_node_coverlay_panel(ui: &mut egui::Ui, ngr: &mut NodeGraphResource, key:
                 if draw_param_ui(ui, &mut p.value, &p.ui_type) { g.mark_dirty(tid); gc.write_default(); }
             }
         });
+    }
+}
+
+const SDF_CLAY_ENABLED_KEY: &str = "enabled";
+const SDF_CLAY_RADIUS_KEY: &str = "radius";
+const SDF_CLAY_SMOOTH_K_KEY: &str = "smooth_k";
+const SDF_CLAY_MODE_KEY: &str = "mode";
+
+fn draw_sdf_tools_panel(
+    ui: &mut egui::Ui,
+    ngr: &mut NodeGraphResource,
+    _ui_state: &UiState,
+    key: CoverlayPanelKey,
+    gc: &mut MessageWriter<crate::GraphChanged>,
+) {
+    let CoverlayPanelKey::DirectNode { node_id } = key else {
+        ui.label("(SDF tools only supports DirectNode)");
+        return;
+    };
+
+    let g = &mut ngr.0;
+    let Some(n) = g.nodes.get_mut(&node_id) else {
+        ui.label("(missing node)");
+        return;
+    };
+    if !is_sdf_clay_edit_node_type(Some(&n.node_type)) {
+        ui.label("(not SDF Clay Edit)");
+        return;
+    }
+
+    fn read_bool(n: &crate::nodes::Node, k: &str, d: bool) -> bool {
+        n.parameters
+            .iter()
+            .find(|p| p.name == k)
+            .and_then(|p| if let ParameterValue::Bool(v) = &p.value { Some(*v) } else { None })
+            .unwrap_or(d)
+    }
+    fn read_f32(n: &crate::nodes::Node, k: &str, d: f32) -> f32 {
+        n.parameters
+            .iter()
+            .find(|p| p.name == k)
+            .and_then(|p| if let ParameterValue::Float(v) = &p.value { Some(*v) } else { None })
+            .unwrap_or(d)
+    }
+    fn read_i32(n: &crate::nodes::Node, k: &str, d: i32) -> i32 {
+        n.parameters
+            .iter()
+            .find(|p| p.name == k)
+            .and_then(|p| if let ParameterValue::Int(v) = &p.value { Some(*v) } else { None })
+            .unwrap_or(d)
+    }
+
+    let mut enabled = read_bool(n, SDF_CLAY_ENABLED_KEY, true);
+    let mut radius = read_f32(n, SDF_CLAY_RADIUS_KEY, 0.5);
+    let mut smooth_k = read_f32(n, SDF_CLAY_SMOOTH_K_KEY, 0.05);
+    let mut mode = read_i32(n, SDF_CLAY_MODE_KEY, 0).clamp(0, 2);
+
+    let mut changed = false;
+    overlay_widgets::panel_frame(ui, |ui| {
+        ui.vertical(|ui| {
+            ui.horizontal(|ui| {
+                overlay_widgets::label_primary(ui, "SDF Clay");
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    changed |= ui.checkbox(&mut enabled, "Enabled").changed();
+                });
+            });
+            overlay_widgets::hsep(ui);
+            overlay_widgets::label_secondary(ui, "Mode");
+            ui.horizontal(|ui| {
+                if ui.selectable_label(mode == 0, "Add").clicked() { mode = 0; changed = true; }
+                if ui.selectable_label(mode == 1, "Subtract").clicked() { mode = 1; changed = true; }
+                if ui.selectable_label(mode == 2, "Intersect").clicked() { mode = 2; changed = true; }
+            });
+            overlay_widgets::styled_slider(ui, &mut radius, 0.01..=1000.0, "Radius");
+            overlay_widgets::styled_slider(ui, &mut smooth_k, 0.0..=5.0, "Smooth k");
+            overlay_widgets::label_secondary(ui, "LMB sculpt · RMB subtract · Shift = invert");
+        });
+    });
+
+    if changed {
+        if let Some(p) = n.parameters.iter_mut().find(|p| p.name == SDF_CLAY_ENABLED_KEY) {
+            p.value = ParameterValue::Bool(enabled);
+        }
+        if let Some(p) = n.parameters.iter_mut().find(|p| p.name == SDF_CLAY_RADIUS_KEY) {
+            p.value = ParameterValue::Float(radius);
+        }
+        if let Some(p) = n.parameters.iter_mut().find(|p| p.name == SDF_CLAY_SMOOTH_K_KEY) {
+            p.value = ParameterValue::Float(smooth_k);
+        }
+        if let Some(p) = n.parameters.iter_mut().find(|p| p.name == SDF_CLAY_MODE_KEY) {
+            p.value = ParameterValue::Int(mode);
+        }
+        gc.write_default();
     }
 }
 
@@ -1056,7 +1171,7 @@ fn execute_export(ngr: &mut NodeGraphResource, ui_state: &UiState, key: Coverlay
     let cmds = read_voxel_cmds(&g, target);
     let pal_json = read_voxel_palette(&g, target);
     // Match legacy export behavior from `draw_export_panel` (single source of truth).
-    let mut grid = cunning_kernel::algorithms::algorithms_editor::voxel::DiscreteVoxelGrid::new(voxel_size);
+    let mut grid = cunning_kernel::algorithms::algorithms_editor::voxel::DiscreteSdfGrid::new(voxel_size);
     if let Ok(p) = serde_json::from_str::<Vec<cunning_kernel::algorithms::algorithms_editor::voxel::discrete::PaletteEntry>>(&pal_json) {
         for (i, e) in p.into_iter().enumerate() { if i < grid.palette.len() { grid.palette[i] = e; } }
     }
@@ -1490,7 +1605,7 @@ fn draw_export_panel(ui: &mut egui::Ui, ngr: &mut NodeGraphResource, ui_state: &
     let voxel_size = voxel_size_for_target(&g, target).max(0.001);
     let cmds = read_voxel_cmds(&g, target);
     let pal_json = read_voxel_palette(&g, target);
-    let mut grid = cunning_kernel::algorithms::algorithms_editor::voxel::DiscreteVoxelGrid::new(voxel_size);
+    let mut grid = cunning_kernel::algorithms::algorithms_editor::voxel::DiscreteSdfGrid::new(voxel_size);
     if let Ok(p) = serde_json::from_str::<Vec<cunning_kernel::algorithms::algorithms_editor::voxel::discrete::PaletteEntry>>(&pal_json) {
         for (i, e) in p.into_iter().enumerate() { if i < grid.palette.len() { grid.palette[i] = e; } }
     }
@@ -1511,7 +1626,7 @@ fn draw_export_panel(ui: &mut egui::Ui, ngr: &mut NodeGraphResource, ui_state: &
     }
 }
 
-fn write_magica_vox(g: &cunning_kernel::algorithms::algorithms_editor::voxel::DiscreteVoxelGrid) -> Option<Vec<u8>> {
+fn write_magica_vox(g: &cunning_kernel::algorithms::algorithms_editor::voxel::DiscreteSdfGrid) -> Option<Vec<u8>> {
     use byteorder::{LittleEndian, WriteBytesExt};
     let mut mn = IVec3::splat(i32::MAX);
     let mut mx = IVec3::splat(i32::MIN);
@@ -1652,7 +1767,14 @@ pub(crate) fn coverlay_collect_panels(ui: &UiState, g: &NodeGraph) -> Option<(No
             panels.push(PanelDesc { key: CoverlayPanelKey::DirectVoxel { node_id, kind: CoverlayPanelKind::VoxelPalette }, title: "Palette".to_string(), kind: CoverlayPanelKind::VoxelPalette, order: 1 });
         }
         CoverlayTarget::DirectNode(node_id) => {
-            panels.push(PanelDesc { key: CoverlayPanelKey::DirectNode { node_id }, title: "Controls".to_string(), kind: CoverlayPanelKind::NodeCoverlay, order: 0 });
+            let kind = g
+                .nodes
+                .get(&node_id)
+                .map(|n| &n.node_type)
+                .and_then(|nt| if is_sdf_clay_edit_node_type(Some(nt)) { Some(CoverlayPanelKind::SdfTools) } else { None })
+                .unwrap_or(CoverlayPanelKind::NodeCoverlay);
+            let title = if kind == CoverlayPanelKind::SdfTools { "SDF Tools" } else { "Controls" };
+            panels.push(PanelDesc { key: CoverlayPanelKey::DirectNode { node_id }, title: title.to_string(), kind, order: 0 });
         }
         CoverlayTarget::Cda(inst_id) => {
             let inst = g.nodes.get(&inst_id)?;
@@ -1823,6 +1945,7 @@ impl<'a, 'b> TabViewer for CoverlayDockViewer<'a, 'b> {
                 vxui::draw_voxel_tools_panel(ui, self.cx.voxel_tool_state, ops, p.key, &mut backend, self.cx.voxel_overlay_settings, self.cx.voxel_hud_info, self.cx.display_options);
             }
             CoverlayPanelKind::VoxelPalette => vxui::draw_voxel_palette_panel(ui, self.cx.voxel_tool_state),
+            CoverlayPanelKind::SdfTools => draw_sdf_tools_panel(ui, self.cx.node_graph_res, self.cx.ui_state, p.key, self.cx.graph_changed_writer),
             CoverlayPanelKind::VoxelDebug | CoverlayPanelKind::Import | CoverlayPanelKind::Export => {} // Merged into VoxelTools
             CoverlayPanelKind::Anim => draw_anim_panel(ui, self.cx.timeline_state),
             CoverlayPanelKind::NodeCoverlay => draw_node_coverlay_panel(ui, self.cx.node_graph_res, p.key, self.cx.graph_changed_writer),
@@ -1856,7 +1979,14 @@ impl EditorTab for CoverlayDockTab {
                 panels.push(PanelDesc { key: CoverlayPanelKey::DirectVoxel { node_id, kind: CoverlayPanelKind::VoxelPalette }, title: "Palette".to_string(), kind: CoverlayPanelKind::VoxelPalette, order: 1 });
             }
             CoverlayTarget::DirectNode(node_id) => {
-                panels.push(PanelDesc { key: CoverlayPanelKey::DirectNode { node_id }, title: "Controls".to_string(), kind: CoverlayPanelKind::NodeCoverlay, order: 0 });
+                let kind = g
+                    .nodes
+                    .get(&node_id)
+                    .map(|n| &n.node_type)
+                    .and_then(|nt| if is_sdf_clay_edit_node_type(Some(nt)) { Some(CoverlayPanelKind::SdfTools) } else { None })
+                    .unwrap_or(CoverlayPanelKind::NodeCoverlay);
+                let title = if kind == CoverlayPanelKind::SdfTools { "SDF Tools" } else { "Controls" };
+                panels.push(PanelDesc { key: CoverlayPanelKey::DirectNode { node_id }, title: title.to_string(), kind, order: 0 });
             }
             CoverlayTarget::Cda(inst_id) => {
                 let Some(inst) = g.nodes.get(&inst_id) else { ui.label("Missing CDA instance."); return; };

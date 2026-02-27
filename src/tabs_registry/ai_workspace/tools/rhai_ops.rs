@@ -101,7 +101,7 @@ impl Tool for CheckNodeCompileTool {
             .map_err(|e| ToolError(format!("Failed to read node.toml: {}", e)))?;
 
         // Parse TOML using the same NodeConfig type as the runtime loader so that
-        // TOML 语法错误也能在工具层被 AI 和 UI 看见，而不是只在控制台里打印。
+        // Let TOML syntax errors be visible to the AI and UI at the tool layer, instead of only printing to the console.
         let config = match toml::from_str::<loader::NodeConfig>(&config_str) {
             Ok(c) => c,
             Err(e) => {

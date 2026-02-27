@@ -1,5 +1,5 @@
-//! PagedBuffer: 页级 COW 缓冲区，吊打 Houdini 的 UT_PageArray
-//! 特性：页表级COW + 零值优化 + 小值内嵌 + 常量页压缩 + SIMD对齐
+//! PagedBuffer: page-level COW buffer, designed to outperform Houdini's UT_PageArray
+//! Features: page-table COW + zero-value optimization + small-value inlining + constant-page compression + SIMD alignment
 
 use std::sync::Arc;
 use std::mem::{size_of, MaybeUninit};
@@ -9,25 +9,25 @@ use serde::{Serialize, Deserialize, Serializer, Deserializer};
 use std::any::Any;
 use crate::libs::geometry::mesh::AttributeStorage;
 
-/// 页大小：1024 元素，SIMD 友好（64 字节对齐的倍数）
+/// Page size: 1024 elements, SIMD-friendly (multiple of 64-byte alignment)
 pub const PAGE_SIZE: usize = 1024;
-/// 内嵌阈值：≤8 字节的类型可以直接存在 enum 中
+/// Inline threshold: types ≤ 8 bytes can be stored directly in the enum
 const INLINE_THRESHOLD: usize = 8;
 
-/// 页指针：支持零值/内嵌/常量/共享四种模式
+/// Page pointer: supports four modes: zero/inline/constant/shared
 #[derive(Debug, Clone)]
 pub enum PagePtr<T: Clone + Send + Sync + 'static> {
-    /// 全零页（虚拟页，不分配内存）
+    /// All-zero page (virtual page; no allocation)
     Zero,
-    /// 内嵌值：≤8 字节类型的常量页，值直接存储，无堆分配
+    /// Inline value: constant page for types ≤ 8 bytes; stored directly with no heap allocation
     Inline(InlineValue<T>),
-    /// 常量页：所有元素相同（>8 字节类型）
+    /// Constant page: all elements identical (for types > 8 bytes)
     Constant(Arc<T>),
-    /// 已分配页：真实数据，COW 共享
+    /// Allocated page: real data, COW-shared
     Allocated(Arc<AlignedPage<T>>),
 }
 
-/// 内嵌值：最多 8 字节，直接存储在栈上
+/// Inline value: up to 8 bytes, stored directly on the stack
 #[derive(Clone, Copy)]
 #[repr(C)]
 pub struct InlineValue<T> {
@@ -42,7 +42,7 @@ impl<T: Clone + Send + Sync + 'static> std::fmt::Debug for InlineValue<T> {
 }
 
 impl<T: Clone + Send + Sync + 'static> InlineValue<T> {
-    /// 从值创建内嵌存储（仅当 size_of::<T>() <= 8）
+    /// Create inline storage from a value (only when size_of::<T>() <= 8)
     #[inline]
     pub fn new(value: &T) -> Self {
         debug_assert!(size_of::<T>() <= INLINE_THRESHOLD);
@@ -53,7 +53,7 @@ impl<T: Clone + Send + Sync + 'static> InlineValue<T> {
         Self { data, _marker: PhantomData }
     }
 
-    /// 读取内嵌值
+    /// Read the inline value
     #[inline]
     pub fn get(&self) -> T {
         debug_assert!(size_of::<T>() <= INLINE_THRESHOLD);
@@ -65,7 +65,7 @@ impl<T: Clone + Send + Sync + 'static> InlineValue<T> {
     }
 }
 
-/// 对齐页：64 字节对齐，SIMD 友好
+/// Aligned page: 64-byte aligned, SIMD-friendly
 #[derive(Debug, Clone)]
 #[repr(C, align(64))]
 pub struct AlignedPage<T> {
@@ -85,7 +85,7 @@ impl<T: Clone> AlignedPage<T> {
     }
 }
 
-/// 页表：可共享（COW）
+/// Page table: shareable (COW)
 #[derive(Debug, Clone)]
 pub struct PageTable<T: Clone + Send + Sync + 'static> {
     pub pages: Vec<PagePtr<T>>,
@@ -96,12 +96,12 @@ impl<T: Clone + Send + Sync + 'static> PageTable<T> {
     pub fn new() -> Self { Self { pages: Vec::new() } }
 }
 
-/// PagedBuffer：页级 COW 缓冲区
+/// PagedBuffer: page-level COW buffer
 #[derive(Debug, Clone)]
 pub struct PagedBuffer<T: Clone + Send + Sync + 'static> {
-    /// 页表（Arc 共享，支持页表级 COW）
+    /// Page table (Arc-shared; supports page-table-level COW)
     table: Arc<PageTable<T>>,
-    /// 逻辑长度
+    /// Logical length
     len: usize,
 }
 
@@ -110,7 +110,7 @@ impl<T: Clone + Send + Sync + Default + 'static> Default for PagedBuffer<T> {
 }
 
 impl<T: Clone + Send + Sync + 'static> PagedBuffer<T> {
-    /// 创建空缓冲区
+    /// Create an empty buffer
     #[inline]
     pub fn new() -> Self {
         Self { table: Arc::new(PageTable::new()), len: 0 }
@@ -122,17 +122,17 @@ impl<T: Clone + Send + Sync + 'static> PagedBuffer<T> {
     #[inline]
     pub fn is_empty(&self) -> bool { self.len == 0 }
 
-    /// 检查是否可以使用内嵌优化
+    /// Check whether inline optimization can be used
     #[inline]
     const fn can_inline() -> bool { size_of::<T>() <= INLINE_THRESHOLD }
 
-    /// 获取可变页表（COW：如果共享则复制）
+    /// Get a mutable page table (COW: clone if shared)
     #[inline]
     fn table_mut(&mut self) -> &mut PageTable<T> {
         Arc::make_mut(&mut self.table)
     }
 
-    /// 将值转为最优页指针类型
+    /// Convert a value into the optimal page-pointer representation
     #[inline]
     fn optimal_page_ptr(val: &T) -> PagePtr<T> {
         if Self::can_inline() {
@@ -142,7 +142,7 @@ impl<T: Clone + Send + Sync + 'static> PagedBuffer<T> {
         }
     }
 
-    /// 追加元素
+    /// Push an element
     pub fn push(&mut self, value: T) {
         let page_idx = self.len / PAGE_SIZE;
         let offset = self.len % PAGE_SIZE;
@@ -150,12 +150,12 @@ impl<T: Clone + Send + Sync + 'static> PagedBuffer<T> {
         let table = self.table_mut();
         
         if offset == 0 {
-            // 需要新页
+            // Need a new page
             let mut page = AlignedPage::new();
             page.data.push(value);
             table.pages.push(PagePtr::Allocated(Arc::new(page)));
         } else {
-            // 写入现有页
+            // Write into an existing page
             Self::harden_page_for_write(&mut table.pages[page_idx], PAGE_SIZE);
             if let PagePtr::Allocated(arc) = &mut table.pages[page_idx] {
                 Arc::make_mut(arc).data.push(value);
@@ -164,7 +164,7 @@ impl<T: Clone + Send + Sync + 'static> PagedBuffer<T> {
         self.len += 1;
     }
 
-    /// 弹出最后一个元素
+    /// Pop the last element
     pub fn pop(&mut self) -> Option<T> {
         if self.len == 0 { return None; }
         
@@ -190,7 +190,7 @@ impl<T: Clone + Send + Sync + 'static> PagedBuffer<T> {
         val
     }
 
-    /// 读取元素（零拷贝，返回引用或克隆值）
+    /// Read an element (zero-copy; returns a reference or a cloned value)
     #[inline]
     pub fn get(&self, index: usize) -> Option<T> where T: Clone {
         if index >= self.len { return None; }
@@ -204,7 +204,7 @@ impl<T: Clone + Send + Sync + 'static> PagedBuffer<T> {
         }
     }
 
-    /// 读取引用（仅对 Allocated 页有效）
+    /// Read a reference (only valid for Allocated pages)
     #[inline]
     pub fn get_ref(&self, index: usize) -> Option<PageRef<'_, T>> {
         if index >= self.len { return None; }
@@ -218,12 +218,12 @@ impl<T: Clone + Send + Sync + 'static> PagedBuffer<T> {
         }
     }
 
-    /// 获取可变引用（触发 COW）
+    /// Get a mutable reference (triggers COW)
     pub fn get_mut(&mut self, index: usize) -> Option<&mut T> {
         if index >= self.len { return None; }
         let (page_idx, offset) = (index / PAGE_SIZE, index % PAGE_SIZE);
         
-        // 计算页的实际长度
+        // Compute the page's actual length
         let page_len = if page_idx == self.table.pages.len() - 1 {
             let rem = self.len % PAGE_SIZE;
             if rem == 0 { PAGE_SIZE } else { rem }
@@ -241,7 +241,7 @@ impl<T: Clone + Send + Sync + 'static> PagedBuffer<T> {
         }
     }
 
-    /// 硬化页（将 Zero/Inline/Constant 转为 Allocated 以支持写入）
+    /// Materialize a page (convert Zero/Inline/Constant into Allocated to support writes)
     fn harden_page_for_write(page: &mut PagePtr<T>, target_len: usize) where T: Clone {
         match page {
             PagePtr::Zero => {
@@ -256,13 +256,13 @@ impl<T: Clone + Send + Sync + 'static> PagedBuffer<T> {
                 *page = PagePtr::Allocated(Arc::new(AlignedPage::from_fill((**v).clone(), target_len)));
             }
             PagePtr::Allocated(arc) => {
-                // COW：如果有其他引用，复制
+                // COW: clone if there are other references
                 let _ = Arc::make_mut(arc);
             }
         }
     }
 
-    /// 交换删除
+    /// Swap-remove
     pub fn swap_remove(&mut self, index: usize) where T: Clone {
         if index >= self.len { return; }
         if index == self.len - 1 { self.pop(); return; }
@@ -274,7 +274,7 @@ impl<T: Clone + Send + Sync + 'static> PagedBuffer<T> {
         }
     }
 
-    /// 从 Vec 创建（带压缩优化）
+    /// Create from a Vec (with compression optimizations)
     pub fn from_vec(vec: Vec<T>) -> Self where T: Default + PartialEq {
         let chunks = vec.chunks(PAGE_SIZE);
         let mut table = PageTable::new();
@@ -283,28 +283,28 @@ impl<T: Clone + Send + Sync + 'static> PagedBuffer<T> {
         for chunk in chunks {
             total_len += chunk.len();
             
-            // 检测全零页
+            // Detect all-zero pages
             let zero_val: T = unsafe { std::mem::zeroed() };
             if chunk.iter().all(|v| v == &zero_val) {
                 table.pages.push(PagePtr::Zero);
                 continue;
             }
             
-            // 检测常量页
+            // Detect constant pages
             let first = &chunk[0];
             if chunk.iter().all(|v| v == first) {
                 table.pages.push(Self::optimal_page_ptr(first));
                 continue;
             }
             
-            // 普通页
+            // Regular pages
             table.pages.push(PagePtr::Allocated(Arc::new(AlignedPage::from_vec(chunk.to_vec()))));
         }
         
         Self { table: Arc::new(table), len: total_len }
     }
 
-    /// 从 Vec 创建（无压缩，更少约束）
+    /// Create from a Vec (no compression; fewer constraints)
     pub fn from_vec_raw(vec: Vec<T>) -> Self {
         let chunks = vec.chunks(PAGE_SIZE);
         let mut table = PageTable::new();
@@ -318,39 +318,39 @@ impl<T: Clone + Send + Sync + 'static> PagedBuffer<T> {
         Self { table: Arc::new(table), len: total_len }
     }
 
-    /// 从切片创建（带压缩）
+    /// Create from a slice (with compression)
     pub fn from_slice(slice: &[T]) -> Self where T: Default + PartialEq {
         Self::from_vec(slice.to_vec())
     }
 
-    /// 从切片创建（无压缩）
+    /// Create from a slice (no compression)
     pub fn from_slice_raw(slice: &[T]) -> Self {
         Self::from_vec_raw(slice.to_vec())
     }
 
-    /// 展平为 Vec
+    /// Flatten into a Vec
     pub fn flatten(&self) -> Vec<T> where T: Clone {
         self.iter().collect()
     }
 
-    /// 展平到已有 Vec（避免重复分配）
+    /// Flatten into an existing Vec (avoid reallocation)
     pub fn flatten_into(&self, out: &mut Vec<T>) where T: Clone {
         out.clear();
         out.reserve(self.len());
         out.extend(self.iter());
     }
 
-    /// 迭代器
+    /// Iterator
     pub fn iter(&self) -> PagedBufferIter<'_, T> {
         PagedBufferIter { buffer: self, index: 0 }
     }
 
-    /// 可变迭代器（触发全部硬化）
+    /// Mutable iterator (materializes all pages)
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> where T: Clone {
         let len = self.len;
         let num_pages = self.table.pages.len();
         
-        // 硬化所有页
+        // Materialize all pages
         let table = self.table_mut();
         for i in 0..num_pages {
             let page_len = if i == num_pages - 1 {
@@ -373,7 +373,7 @@ impl<T: Clone + Send + Sync + 'static> PagedBuffer<T> {
             .take(len)
     }
 
-    /// 并行迭代器
+    /// Parallel iterator
     pub fn par_iter(&self) -> impl ParallelIterator<Item = T> + '_ where T: Clone {
         let total_len = self.len;
         let num_pages = self.table.pages.len();
@@ -390,12 +390,12 @@ impl<T: Clone + Send + Sync + 'static> PagedBuffer<T> {
         })
     }
 
-    /// 追加另一个缓冲区
+    /// Append another buffer
     pub fn append(&mut self, other: &PagedBuffer<T>) where T: Clone {
         for item in other.iter() { self.push(item); }
     }
 
-    /// 填充常量值（高效：使用 Inline/Constant 页）
+    /// Fill with a constant value (efficient: uses Inline/Constant pages)
     pub fn fill_constant(value: T, count: usize) -> Self {
         let full_pages = count / PAGE_SIZE;
         let remainder = count % PAGE_SIZE;
@@ -408,14 +408,14 @@ impl<T: Clone + Send + Sync + 'static> PagedBuffer<T> {
         }
         
         if remainder > 0 {
-            // 最后一页需要真实分配以支持部分填充
+            // The last page needs a real allocation to support partial fills
             table.pages.push(PagePtr::Allocated(Arc::new(AlignedPage::from_fill(value, remainder))));
         }
         
         Self { table: Arc::new(table), len: count }
     }
 
-    /// 填充零值（高效：使用 Zero 虚拟页）
+    /// Fill with zero values (efficient: uses the virtual Zero page)
     pub fn fill_zero(count: usize) -> Self {
         let full_pages = count / PAGE_SIZE;
         let remainder = count % PAGE_SIZE;
@@ -434,7 +434,7 @@ impl<T: Clone + Send + Sync + 'static> PagedBuffer<T> {
         Self { table: Arc::new(table), len: count }
     }
 
-    /// 统计内存使用
+    /// Compute memory usage
     pub fn memory_stats(&self) -> PagedBufferStats {
         let mut stats = PagedBufferStats::default();
         
@@ -459,7 +459,7 @@ impl<T: Clone + Send + Sync + 'static> PagedBuffer<T> {
     }
 }
 
-/// 页引用（避免不必要的克隆）
+/// Page reference (avoid unnecessary cloning)
 pub enum PageRef<'a, T> {
     Zero,
     Inline(T),
@@ -477,7 +477,7 @@ impl<'a, T: Clone> PageRef<'a, T> {
     }
 }
 
-/// 迭代器
+/// Iterator
 pub struct PagedBufferIter<'a, T: Clone + Send + Sync + 'static> {
     buffer: &'a PagedBuffer<T>,
     index: usize,
@@ -501,12 +501,12 @@ impl<'a, T: Clone + Send + Sync + 'static> Iterator for PagedBufferIter<'a, T> {
 
 impl<'a, T: Clone + Send + Sync + 'static> ExactSizeIterator for PagedBufferIter<'a, T> {}
 
-// --- From 实现 ---
+// --- From impls ---
 impl<T: Clone + Send + Sync + 'static> From<Vec<T>> for PagedBuffer<T> {
     fn from(vec: Vec<T>) -> Self { Self::from_vec_raw(vec) }
 }
 
-/// 并行迭代器（页级）
+/// Parallel iterator (page-level)
 struct PageParIter<'a, T: Clone + Send + Sync + 'static> {
     page: &'a PagePtr<T>,
     take_count: usize,
@@ -536,7 +536,7 @@ impl<'a, T: Clone + Send + Sync + 'static> ParallelIterator for PageParIter<'a, 
     }
 }
 
-/// 内存统计
+/// Memory stats
 #[derive(Debug, Default, Clone)]
 pub struct PagedBufferStats {
     pub logical_elements: usize,
@@ -550,24 +550,24 @@ pub struct PagedBufferStats {
 }
 
 impl PagedBufferStats {
-    /// 理论内存（无压缩）
+    /// Theoretical memory (no compression)
     pub fn theoretical_bytes(&self) -> usize {
         self.logical_elements * self.element_size
     }
     
-    /// 实际内存（压缩后）
+    /// Actual memory (after compression)
     pub fn actual_bytes(&self) -> usize {
         self.allocated_bytes + self.constant_pages * self.element_size + self.inline_pages * 8
     }
     
-    /// 压缩比
+    /// Compression ratio
     pub fn compression_ratio(&self) -> f64 {
         if self.allocated_bytes == 0 { return 0.0; }
         self.theoretical_bytes() as f64 / self.actual_bytes() as f64
     }
 }
 
-// --- Index 实现 ---
+// --- Index impls ---
 impl<T: Clone + Send + Sync + 'static> std::ops::Index<usize> for PagedBuffer<T> {
     type Output = T;
     fn index(&self, _index: usize) -> &Self::Output {
@@ -575,7 +575,7 @@ impl<T: Clone + Send + Sync + 'static> std::ops::Index<usize> for PagedBuffer<T>
     }
 }
 
-// --- Serde 实现 ---
+// --- Serde impls ---
 impl<T: Clone + Send + Sync + Serialize + 'static> Serialize for PagedBuffer<T> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         self.flatten().serialize(serializer)
@@ -589,7 +589,7 @@ impl<'de, T: Clone + Send + Sync + Default + PartialEq + Deserialize<'de> + 'sta
     }
 }
 
-// --- AttributeStorage 实现 ---
+// --- AttributeStorage impls ---
 impl<T: Clone + Default + PartialEq + Send + Sync + 'static + std::fmt::Debug> AttributeStorage for PagedBuffer<T> {
     fn len(&self) -> usize { self.len }
     fn swap_remove(&mut self, index: usize) { self.swap_remove(index); }
@@ -609,31 +609,39 @@ mod tests {
         let buffer: PagedBuffer<f32> = PagedBuffer::fill_zero(5000);
         let stats = buffer.memory_stats();
         
-        assert_eq!(stats.zero_pages, 4); // 4 个完整零页
-        assert_eq!(stats.allocated_pages, 1); // 1 个部分页
+        assert_eq!(stats.zero_pages, 4); // 4 full zero pages
+        assert_eq!(stats.allocated_pages, 1); // 1 partial page
         assert!(stats.actual_bytes() < stats.theoretical_bytes());
-        println!("压缩比: {:.2}x", stats.compression_ratio());
+        println!("Compression ratio: {:.2}x", stats.compression_ratio());
     }
 
     #[test]
     fn test_inline_constant_page() {
-        // f32 是 4 字节，可以内嵌
+        // f32 is 4 bytes, so it can be inlined
         let buffer: PagedBuffer<f32> = PagedBuffer::fill_constant(3.14, 5000);
         let stats = buffer.memory_stats();
         
-        assert_eq!(stats.inline_pages, 4); // 4 个内嵌常量页
-        assert_eq!(stats.allocated_bytes, 904 * 4); // 只有最后一页真正分配
-        println!("内嵌页: {}, 压缩比: {:.2}x", stats.inline_pages, stats.compression_ratio());
+        assert_eq!(stats.inline_pages, 4); // 4 inline constant pages
+        assert_eq!(stats.allocated_bytes, 904 * 4); // Only the last page is actually allocated
+        println!(
+            "Inline pages: {}, compression ratio: {:.2}x",
+            stats.inline_pages,
+            stats.compression_ratio()
+        );
     }
 
     #[test]
     fn test_vec3_constant_page() {
-        // Vec3 是 12 字节，不能内嵌，使用 Constant
+        // Vec3 is 12 bytes, so it can't be inlined; use Constant
         let buffer: PagedBuffer<Vec3> = PagedBuffer::fill_constant(Vec3::ONE, 5000);
         let stats = buffer.memory_stats();
         
         assert_eq!(stats.constant_pages, 4);
-        println!("常量页: {}, 压缩比: {:.2}x", stats.constant_pages, stats.compression_ratio());
+        println!(
+            "Constant pages: {}, compression ratio: {:.2}x",
+            stats.constant_pages,
+            stats.compression_ratio()
+        );
     }
 
     #[test]
@@ -641,10 +649,10 @@ mod tests {
         let buffer1: PagedBuffer<f32> = PagedBuffer::from_vec(vec![1.0; 3000]);
         let mut buffer2 = buffer1.clone();
         
-        // clone 后共享同一页表
+        // After clone, they share the same page table
         assert_eq!(Arc::strong_count(&buffer1.table), 2);
         
-        // 写入触发 COW
+        // Writing triggers COW
         buffer2.push(99.0);
         assert_eq!(Arc::strong_count(&buffer1.table), 1);
         assert_eq!(Arc::strong_count(&buffer2.table), 1);
@@ -669,6 +677,6 @@ mod tests {
         buffer.swap_remove(2);
         
         assert_eq!(buffer.len(), 9);
-        assert_eq!(buffer.get(2), Some(9)); // 最后一个元素移到了位置 2
+        assert_eq!(buffer.get(2), Some(9)); // The last element moved to position 2
     }
 }

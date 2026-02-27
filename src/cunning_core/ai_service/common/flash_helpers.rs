@@ -82,7 +82,7 @@ fn standard_attention(
     probs.matmul(v)
 }
 
-/// 创建 causal mask 用于自回归生成
+/// Create a causal mask for autoregressive generation
 fn create_causal_mask(
     seq_len: usize,
     device: &candle_core::Device,
@@ -98,7 +98,7 @@ fn create_causal_mask(
         .unsqueeze(0) // [1, 1, seq_len, seq_len] для broadcasting
 }
 
-/// 检查当前配置是否支持 Flash Attention
+/// Check whether the current configuration supports Flash Attention
 pub fn is_flash_attention_available() -> bool {
     #[cfg(feature = "flash-attn")]
     {

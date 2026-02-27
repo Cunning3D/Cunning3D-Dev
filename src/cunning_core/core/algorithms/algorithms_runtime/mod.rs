@@ -6,4 +6,4 @@ pub mod resample;
 pub mod foreach_pieces;
 pub mod mc;
 pub mod point_jitter;
-
+pub mod uv_auto;

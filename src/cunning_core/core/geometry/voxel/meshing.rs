@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 
 use super::dirty::chunk_coord;
 use super::types::{PaletteEntry, VoxelPi, CHUNK_SIZE};
-use super::volume::{VoxelChunkKey, VoxelVolume};
+use super::volume::{SdfChunkKey, VoxelVolume};
 
 use crate::libs::geometry::attrs;
 use crate::libs::geometry::mesh::{Attribute, GeoPrimitive, Geometry, PolygonPrim};
@@ -71,7 +71,7 @@ fn get_pi(chunks: &HashMap<IVec3, Vec<u8>>, p: IVec3) -> u8 {
 }
 
 /// Greedy mesh a single chunk (requires neighbor sampling, so we query `volume.get_pi`).
-pub fn mesh_chunk_greedy(volume: &VoxelVolume, ck: VoxelChunkKey) -> Option<ChunkMesh> {
+pub fn mesh_chunk_greedy(volume: &VoxelVolume, ck: SdfChunkKey) -> Option<ChunkMesh> {
     let chunk = volume.chunks.get(&ck)?;
     if chunk.solid_count == 0 { return None; }
     // Build a temporary view of nearby chunks to avoid per-voxel HashMap lookups.

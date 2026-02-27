@@ -406,6 +406,10 @@ pub struct EditorUiSystemParam<'w> {
 
 pub fn show_editor_ui(world: &mut World) {
     puffin::profile_function!();
+    let _perf = crate::viewport_perf::world_scope(
+        world,
+        crate::viewport_perf::ViewportPerfSection::EditorUi,
+    );
     // Ensure the primary window has bevy_egui components, even if InitContexts didn't run yet.
     if let Ok(primary_entity) = world
         .query_filtered::<Entity, (With<PrimaryWindow>, With<Window>)>()
@@ -1123,6 +1127,10 @@ fn draw_hot_update_prompt(ctx: &egui::Context, cx: &mut EditorTabContext) {
 
 /// Renders UI for all floating (native) windows based on FloatingTabRegistry.
 pub fn show_floating_tabs_ui(world: &mut World) {
+    let _perf = crate::viewport_perf::world_scope(
+        world,
+        crate::viewport_perf::ViewportPerfSection::FloatingUi,
+    );
     // Collect window entities first to avoid holding long-lived borrows across iterations.
     let window_entities: Vec<Entity> = world
         .query_filtered::<

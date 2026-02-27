@@ -1,4 +1,4 @@
-//! IO 节点模块 - 文件导入导出
+//! IO node module - file import/export
 pub mod file_node;
 pub mod importers;
 

@@ -1,4 +1,4 @@
-//! CDAAsset - 可参数化的节点图资产核心结构
+//! CDAAsset - core structure for parameterizable node-graph assets
 use super::utils::apply_channel_value;
 use super::{CDAInterface, PromotedParam};
 use crate::nodes::parameter::ParameterValue;
@@ -58,14 +58,14 @@ pub struct CdaExport {
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct CDAAsset {
-    // 基础信息
+    // Basic info
     pub id: CDAId,
     pub name: String,
     pub version: u32,
     pub author: Option<String>,
     pub description: String,
 
-    // 图相关
+    // Graph-related
     pub inner_graph: NodeGraph,
     pub promoted_params: Vec<PromotedParam>,
     pub inputs: Vec<CDAInterface>,
@@ -74,18 +74,18 @@ pub struct CDAAsset {
     #[serde(default)]
     pub presets: Vec<CDAPreset>,
 
-    // 默认视图状态
-    pub view_center: Option<[f32; 2]>, // 默认平移中心
-    pub view_zoom: Option<f32>,        // 默认缩放
+    // Default view state
+    pub view_center: Option<[f32; 2]>, // Default pan center
+    pub view_zoom: Option<f32>,        // Default zoom
 
-    // 外观
-    pub icon: Option<String>,    // 图标路径或emoji
-    pub color: Option<[f32; 3]>, // 节点颜色RGB
-    pub tags: Vec<String>,       // 标签列表
+    // Appearance
+    pub icon: Option<String>,    // Icon path or emoji
+    pub color: Option<[f32; 3]>, // Node color RGB
+    pub tags: Vec<String>,       // Tag list
 
-    // 帮助
-    pub help_url: Option<String>,     // 外部文档地址
-    pub help_content: Option<String>, // 内嵌Markdown说明
+    // Help
+    pub help_url: Option<String>,     // External docs URL
+    pub help_content: Option<String>, // Embedded Markdown description
 
     // Overlay exposure (authoring-time): HUD is single-select, Coverlay is multi-select.
     #[serde(default)]
@@ -142,36 +142,36 @@ impl CDAAsset {
         }
     }
 
-    // ─────────────────────────── 参数管理 ───────────────────────────
+    // ─────────────────────────── Parameter Management ───────────────────────────
 
-    /// 添加提升参数
+    /// Add a promoted parameter
     pub fn add_promoted_param(&mut self, param: PromotedParam) {
         self.promoted_params.push(param);
     }
 
-    /// 移除提升参数
+    /// Remove a promoted parameter
     pub fn remove_promoted_param(&mut self, param_id: Uuid) {
         self.promoted_params.retain(|p| p.id != param_id);
     }
 
-    /// 根据名称获取提升参数
+    /// Get a promoted parameter by name
     pub fn get_promoted_param(&self, name: &str) -> Option<&PromotedParam> {
         self.promoted_params.iter().find(|p| p.name == name)
     }
 
-    /// 根据名称获取提升参数（可变）
+    /// Get a promoted parameter by name (mutable)
     pub fn get_promoted_param_mut(&mut self, name: &str) -> Option<&mut PromotedParam> {
         self.promoted_params.iter_mut().find(|p| p.name == name)
     }
 
-    /// 获取提升参数（按order和group排序）
+    /// Get promoted parameters (sorted by order and group)
     pub fn get_promoted_params_sorted(&self) -> Vec<&PromotedParam> {
         let mut params: Vec<_> = self.promoted_params.iter().collect();
         params.sort_by(|a, b| a.group.cmp(&b.group).then(a.order.cmp(&b.order)));
         params
     }
 
-    /// 获取所有参数分组
+    /// Get all parameter groups
     pub fn get_param_groups(&self) -> Vec<String> {
         let mut groups: Vec<_> = self
             .promoted_params
@@ -183,19 +183,19 @@ impl CDAAsset {
         groups
     }
 
-    // ─────────────────────────── 输入/输出管理 ───────────────────────────
+    // ─────────────────────────── Input/Output Management ───────────────────────────
 
-    /// 添加输入接口
+    /// Add an input interface
     pub fn add_input(&mut self, iface: CDAInterface) {
         self.inputs.push(iface);
     }
 
-    /// 添加输出接口
+    /// Add an output interface
     pub fn add_output(&mut self, iface: CDAInterface) {
         self.outputs.push(iface);
     }
 
-    /// 设置输入数量（自动创建/删除接口）
+    /// Set input count (auto create/delete interfaces)
     pub fn set_input_count(&mut self, count: usize) {
         while self.inputs.len() < count {
             let idx = self.inputs.len();
@@ -206,7 +206,7 @@ impl CDAAsset {
         self.inputs.truncate(count);
     }
 
-    /// 设置输出数量
+    /// Set output count
     pub fn set_output_count(&mut self, count: usize) {
         while self.outputs.len() < count {
             let idx = self.outputs.len();
@@ -217,11 +217,11 @@ impl CDAAsset {
         self.outputs.truncate(count);
     }
 
-    // ─────────────────────────── 参数值同步 ───────────────────────────
+    // ─────────────────────────── Parameter Value Sync ───────────────────────────
 
-    /// 应用参数值到内部图（根据绑定关系）
+    /// Apply parameter values to the internal graph (based on bindings)
     pub fn apply_param_values(&mut self, values: &HashMap<String, Vec<f64>>) {
-        // 先收集所有需要应用的绑定
+        // First collect all bindings that need to be applied
         let bindings: Vec<(NodeId, String, Option<usize>, f64)> = self
             .promoted_params
             .iter()
@@ -246,7 +246,7 @@ impl CDAAsset {
                     })
             })
             .collect();
-        // 然后应用
+        // Then apply them
         for (node_id, param_name, target_channel, value) in bindings {
             if let Some(node) = self.inner_graph.nodes.get_mut(&node_id) {
                 if let Some(param) = node.parameters.iter_mut().find(|p| p.name == param_name) {
@@ -376,9 +376,9 @@ impl CDAAsset {
         )
     }
 
-    // ─────────────────────────── 内部节点查询 ───────────────────────────
+    // ─────────────────────────── Internal Node Queries ───────────────────────────
 
-    /// 列出内部所有节点（用于参数提升UI）
+    /// List all internal nodes (for the promoted-parameter UI)
     pub fn list_internal_nodes(&self) -> Vec<(NodeId, &str, &str)> {
         self.inner_graph
             .nodes
@@ -387,7 +387,7 @@ impl CDAAsset {
             .collect()
     }
 
-    /// 列出指定节点的所有参数（用于参数提升UI）
+    /// List all parameters of a specific node (for the promoted-parameter UI)
     pub fn list_node_params(&self, node_id: NodeId) -> Vec<(&str, &ParameterValue)> {
         self.inner_graph
             .nodes
@@ -401,7 +401,7 @@ impl CDAAsset {
             .unwrap_or_default()
     }
 
-    /// 检查参数是否已被绑定
+    /// Check whether a parameter is already bound
     pub fn is_param_bound(
         &self,
         node_id: NodeId,
@@ -419,7 +419,7 @@ impl CDAAsset {
         })
     }
 
-    /// 获取参数绑定到的提升参数名称
+    /// Get the name of the promoted parameter that a parameter is bound to
     pub fn get_binding_target(&self, node_id: NodeId, param_name: &str) -> Option<&str> {
         for p in &self.promoted_params {
             for ch in &p.channels {

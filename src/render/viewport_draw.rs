@@ -20,7 +20,6 @@ use crate::{
         grid::grid_params::grid_params,
         ViewportLayout,
     },
-    tabs_system::{TabViewer, Viewport3DTab},
     ui::{ComponentSelectionMode, UiState},
     viewport_options::{DisplayOptions, ViewportViewMode},
     MainCamera,
@@ -32,6 +31,10 @@ pub(crate) struct PointNumbersTag;
 pub(crate) struct PrimitiveNumbersTag;
 #[derive(Component)]
 pub(crate) struct VertexNumbersTag;
+
+/// Tracks which geometry revision an overlay was built from, so we can avoid rebuilding per-frame.
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub(crate) struct OverlayGeometryVersion(pub u64);
 
 /// Draws the viewport grid with minor, major, and axis lines.
 pub(crate) fn draw_grid(
@@ -147,16 +150,37 @@ pub(crate) fn draw_point_numbers_system(
     mut commands: Commands,
     node_graph_res: Res<NodeGraphResource>,
     display_options: Res<DisplayOptions>,
-    old_markers: Query<Entity, With<PointNumbersTag>>,
+    markers: Query<(Entity, Option<&OverlayGeometryVersion>), With<PointNumbersTag>>,
+    mut viewport_perf: ResMut<crate::viewport_perf::ViewportPerfTrace>,
 ) {
+    let _perf = crate::viewport_perf::PerfScope::new(
+        &mut viewport_perf,
+        crate::viewport_perf::ViewportPerfSection::OverlayNumbers,
+    );
     if !display_options.overlays.show_point_numbers {
-        for entity in &old_markers {
+        for (entity, _) in &markers {
             commands.entity(entity).despawn();
         }
         return;
     }
     let node_graph = &node_graph_res.0;
     let geo = &node_graph.final_geometry;
+    let dirty_id = geo.dirty_id;
+
+    // Avoid rebuilding every frame: only rebuild when geometry changes or marker is missing/stale.
+    let mut any_marker = false;
+    let mut needs_rebuild = false;
+    for (_entity, ver) in &markers {
+        any_marker = true;
+        if ver.map(|v| v.0) != Some(dirty_id) {
+            needs_rebuild = true;
+            break;
+        }
+    }
+    if any_marker && !needs_rebuild {
+        return;
+    }
+
     if let Some(positions) = geo.get_point_attribute("@P").and_then(|a| a.as_slice::<Vec3>()) {
         let count = positions.len();
         let mut values = Vec::with_capacity(count);
@@ -166,7 +190,7 @@ pub(crate) fn draw_point_numbers_system(
             pos_vec.push(p);
         }
         if values.is_empty() {
-            for entity in &old_markers {
+            for (entity, _) in &markers {
                 commands.entity(entity).despawn();
             }
             return;
@@ -177,8 +201,10 @@ pub(crate) fn draw_point_numbers_system(
             color: Vec4::new(0.3, 0.7, 1.0, 1.0),
         };
         let mut updated = false;
-        for entity in &old_markers {
-            commands.entity(entity).insert(data.clone());
+        for (entity, _) in &markers {
+            commands
+                .entity(entity)
+                .insert((data.clone(), OverlayGeometryVersion(dirty_id)));
             updated = true;
         }
         if !updated {
@@ -188,10 +214,16 @@ pub(crate) fn draw_point_numbers_system(
                 PrimitiveNumberMarker,
                 PointNumbersTag,
                 data,
+                OverlayGeometryVersion(dirty_id),
                 SyncToRenderWorld,
                 Transform::default(),
                 Visibility::Visible,
             ));
+        }
+    } else {
+        // No positions attribute: ensure stale markers are removed.
+        for (entity, _) in &markers {
+            commands.entity(entity).despawn();
         }
     }
 }
@@ -200,16 +232,36 @@ pub(crate) fn draw_primitive_numbers_system(
     mut commands: Commands,
     node_graph_res: Res<NodeGraphResource>,
     display_options: Res<DisplayOptions>,
-    old_markers: Query<Entity, With<PrimitiveNumbersTag>>,
+    markers: Query<(Entity, Option<&OverlayGeometryVersion>), With<PrimitiveNumbersTag>>,
+    mut viewport_perf: ResMut<crate::viewport_perf::ViewportPerfTrace>,
 ) {
+    let _perf = crate::viewport_perf::PerfScope::new(
+        &mut viewport_perf,
+        crate::viewport_perf::ViewportPerfSection::OverlayNumbers,
+    );
     if !display_options.overlays.show_primitive_numbers {
-        for entity in &old_markers {
+        for (entity, _) in &markers {
             commands.entity(entity).despawn();
         }
         return;
     }
     let node_graph = &node_graph_res.0;
     let geo = &node_graph.final_geometry;
+    let dirty_id = geo.dirty_id;
+
+    let mut any_marker = false;
+    let mut needs_rebuild = false;
+    for (_entity, ver) in &markers {
+        any_marker = true;
+        if ver.map(|v| v.0) != Some(dirty_id) {
+            needs_rebuild = true;
+            break;
+        }
+    }
+    if any_marker && !needs_rebuild {
+        return;
+    }
+
     if let Some(positions) = geo.get_point_attribute("@P").and_then(|a| a.as_slice::<Vec3>()) {
         let primitives = geo.primitives();
         let vertices = geo.vertices();
@@ -237,7 +289,7 @@ pub(crate) fn draw_primitive_numbers_system(
             pos_vec.push(center);
         }
         if values.is_empty() {
-            for entity in &old_markers {
+            for (entity, _) in &markers {
                 commands.entity(entity).despawn();
             }
             return;
@@ -248,8 +300,10 @@ pub(crate) fn draw_primitive_numbers_system(
             color: Vec4::new(1.0, 0.9, 0.2, 1.0),
         };
         let mut updated = false;
-        for entity in &old_markers {
-            commands.entity(entity).insert(data.clone());
+        for (entity, _) in &markers {
+            commands
+                .entity(entity)
+                .insert((data.clone(), OverlayGeometryVersion(dirty_id)));
             updated = true;
         }
         if !updated {
@@ -259,10 +313,15 @@ pub(crate) fn draw_primitive_numbers_system(
                 PrimitiveNumberMarker,
                 PrimitiveNumbersTag,
                 data,
+                OverlayGeometryVersion(dirty_id),
                 SyncToRenderWorld,
                 Transform::default(),
                 Visibility::Visible,
             ));
+        }
+    } else {
+        for (entity, _) in &markers {
+            commands.entity(entity).despawn();
         }
     }
 }
@@ -271,16 +330,36 @@ pub(crate) fn draw_vertex_numbers_system(
     mut commands: Commands,
     node_graph_res: Res<NodeGraphResource>,
     display_options: Res<DisplayOptions>,
-    old_markers: Query<Entity, With<VertexNumbersTag>>,
+    markers: Query<(Entity, Option<&OverlayGeometryVersion>), With<VertexNumbersTag>>,
+    mut viewport_perf: ResMut<crate::viewport_perf::ViewportPerfTrace>,
 ) {
+    let _perf = crate::viewport_perf::PerfScope::new(
+        &mut viewport_perf,
+        crate::viewport_perf::ViewportPerfSection::OverlayNumbers,
+    );
     if !display_options.overlays.show_vertex_numbers {
-        for entity in &old_markers {
+        for (entity, _) in &markers {
             commands.entity(entity).despawn();
         }
         return;
     }
     let node_graph = &node_graph_res.0;
     let geo = &node_graph.final_geometry;
+    let dirty_id = geo.dirty_id;
+
+    let mut any_marker = false;
+    let mut needs_rebuild = false;
+    for (_entity, ver) in &markers {
+        any_marker = true;
+        if ver.map(|v| v.0) != Some(dirty_id) {
+            needs_rebuild = true;
+            break;
+        }
+    }
+    if any_marker && !needs_rebuild {
+        return;
+    }
+
     if let Some(positions) = geo.get_point_attribute("@P").and_then(|a| a.as_slice::<Vec3>()) {
         let vertices = geo.vertices();
         let points = geo.points();
@@ -296,7 +375,7 @@ pub(crate) fn draw_vertex_numbers_system(
             }
         }
         if values.is_empty() {
-            for entity in &old_markers {
+            for (entity, _) in &markers {
                 commands.entity(entity).despawn();
             }
             return;
@@ -307,8 +386,10 @@ pub(crate) fn draw_vertex_numbers_system(
             color: Vec4::new(0.3, 1.0, 0.3, 1.0),
         };
         let mut updated = false;
-        for entity in &old_markers {
-            commands.entity(entity).insert(data.clone());
+        for (entity, _) in &markers {
+            commands
+                .entity(entity)
+                .insert((data.clone(), OverlayGeometryVersion(dirty_id)));
             updated = true;
         }
         if !updated {
@@ -318,10 +399,15 @@ pub(crate) fn draw_vertex_numbers_system(
                 PrimitiveNumberMarker,
                 VertexNumbersTag,
                 data,
+                OverlayGeometryVersion(dirty_id),
                 SyncToRenderWorld,
                 Transform::default(),
                 Visibility::Visible,
             ));
+        }
+    } else {
+        for (entity, _) in &markers {
+            commands.entity(entity).despawn();
         }
     }
 }
@@ -331,32 +417,26 @@ pub(crate) fn draw_grid_labels_system(
     display_options: Res<DisplayOptions>,
     mut egui_contexts: EguiContexts,
     camera_query: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
-    tab_viewer: Res<TabViewer>,
     viewport_layout: Res<ViewportLayout>,
+    mut viewport_perf: ResMut<crate::viewport_perf::ViewportPerfTrace>,
 ) {
+    let _perf = crate::viewport_perf::PerfScope::new(
+        &mut viewport_perf,
+        crate::viewport_perf::ViewportPerfSection::OverlayGridLabels,
+    );
     if !display_options.grid.show
         || !display_options.grid.show_labels
         || display_options.view_mode == ViewportViewMode::UV
     {
         return;
     }
-    let viewport_rect = if let Some(rect) = tab_viewer
-        .dock_state
-        .iter_all_tabs()
-        .find_map(|((_s, _n), tab)| tab.as_any().downcast_ref::<Viewport3DTab>())
-        .and_then(|t| t.viewport_rect)
-    {
-        rect
-    } else {
+    let Some(viewport_rect) = viewport_layout.logical_rect else {
         return;
     };
     let Ok((camera, camera_transform)) = camera_query.single() else {
         return;
     };
-    let vp = viewport_layout
-        .logical_rect
-        .map(|r| r.size())
-        .unwrap_or_default();
+    let vp = viewport_rect.size();
     if vp.x <= 1.0 || vp.y <= 1.0 {
         return;
     }
@@ -368,8 +448,17 @@ pub(crate) fn draw_grid_labels_system(
     ) else {
         return;
     };
-    let Some(ctx) = egui_contexts.try_ctx_mut() else {
-        return;
+    let ctx = if let Some(e) = viewport_layout.window_entity {
+        match egui_contexts.try_ctx_for_window_mut(e) {
+            Some(ctx) => ctx,
+            None => {
+                let Some(ctx) = egui_contexts.try_ctx_mut() else { return; };
+                ctx
+            }
+        }
+    } else {
+        let Some(ctx) = egui_contexts.try_ctx_mut() else { return; };
+        ctx
     };
     let mut painter = ctx.layer_painter(egui::LayerId::new(
         egui::Order::Foreground,
@@ -489,17 +578,28 @@ pub(crate) fn draw_template_wireframes_system(
     node_graph_res: Res<NodeGraphResource>,
     mut egui_contexts: EguiContexts,
     camera_query: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
-    tab_viewer: Res<TabViewer>,
+    viewport_layout: Res<ViewportLayout>,
+    mut viewport_perf: ResMut<crate::viewport_perf::ViewportPerfTrace>,
 ) {
-    let Some(viewport_rect) = tab_viewer
-        .dock_state
-        .iter_all_tabs()
-        .find_map(|((_s, _n), tab)| tab.as_any().downcast_ref::<Viewport3DTab>())
-        .and_then(|t| t.viewport_rect)
-    else {
+    let _perf = crate::viewport_perf::PerfScope::new(
+        &mut viewport_perf,
+        crate::viewport_perf::ViewportPerfSection::OverlayTemplateWireframes,
+    );
+    let Some(viewport_rect) = viewport_layout.logical_rect else {
         return;
     };
-    let Some(ctx) = egui_contexts.try_ctx_mut() else { return; };
+    let ctx = if let Some(e) = viewport_layout.window_entity {
+        match egui_contexts.try_ctx_for_window_mut(e) {
+            Some(ctx) => ctx,
+            None => {
+                let Some(ctx) = egui_contexts.try_ctx_mut() else { return; };
+                ctx
+            }
+        }
+    } else {
+        let Some(ctx) = egui_contexts.try_ctx_mut() else { return; };
+        ctx
+    };
     let mut painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, "template_wireframes".into()));
     painter.set_clip_rect(viewport_rect);
     let node_graph = &node_graph_res.0;
@@ -507,6 +607,11 @@ pub(crate) fn draw_template_wireframes_system(
     for node in node_graph.nodes.values() {
         if !node.is_template { continue; }
         let Some(geo) = node_graph.geometry_cache.get(&node.id) else { continue; };
+        // Avoid heavy per-frame work if there is no edge data to draw.
+        let edge_map = geo.build_edge_to_primitive_map();
+        if edge_map.is_empty() {
+            continue;
+        }
         let Some(positions) = geo.get_point_attribute("@P").and_then(|a| a.as_slice::<Vec3>()) else { continue; };
         let Some(normals) = geo.get_vertex_attribute("@N").and_then(|a| a.as_slice::<Vec3>()) else { continue; };
         let primitive_is_front_facing: Vec<bool> = geo
@@ -534,7 +639,6 @@ pub(crate) fn draw_template_wireframes_system(
                 avg_normal.dot(cam_to_prim) < 0.0
             })
             .collect();
-        let edge_map = geo.build_edge_to_primitive_map();
         for (edge, prim_indices) in edge_map.iter() {
             let is_front_facing = prim_indices.iter().any(|&pi| {
                 geo.primitives()
@@ -574,25 +678,48 @@ pub(crate) fn highlight_selected_components(
     query_highlights: Query<Entity, Or<(With<crate::scene::components::HighlightPointTag>, With<crate::scene::components::HighlightPrimitiveTag>)>>,
     mut egui_contexts: EguiContexts,
     camera_query: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
-    tab_viewer: Res<TabViewer>,
+    viewport_layout: Res<ViewportLayout>,
+    mut viewport_perf: ResMut<crate::viewport_perf::ViewportPerfTrace>,
 ) {
+    let _perf = crate::viewport_perf::PerfScope::new(
+        &mut viewport_perf,
+        crate::viewport_perf::ViewportPerfSection::OverlayHighlights,
+    );
     if ui_state.component_selection.indices.is_empty() {
         for entity in &query_highlights {
             commands.entity(entity).despawn();
         }
         return;
     }
-    let Some(viewport_rect) = tab_viewer
-        .dock_state
-        .iter_all_tabs()
-        .find_map(|((_s, _n), tab)| tab.as_any().downcast_ref::<Viewport3DTab>())
-        .and_then(|t| t.viewport_rect)
-    else {
+    let Some(viewport_rect) = viewport_layout.logical_rect else {
         return;
     };
-    let mut painter = egui_contexts.ctx_mut().layer_painter(egui::LayerId::new(egui::Order::Foreground, "highlights".into()));
+    let ctx = if let Some(e) = viewport_layout.window_entity {
+        match egui_contexts.try_ctx_for_window_mut(e) {
+            Some(ctx) => ctx,
+            None => {
+                let Some(ctx) = egui_contexts.try_ctx_mut() else { return; };
+                ctx
+            }
+        }
+    } else {
+        let Some(ctx) = egui_contexts.try_ctx_mut() else { return; };
+        ctx
+    };
+    let mut painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, "highlights".into()));
     painter.set_clip_rect(viewport_rect);
     let Ok((camera, camera_transform)) = camera_query.single() else { return; };
+    const MAX_HIGHLIGHTS: usize = 2000;
+    let total_selected = ui_state.component_selection.indices.len();
+    if total_selected > MAX_HIGHLIGHTS {
+        painter.text(
+            viewport_rect.min + egui::vec2(8.0, 8.0),
+            egui::Align2::LEFT_TOP,
+            format!("Showing {MAX_HIGHLIGHTS}/{total_selected} highlights"),
+            egui::FontId::proportional(12.0),
+            egui::Color32::from_gray(200),
+        );
+    }
     // If graph is temporarily busy, keep last highlights to avoid flicker.
     let node_graph = &node_graph_res.0;
     // Rebuild highlights.
@@ -605,8 +732,8 @@ pub(crate) fn highlight_selected_components(
             match ui_state.component_selection.mode {
                 ComponentSelectionMode::Points => {
                     if let Some(positions) = geo.get_point_attribute("@P").and_then(|a| a.as_slice::<Vec3>()) {
-                        for index in &ui_state.component_selection.indices {
-                            if let Some(pos) = positions.get(*index) {
+                        for &index in ui_state.component_selection.indices.iter().take(MAX_HIGHLIGHTS) {
+                            if let Some(pos) = positions.get(index) {
                                 if let Some(ndc) = camera.world_to_ndc(camera_transform, *pos) {
                                     if ndc.z > 0.0 {
                                         let screen_pos = egui::pos2(
@@ -622,8 +749,8 @@ pub(crate) fn highlight_selected_components(
                 }
                 ComponentSelectionMode::Primitives => {
                     if let Some(positions) = geo.get_point_attribute("@P").and_then(|a| a.as_slice::<Vec3>()) {
-                        for index in &ui_state.component_selection.indices {
-                            if let Some(prim_id) = geo.primitives().get_id_from_dense(*index) {
+                        for &index in ui_state.component_selection.indices.iter().take(MAX_HIGHLIGHTS) {
+                            if let Some(prim_id) = geo.primitives().get_id_from_dense(index) {
                                 if let Some(primitive) = geo.primitives().get(prim_id) {
                                     let points_2d: Vec<egui::Pos2> = primitive
                                         .vertices()
@@ -648,8 +775,8 @@ pub(crate) fn highlight_selected_components(
                 }
                 ComponentSelectionMode::Edges => {
                     if let Some(positions) = geo.get_point_attribute("@P").and_then(|a| a.as_slice::<Vec3>()) {
-                        for index in &ui_state.component_selection.indices {
-                            if let Some(edge_id) = geo.edges().get_id_from_dense(*index) {
+                        for &index in ui_state.component_selection.indices.iter().take(MAX_HIGHLIGHTS) {
+                            if let Some(edge_id) = geo.edges().get_id_from_dense(index) {
                                 if let Some(edge) = geo.edges().get(edge_id) {
                                     let p0_idx = geo.points().get_dense_index(edge.p0.into());
                                     let p1_idx = geo.points().get_dense_index(edge.p1.into());

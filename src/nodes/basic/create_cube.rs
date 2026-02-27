@@ -1,4 +1,4 @@
-//! `create_cube` 节点的功能实现。
+//! Implementation of the `create_cube` node.
 
 use crate::libs::geometry::geo_ref::GeometryRef;
 use crate::nodes::parameter::{ParameterUIType, ParameterValue};
@@ -17,7 +17,7 @@ use std::sync::Arc;
 pub struct CreateCubeNode;
 
 impl NodeParameters for CreateCubeNode {
-    /// 定义 "Create Cube" 节点的参数
+    /// Define parameters for the \"Create Cube\" node
     fn define_parameters() -> Vec<Parameter> {
         vec![
             Parameter::new(
