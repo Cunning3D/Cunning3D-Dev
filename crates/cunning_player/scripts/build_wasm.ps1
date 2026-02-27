@@ -1,8 +1,15 @@
-Param([string]$TargetDir="F:\cargo-target2\Cunning3D_1.0")
+Param([string]$TargetDir="")
 $ErrorActionPreference="Stop"
 $crate=Split-Path -Parent $MyInvocation.MyCommand.Path
 $crate=Split-Path -Parent $crate
 Set-Location $crate
+if([string]::IsNullOrWhiteSpace($TargetDir)){
+  $meta = cargo metadata --format-version 1 --no-deps | ConvertFrom-Json
+  $TargetDir = $meta.target_directory
+}
+if([string]::IsNullOrWhiteSpace($TargetDir)){
+  $TargetDir = Join-Path $crate "target"
+}
 cargo build --release --target wasm32-unknown-unknown
 $inWasm=Join-Path $TargetDir "wasm32-unknown-unknown\release\cunning_player.wasm"
 if(!(Test-Path $inWasm)){throw "wasm not found: $inWasm"}
